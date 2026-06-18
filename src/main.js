@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import * as OBC from '@thatopen/components';
 import * as OBF from '@thatopen/components-front';
 import * as XLSX from 'xlsx';
+import { initExcelBridge } from './viewer-socket.js';
 
 // Global variables for active model and state
 let activeModel = null;
@@ -608,6 +609,9 @@ async function initApp() {
       world.renderer.resize();
     }
   });
+
+  // Initialize Excel-IFC WebSocket bridge linkage
+  initExcelBridge(components, world);
 }
 
 // Start app on load
