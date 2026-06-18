@@ -86,6 +86,25 @@
             </div>
           </section>
 
+          <!-- Measurements Section -->
+          <section class="control-group">
+            <h3>Measurements</h3>
+            <div class="control-options">
+              <button id="btn-toggle-measure" class="btn btn-action">
+                <span>📐</span> Enable Measuring
+              </button>
+              <button id="btn-clear-measure" class="btn btn-secondary" style="margin-top: 8px;">
+                <span>🗑️</span> Clear Measures
+              </button>
+              
+              <!-- Dynamic Dimensions List -->
+              <div id="measurements-list-container" class="measurements-list" style="display: none; margin-top: 12px; border-top: 1px solid var(--glass-border); padding-top: 12px;">
+                <h4 style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; font-weight: 600; letter-spacing: 1px;">Saved Dimensions</h4>
+                <ul id="measurements-list-items" style="list-style: none; display: flex; flex-direction: column; gap: 8px; max-height: 150px; overflow-y: auto; padding-right: 4px;"></ul>
+              </div>
+            </div>
+          </section>
+
           <!-- Model Properties/Stats Section -->
           <section class="control-group stats-group">
             <h3>Model Properties</h3>

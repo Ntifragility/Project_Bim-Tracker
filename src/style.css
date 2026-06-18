@@ -744,3 +744,86 @@ body {
   color: #a5b4fc;
   border-bottom-color: var(--accent-border);
 }
+
+/* Measurements Toolkit Styling */
+.measurements-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.measure-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  transition: all 0.2s ease;
+}
+
+.measure-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.measure-value {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  color: #a5b4fc;
+}
+
+.measure-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.measure-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.measure-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.measure-btn.zoom:hover {
+  color: #a5b4fc;
+  background: rgba(99, 102, 241, 0.15);
+}
+
+.measure-btn.link:hover {
+  color: var(--success);
+  background: rgba(16, 185, 129, 0.15);
+}
+
+.measure-btn.delete:hover {
+  color: var(--error);
+  background: rgba(239, 68, 68, 0.15);
+}
+
+/* 3D HTML Dimension Card Styling Override */
+.obc-measurement-value {
+  background: rgba(18, 20, 28, 0.85) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  border: 1px solid var(--glass-border) !important;
+  border-radius: 6px !important;
+  color: var(--text-primary) !important;
+  font-family: var(--font-mono) !important;
+  font-size: 0.75rem !important;
+  padding: 4px 8px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5) !important;
+  pointer-events: none;
+}

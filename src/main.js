@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import * as OBC from '@thatopen/components';
 import * as OBF from '@thatopen/components-front';
 import * as XLSX from 'xlsx';
-import { initExcelBridge } from './viewer-socket.js';
+import { initExcelBridge, sendMeasurementToExcel } from './viewer-socket.js';
 
 // Global variables for active model and state
 let activeModel = null;
@@ -23,6 +23,12 @@ const btnResetCamera = document.getElementById('btn-reset-camera');
 const toggleGrid = document.getElementById('toggle-grid');
 const toggleWireframe = document.getElementById('toggle-wireframe');
 const toggleDarkMode = document.getElementById('toggle-darkmode');
+
+// Measurement DOM Elements
+const btnToggleMeasure = document.getElementById('btn-toggle-measure');
+const btnClearMeasure = document.getElementById('btn-clear-measure');
+const measurementsListContainer = document.getElementById('measurements-list-container');
+const measurementsListItems = document.getElementById('measurements-list-items');
 
 // Excel DOM Elements
 const excelFileInput = document.getElementById('excel-file-input');
@@ -176,6 +182,147 @@ async function initApp() {
 
   highlighter.events.select.onClear.add(() => {
     excelTableBody.querySelectorAll('tr').forEach(tr => tr.classList.remove('active'));
+  });
+
+  // ──────────────────────────────────────────────
+  //  3D LENGTH MEASUREMENT TOOLKIT
+  // ──────────────────────────────────────────────
+  const measurer = components.get(OBF.LengthMeasurement);
+  measurer.world = world;
+  measurer.units = 'm';
+  measurer.rounding = 2;
+  measurer.color = new THREE.Color('#6366f1');
+  let isMeasuring = false;
+
+  // Format distance value for display
+  function formatMeasureValue(line) {
+    try {
+      return `${line.value.toFixed(2)} m`;
+    } catch {
+      return '—';
+    }
+  }
+
+  // Rebuild the sidebar dimension list from the measurer's dataset
+  function refreshMeasurementsList() {
+    if (!measurementsListItems) return;
+    measurementsListItems.innerHTML = '';
+
+    const entries = Array.from(measurer.list);
+    if (entries.length === 0) {
+      if (measurementsListContainer) measurementsListContainer.style.display = 'none';
+      return;
+    }
+    if (measurementsListContainer) measurementsListContainer.style.display = 'block';
+
+    entries.forEach((line, idx) => {
+      const li = document.createElement('li');
+      li.className = 'measure-item';
+
+      // Distance value
+      const valueSpan = document.createElement('span');
+      valueSpan.className = 'measure-value';
+      valueSpan.textContent = formatMeasureValue(line);
+
+      // Action buttons container
+      const actionsDiv = document.createElement('div');
+      actionsDiv.className = 'measure-actions';
+
+      // Zoom button
+      const zoomBtn = document.createElement('button');
+      zoomBtn.className = 'measure-btn zoom';
+      zoomBtn.title = 'Zoom to fit';
+      zoomBtn.textContent = '🔍';
+      zoomBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        try {
+          const center = new THREE.Vector3();
+          line.getCenter(center);
+          const sphere = new THREE.Sphere(center, Math.max(line.distance() * 0.8, 1.0));
+          if (world.camera && world.camera.controls) {
+            world.camera.controls.fitToSphere(sphere, true);
+          }
+        } catch (err) {
+          console.warn('[Measurements] Zoom to dimension failed:', err);
+        }
+      });
+
+      // Link to Excel button
+      const linkBtn = document.createElement('button');
+      linkBtn.className = 'measure-btn link';
+      linkBtn.title = 'Send value to Excel';
+      linkBtn.textContent = '📊';
+      linkBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const val = formatMeasureValue(line);
+        const sent = sendMeasurementToExcel(val);
+        if (sent) {
+          linkBtn.textContent = '✅';
+          setTimeout(() => { linkBtn.textContent = '📊'; }, 1200);
+        } else {
+          linkBtn.textContent = '⚠️';
+          setTimeout(() => { linkBtn.textContent = '📊'; }, 1200);
+        }
+      });
+
+      // Delete button
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'measure-btn delete';
+      deleteBtn.title = 'Delete measurement';
+      deleteBtn.textContent = '🗑️';
+      deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        try {
+          measurer.list.delete(line);
+        } catch (err) {
+          console.warn('[Measurements] Delete single dimension failed:', err);
+        }
+      });
+
+      actionsDiv.appendChild(zoomBtn);
+      actionsDiv.appendChild(linkBtn);
+      actionsDiv.appendChild(deleteBtn);
+
+      li.appendChild(valueSpan);
+      li.appendChild(actionsDiv);
+      measurementsListItems.appendChild(li);
+    });
+  }
+
+  // Subscribe to DataSet events on the measurer's list
+  measurer.list.onItemAdded.add(() => refreshMeasurementsList());
+  measurer.list.onItemDeleted.add(() => refreshMeasurementsList());
+  measurer.list.onCleared.add(() => refreshMeasurementsList());
+
+  // Toggle measuring mode
+  if (btnToggleMeasure) {
+    btnToggleMeasure.addEventListener('click', () => {
+      isMeasuring = !isMeasuring;
+      measurer.enabled = isMeasuring;
+      btnToggleMeasure.innerHTML = isMeasuring
+        ? '<span>📐</span> Disable Measuring'
+        : '<span>📐</span> Enable Measuring';
+      btnToggleMeasure.classList.toggle('btn-primary', isMeasuring);
+      btnToggleMeasure.classList.toggle('btn-action', !isMeasuring);
+    });
+  }
+
+  // Clear all measurements
+  if (btnClearMeasure) {
+    btnClearMeasure.addEventListener('click', () => {
+      try {
+        measurer.list.clear();
+      } catch (err) {
+        console.warn('[Measurements] Clear all failed:', err);
+      }
+    });
+  }
+
+  // Allow Delete key to remove hovered measurement
+  window.addEventListener('keydown', (event) => {
+    if ((event.code === 'Delete' || event.code === 'Backspace') && measurer.enabled) {
+      measurer.delete();
+    }
   });
 
   // Helper: Fit camera to active model

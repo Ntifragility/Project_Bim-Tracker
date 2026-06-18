@@ -8,6 +8,17 @@ let reconnectDelay = 1000;
 const MAX_RECONNECT_DELAY = 5000;
 const WS_URL = "ws://localhost:3001";
 
+// Send measurement value to Excel over the WebSocket
+export function sendMeasurementToExcel(value) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    console.log(`[BIM Bridge] Transmitting measurement value to Excel: ${value}`);
+    ws.send("value:" + value);
+    return true;
+  }
+  console.warn("[BIM Bridge] WebSocket connection not open. Cannot send value.");
+  return false;
+}
+
 // Helper: Zoom/fit camera to a specific element in the world
 async function zoomToElement(components, world, model, expressId) {
   try {
@@ -44,8 +55,19 @@ export function initExcelBridge(components, world) {
     };
     
     ws.onmessage = async (event) => {
-      const cleanGuid = String(event.data).trim();
-      if (!cleanGuid) return;
+      const rawMessage = String(event.data).trim();
+      if (!rawMessage) return;
+      
+      // Ignore outgoing value messages
+      if (rawMessage.startsWith("value:")) {
+        return;
+      }
+      
+      // Strip guid: prefix if present
+      let cleanGuid = rawMessage;
+      if (rawMessage.startsWith("guid:")) {
+        cleanGuid = rawMessage.substring(5).trim();
+      }
       
       console.log(`[BIM Bridge] Received selection request for GUID: ${cleanGuid}`);
       
@@ -128,7 +150,7 @@ export function initExcelBridge(components, world) {
         
         if (ws && ws.readyState === WebSocket.OPEN) {
           console.log(`[BIM Bridge] 3D Selection Event: Sending GUID '${guid}' to Excel...`);
-          ws.send(guid);
+          ws.send("guid:" + guid);
         }
       }
     }

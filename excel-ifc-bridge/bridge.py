@@ -40,6 +40,30 @@ async def select_excel_row_by_guid(guid):
     except Exception as e:
         print(f"{get_timestamp()} [Bridge] Error selecting Excel row: {e}")
 
+async def write_excel_cell_value(value):
+    """Write the measured value string into Column C of the active Excel row."""
+    try:
+        app = xw.apps.active
+        if not app:
+            return
+        
+        wb = app.books.active
+        sheet = wb.sheets.active
+        selection = app.selection
+        
+        if selection:
+            current_row = selection.row
+            if current_row > 1:
+                # Write value to Column C of this row
+                sheet.range(f"C{current_row}").value = value
+                print(f"{get_timestamp()} [Bridge] Wrote value '{value}' to cell C{current_row} in Excel.")
+            else:
+                print(f"{get_timestamp()} [Bridge] Active selection is on row 1 (header). Cannot write value.")
+        else:
+            print(f"{get_timestamp()} [Bridge] No selection in Excel to write value to.")
+    except Exception as e:
+        print(f"{get_timestamp()} [Bridge] Error writing value to Excel: {e}")
+
 async def watch_excel():
     """Poll Excel active cell selection and yield new GUIDs."""
     global last_received_guid
@@ -99,13 +123,22 @@ async def run_bridge():
             async with websockets.connect(WS_URL) as ws:
                 print(f"{get_timestamp()} [Bridge] Connected successfully to WebSocket server.")
                 
-                # Task to receive GUIDs from the browser (Bidirectional Sync)
+                # Task to receive GUIDs or dimension values from the browser (Bidirectional Sync)
                 async def receive_from_browser():
                     try:
                         async for message in ws:
-                            guid = str(message).strip()
-                            if guid:
+                            msg_str = str(message).strip()
+                            if not msg_str:
+                                continue
+                            
+                            if msg_str.startswith("value:"):
+                                val = msg_str[6:].strip()
+                                await write_excel_cell_value(val)
+                            elif msg_str.startswith("guid:"):
+                                guid = msg_str[5:].strip()
                                 await select_excel_row_by_guid(guid)
+                            else:
+                                await select_excel_row_by_guid(msg_str)
                     except websockets.exceptions.ConnectionClosed:
                         print(f"{get_timestamp()} [Bridge] WebSocket connection closed by server.")
                 
