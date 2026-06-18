@@ -497,4 +497,250 @@ body {
     left: 16px;
     bottom: auto;
   }
+  #excel-panel {
+    width: 300px;
+    max-width: calc(100vw - 32px);
+    height: calc(100vh - 32px);
+    top: 16px;
+    right: 16px;
+  }
+}
+
+/* Glassmorphic Excel Linkage Panel */
+#excel-panel {
+  width: 400px;
+  height: calc(100vh - 32px);
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-sidebar);
+  backdrop-filter: blur(16px) saturate(120%);
+  -webkit-backdrop-filter: blur(16px) saturate(120%);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  box-shadow: 0 8px 32px 0 var(--glass-shadow);
+  padding: 24px;
+  transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Collapsed state - translate off-screen to the right */
+#excel-panel.collapsed {
+  transform: translateX(calc(100% + 16px));
+}
+
+/* Excel panel toggle handle */
+.excel-panel-close {
+  position: absolute;
+  top: 24px;
+  left: -42px; /* Protrude outside the left boundary */
+  width: 42px;
+  height: 48px;
+  background: var(--bg-sidebar);
+  backdrop-filter: blur(16px) saturate(120%);
+  -webkit-backdrop-filter: blur(16px) saturate(120%);
+  border: 1px solid var(--glass-border);
+  border-right: none;
+  border-radius: 12px 0 0 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 11;
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.3);
+  transition: all 0.3s ease;
+}
+
+.excel-panel-close:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.excel-panel-close span {
+  font-size: 1rem;
+  transition: transform 0.3s ease;
+}
+
+.excel-panel-header {
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--glass-border);
+  padding-bottom: 16px;
+}
+
+.excel-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.excel-logo-icon {
+  font-size: 1.5rem;
+}
+
+.excel-logo h2 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  background: linear-gradient(135deg, #ffffff 30%, var(--accent) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.excel-subtitle {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  font-weight: 350;
+  letter-spacing: 0.5px;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.excel-panel-content {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow: hidden;
+}
+
+.excel-config-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.excel-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.excel-field label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.excel-select {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.2s ease;
+}
+
+.excel-select:focus {
+  border-color: var(--accent);
+}
+
+.excel-search-input {
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-primary);
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.excel-search-input:focus {
+  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.excel-table-container {
+  flex-grow: 1;
+  overflow: auto;
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.2);
+  position: relative;
+}
+
+.excel-table-container::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.excel-table-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.excel-table-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+}
+
+.excel-table-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.excel-placeholder {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  text-align: center;
+  line-height: 1.4;
+  width: 80%;
+}
+
+.excel-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  text-align: left;
+}
+
+.excel-table th {
+  background: var(--bg-secondary);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 10px 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.excel-table td {
+  padding: 10px 12px;
+  color: var(--text-primary);
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background-color 0.15s ease;
+}
+
+.excel-table tr:hover td {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.excel-table tr.active td {
+  background: rgba(99, 102, 241, 0.2) !important;
+  color: #a5b4fc;
+  border-bottom-color: var(--accent-border);
 }

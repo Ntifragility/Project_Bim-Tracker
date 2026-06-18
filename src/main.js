@@ -1,10 +1,15 @@
 import './style.css';
 import * as THREE from 'three';
 import * as OBC from '@thatopen/components';
+import * as OBF from '@thatopen/components-front';
+import * as XLSX from 'xlsx';
 
 // Global variables for active model and state
 let activeModel = null;
 let isWireframe = false;
+let excelData = [];
+let excelColumns = [];
+let selectedExcelIdColumn = "";
 
 // DOM Elements
 const container = document.getElementById('viewer-container');
@@ -17,6 +22,18 @@ const btnResetCamera = document.getElementById('btn-reset-camera');
 const toggleGrid = document.getElementById('toggle-grid');
 const toggleWireframe = document.getElementById('toggle-wireframe');
 const toggleDarkMode = document.getElementById('toggle-darkmode');
+
+// Excel DOM Elements
+const excelFileInput = document.getElementById('excel-file-input');
+const btnUploadExcel = document.getElementById('btn-upload-excel');
+const excelPanel = document.getElementById('excel-panel');
+const btnExcelPanelClose = document.getElementById('excel-panel-close');
+const excelFileName = document.getElementById('excel-file-name');
+const excelIdColumn = document.getElementById('excel-id-column');
+const excelSearch = document.getElementById('excel-search');
+const excelDataTable = document.getElementById('excel-data-table');
+const excelTableHeader = document.getElementById('excel-table-header');
+const excelTableBody = document.getElementById('excel-table-body');
 
 const loadingOverlay = document.getElementById('loading-overlay');
 const loaderTitle = document.getElementById('loader-title');
@@ -117,6 +134,48 @@ async function initApp() {
   };
   await ifcLoader.setup();
   console.log("IfcLoader WASM set up successfully.");
+
+  // 7. Set up Highlighter
+  const highlighter = components.get(OBF.Highlighter);
+  highlighter.setup({ world });
+  highlighter.add('select', { color: new THREE.Color('#6366f1'), opacity: 0.6 });
+
+  // Bidirectional highlighting: 3D Selection -> Excel Selection
+  highlighter.events.select.onHighlight.add((fragmentMap) => {
+    let selectedExpressId = null;
+    if (fragmentMap && Object.keys(fragmentMap).length > 0) {
+      for (const fragId in fragmentMap) {
+        const ids = fragmentMap[fragId];
+        if (ids && ids.size > 0) {
+          selectedExpressId = Array.from(ids)[0];
+          break;
+        } else if (Array.isArray(ids) && ids.length > 0) {
+          selectedExpressId = ids[0];
+          break;
+        }
+      }
+    }
+    
+    if (selectedExpressId !== null && selectedExcelIdColumn) {
+      const rows = excelTableBody.querySelectorAll('tr');
+      let foundRow = null;
+      rows.forEach(tr => {
+        tr.classList.remove('active');
+        if (Number(tr.dataset.expressId) === Number(selectedExpressId)) {
+          foundRow = tr;
+        }
+      });
+      
+      if (foundRow) {
+        foundRow.classList.add('active');
+        foundRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }
+  });
+
+  highlighter.events.select.onClear.add(() => {
+    excelTableBody.querySelectorAll('tr').forEach(tr => tr.classList.remove('active'));
+  });
 
   // Helper: Fit camera to active model
   function fitModelToView(model) {
@@ -359,6 +418,184 @@ async function initApp() {
     });
 
     sidebar.addEventListener('transitionend', () => {
+      if (world.renderer && world.renderer.resize) {
+        world.renderer.resize();
+      }
+    });
+  }
+
+  // Helper: Zoom to a specific Express ID inside activeModel
+  async function zoomToElement(expressId) {
+    if (!activeModel) return;
+    try {
+      const bboxer = components.get(OBC.BoundingBoxer);
+      bboxer.list.clear();
+      await bboxer.addFromModelIdMap({ [activeModel.uuid]: new Set([Number(expressId)]) });
+      const box = bboxer.get();
+      if (box && !box.isEmpty()) {
+        const sphere = new THREE.Sphere();
+        box.getBoundingSphere(sphere);
+        if (sphere.radius < 0.5) sphere.radius = 1.0;
+        world.camera.controls.fitToSphere(sphere, true);
+      }
+      bboxer.list.clear();
+    } catch (e) {
+      console.warn("zoomToElement failed:", e);
+    }
+  }
+
+  // Render parsed Excel table rows in UI
+  function renderExcelTable() {
+    excelTableHeader.innerHTML = '';
+    excelTableBody.innerHTML = '';
+    
+    if (excelData.length === 0) {
+      excelDataTable.style.display = 'none';
+      excelPanel.querySelector('.excel-placeholder').style.display = 'block';
+      return;
+    }
+    
+    excelPanel.querySelector('.excel-placeholder').style.display = 'none';
+    excelDataTable.style.display = 'table';
+    
+    // Create header row
+    excelColumns.forEach(col => {
+      const th = document.createElement('th');
+      th.innerText = col;
+      excelTableHeader.appendChild(th);
+    });
+    
+    // Create table body rows
+    const searchTerm = excelSearch.value.toLowerCase().trim();
+    
+    excelData.forEach((row, index) => {
+      if (searchTerm) {
+        const rowMatch = Object.values(row).some(val => 
+          String(val).toLowerCase().includes(searchTerm)
+        );
+        if (!rowMatch) return;
+      }
+      
+      const tr = document.createElement('tr');
+      tr.dataset.index = index;
+      
+      if (selectedExcelIdColumn && row[selectedExcelIdColumn]) {
+        tr.dataset.expressId = row[selectedExcelIdColumn];
+      }
+      
+      excelColumns.forEach(col => {
+        const td = document.createElement('td');
+        td.innerText = row[col] !== undefined ? row[col] : "";
+        td.title = td.innerText;
+        tr.appendChild(td);
+      });
+      
+      tr.addEventListener('click', async () => {
+        excelTableBody.querySelectorAll('tr').forEach(r => r.classList.remove('active'));
+        tr.classList.add('active');
+        
+        if (selectedExcelIdColumn && row[selectedExcelIdColumn]) {
+          const expressId = Number(row[selectedExcelIdColumn]);
+          if (!isNaN(expressId) && activeModel) {
+            const selectedFragmentMap = activeModel.getFragmentMap([expressId]);
+            await highlighter.highlightByID("select", selectedFragmentMap, true);
+            zoomToElement(expressId);
+          }
+        }
+      });
+      
+      excelTableBody.appendChild(tr);
+    });
+  }
+
+  // Excel Upload Interactions
+  btnUploadExcel.addEventListener('click', () => {
+    excelFileInput.click();
+  });
+
+  excelFileInput.addEventListener('change', async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    excelFileName.innerText = file.name;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+
+        if (jsonData.length > 0) {
+          excelColumns = Object.keys(jsonData[0]);
+          excelData = jsonData;
+          
+          excelIdColumn.innerHTML = '<option value="">(Select column)</option>';
+          let preselectedCol = "";
+          excelColumns.forEach(col => {
+            const option = document.createElement('option');
+            option.value = col;
+            option.innerText = col;
+            excelIdColumn.appendChild(option);
+            
+            const lowerCol = col.toLowerCase();
+            if (lowerCol === 'express id' || lowerCol === 'expressid' || lowerCol === 'id' || lowerCol === 'tag' || lowerCol === 'element id' || lowerCol === 'elementid') {
+              preselectedCol = col;
+            }
+          });
+          
+          if (preselectedCol) {
+            excelIdColumn.value = preselectedCol;
+            selectedExcelIdColumn = preselectedCol;
+          } else {
+            selectedExcelIdColumn = "";
+          }
+
+          renderExcelTable();
+          
+          // Show the excel panel
+          excelPanel.classList.remove('collapsed');
+          const toggleSpan = btnExcelPanelClose.querySelector('span');
+          if (toggleSpan) {
+            toggleSpan.innerText = '▶';
+          }
+          
+          if (world.renderer && world.renderer.resize) {
+            world.renderer.resize();
+          }
+        } else {
+          alert("The Excel file is empty.");
+        }
+      } catch (err) {
+        console.error("Error parsing Excel file:", err);
+        alert(`Failed to parse Excel file: ${err.message}`);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+
+  excelIdColumn.addEventListener('change', () => {
+    selectedExcelIdColumn = excelIdColumn.value;
+    renderExcelTable();
+  });
+
+  excelSearch.addEventListener('input', () => {
+    renderExcelTable();
+  });
+
+  // Toggle Excel Drawer Collapse
+  if (btnExcelPanelClose && excelPanel) {
+    btnExcelPanelClose.addEventListener('click', () => {
+      excelPanel.classList.toggle('collapsed');
+      
+      const isCollapsed = excelPanel.classList.contains('collapsed');
+      const toggleSpan = btnExcelPanelClose.querySelector('span');
+      if (toggleSpan) {
+        toggleSpan.innerText = isCollapsed ? '◀' : '▶';
+      }
+      
       if (world.renderer && world.renderer.resize) {
         world.renderer.resize();
       }

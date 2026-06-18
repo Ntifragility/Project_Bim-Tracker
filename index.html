@@ -42,6 +42,13 @@
                   <span class="btn-icon">📁</span> Upload Local IFC
                 </button>
               </div>
+
+              <div class="file-upload-wrapper">
+                <input type="file" id="excel-file-input" accept=".xlsx,.xls,.csv" style="display: none;" />
+                <button id="btn-upload-excel" class="btn btn-secondary">
+                  <span class="btn-icon">📊</span> Link Excel File
+                </button>
+              </div>
             </div>
           </section>
 
@@ -109,6 +116,46 @@
         <footer class="sidebar-footer">
           <p>Powered by That Open Engine & Three.js</p>
         </footer>
+      </aside>
+
+      <!-- Floating Right-side Excel Linkage Panel -->
+      <aside id="excel-panel" class="collapsed">
+        <button id="excel-panel-close" class="excel-panel-close" title="Toggle Excel Panel">
+          <span>◀</span>
+        </button>
+        <header class="excel-panel-header">
+          <div class="excel-logo">
+            <span class="excel-logo-icon">📊</span>
+            <h2>Excel Linkage</h2>
+          </div>
+          <p id="excel-file-name" class="excel-subtitle">No Excel file linked</p>
+        </header>
+        
+        <div class="excel-panel-content">
+          <!-- Selection & Configuration -->
+          <div class="excel-config-group">
+            <div class="excel-field">
+              <label for="excel-id-column">Match ID Column</label>
+              <select id="excel-id-column" class="excel-select">
+                <option value="">(Select column)</option>
+              </select>
+            </div>
+            <div class="excel-field">
+              <input type="text" id="excel-search" class="excel-search-input" placeholder="Search rows..." />
+            </div>
+          </div>
+          
+          <!-- Excel Table Container -->
+          <div class="excel-table-container">
+            <div class="excel-placeholder">Upload an Excel file to display data table here.</div>
+            <table id="excel-data-table" class="excel-table" style="display: none;">
+              <thead>
+                <tr id="excel-table-header"></tr>
+              </thead>
+              <tbody id="excel-table-body"></tbody>
+            </table>
+          </div>
+        </div>
       </aside>
 
       <!-- Glassmorphic Loading Overlay -->
