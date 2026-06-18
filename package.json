@@ -1,0 +1,19 @@
+{
+  "name": "bim-tracker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^8.0.12"
+  },
+  "dependencies": {
+    "@thatopen/components": "^3.4.6",
+    "@thatopen/fragments": "^3.4.5",
+    "three": "^0.184.0"
+  }
+}

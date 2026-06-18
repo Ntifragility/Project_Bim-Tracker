@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BIM Tracker & IFC Viewer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <div id="app">
+      <!-- 3D Viewport Canvas Container -->
+      <div id="viewer-container"></div>
+
+      <!-- Glassmorphic Sidebar Controls -->
+      <aside id="sidebar">
+        <button id="sidebar-toggle" class="sidebar-toggle" title="Toggle Sidebar">
+          <span>◀</span>
+        </button>
+        <header class="sidebar-header">
+          <div class="logo">
+            <span class="logo-icon">🏗️</span>
+            <h1>BIM Tracker</h1>
+          </div>
+          <p class="subtitle">IFC Model Viewer & Analyzer</p>
+        </header>
+
+        <div class="sidebar-content">
+          <!-- Model Loader Section -->
+          <section class="control-group">
+            <h3>Models</h3>
+            <div class="loader-buttons">
+              <button id="btn-load-sample" class="btn btn-primary">
+                <span class="btn-icon">🏠</span> Load Sample Model
+              </button>
+              
+              <div class="file-upload-wrapper">
+                <input type="file" id="file-input" accept=".ifc" style="display: none;" />
+                <button id="btn-upload" class="btn btn-secondary">
+                  <span class="btn-icon">📁</span> Upload Local IFC
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <!-- Viewer Settings Section -->
+          <section class="control-group">
+            <h3>Controls</h3>
+            <div class="control-options">
+              <button id="btn-reset-camera" class="btn btn-action">
+                <span>🔄</span> Reset Camera
+              </button>
+              
+              <div class="toggle-option">
+                <label for="toggle-grid">
+                  <input type="checkbox" id="toggle-grid" checked />
+                  <span class="custom-checkbox"></span>
+                  Show Grid Floor
+                </label>
+              </div>
+
+              <div class="toggle-option">
+                <label for="toggle-wireframe">
+                  <input type="checkbox" id="toggle-wireframe" />
+                  <span class="custom-checkbox"></span>
+                  Wireframe Mode
+                </label>
+              </div>
+
+              <div class="toggle-option">
+                <label for="toggle-darkmode">
+                  <input type="checkbox" id="toggle-darkmode" checked />
+                  <span class="custom-checkbox"></span>
+                  Dark Background
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <!-- Model Properties/Stats Section -->
+          <section class="control-group stats-group">
+            <h3>Model Properties</h3>
+            <div id="model-stats" class="stats-panel empty">
+              <div class="stats-placeholder">No active model loaded. Click above to load a model.</div>
+              <div class="stats-data" style="display: none;">
+                <div class="stat-row">
+                  <span class="stat-label">Model Name</span>
+                  <span id="stat-name" class="stat-value">-</span>
+                </div>
+                <div class="stat-row">
+                  <span class="stat-label">File Size</span>
+                  <span id="stat-size" class="stat-value">-</span>
+                </div>
+                <div class="stat-row">
+                  <span class="stat-label">Loaded Meshes</span>
+                  <span id="stat-meshes" class="stat-value">-</span>
+                </div>
+                <div class="stat-row">
+                  <span class="stat-label">Total Elements</span>
+                  <span id="stat-elements" class="stat-value">-</span>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <footer class="sidebar-footer">
+          <p>Powered by That Open Engine & Three.js</p>
+        </footer>
+      </aside>
+
+      <!-- Glassmorphic Loading Overlay -->
+      <div id="loading-overlay" class="overlay" style="display: none;">
+        <div class="loader-card">
+          <div class="spinner"></div>
+          <h2 id="loader-title">Loading Model</h2>
+          <p id="loader-status">Initializing WASM engine...</p>
+          <div class="progress-bar-container">
+            <div id="loader-progress" class="progress-bar" style="width: 0%;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
