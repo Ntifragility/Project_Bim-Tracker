@@ -75,7 +75,7 @@ export function initExcelBridge(components, world) {
       let found = false;
       
       // Iterate through loaded models to locate which one contains the GUID
-      for (const [modelId, model] of fragments.groups) {
+      for (const [modelId, model] of fragments.list) {
         if (model.globalToExpressId && cleanGuid in model.globalToExpressId) {
           const expressId = model.globalToExpressId[cleanGuid];
           console.log(`[BIM Bridge] Resolved GUID ${cleanGuid} to Express ID ${expressId} in model: ${modelId}`);
@@ -85,7 +85,14 @@ export function initExcelBridge(components, world) {
           
           // Select and highlight the component in 3D
           const selectedFragmentMap = model.getFragmentMap([expressId]);
-          await highlighter.highlightByID("select", selectedFragmentMap, true);
+          highlighter.isProgrammaticSelect = true;
+          try {
+            await highlighter.highlightByID("select", selectedFragmentMap, true);
+          } catch (err) {
+            console.warn("[BIM Bridge] Selection highlight failed:", err);
+          } finally {
+            highlighter.isProgrammaticSelect = false;
+          }
           
           // Automatically focus and fit camera to the highlighted mesh
           zoomToElement(components, world, model, expressId);
@@ -112,6 +119,7 @@ export function initExcelBridge(components, world) {
   
   // Bidirectional Synchronization (3D element click -> select row in Excel)
   highlighter.events.select.onHighlight.add((fragmentMap) => {
+    if (highlighter.isProgrammaticSelect) return;
     let selectedExpressId = null;
     
     if (fragmentMap && Object.keys(fragmentMap).length > 0) {
@@ -127,7 +135,7 @@ export function initExcelBridge(components, world) {
       let guid = null;
       
       // Locate the GUID of the selected component across all models
-      for (const [modelId, model] of fragments.groups) {
+      for (const [modelId, model] of fragments.list) {
         if (model.globalToExpressId) {
           for (const g in model.globalToExpressId) {
             if (model.globalToExpressId[g] === Number(selectedExpressId)) {

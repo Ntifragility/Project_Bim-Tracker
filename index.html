@@ -37,7 +37,7 @@
               </button>
               
               <div class="file-upload-wrapper">
-                <input type="file" id="file-input" accept=".ifc" style="display: none;" />
+                <input type="file" id="file-input" accept=".ifc" multiple style="display: none;" />
                 <button id="btn-upload" class="btn btn-secondary">
                   <span class="btn-icon">📁</span> Upload Local IFC
                 </button>
@@ -83,6 +83,14 @@
                   Dark Background
                 </label>
               </div>
+
+              <div class="toggle-option">
+                <label for="toggle-transform">
+                  <input type="checkbox" id="toggle-transform" />
+                  <span class="custom-checkbox"></span>
+                  Enable Model Dragging
+                </label>
+              </div>
             </div>
           </section>
 
@@ -102,6 +110,15 @@
                 <h4 style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; font-weight: 600; letter-spacing: 1px;">Saved Dimensions</h4>
                 <ul id="measurements-list-items" style="list-style: none; display: flex; flex-direction: column; gap: 8px; max-height: 150px; overflow-y: auto; padding-right: 4px;"></ul>
               </div>
+            </div>
+          </section>
+
+          <!-- Loaded Models Section -->
+          <section class="control-group">
+            <h3>Loaded Models</h3>
+            <div id="loaded-models-container" class="loaded-models-list-panel">
+              <div class="models-placeholder">No models loaded.</div>
+              <ul id="loaded-models-list" class="loaded-models-list" style="display: none;"></ul>
             </div>
           </section>
 
@@ -187,6 +204,11 @@
             <div id="loader-progress" class="progress-bar" style="width: 0%;"></div>
           </div>
         </div>
+      </div>
+
+      <!-- Auto-Orbit Notification Badge -->
+      <div id="orbit-indicator" class="orbit-indicator" style="display: none;">
+        <span>🔄</span> Auto-Orbit Active (Click canvas to stop)
       </div>
     </div>
     
