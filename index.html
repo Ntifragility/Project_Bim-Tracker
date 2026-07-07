@@ -113,6 +113,30 @@
             </div>
           </section>
 
+          <!-- Cable Routing Section -->
+          <section class="control-group routing-group">
+            <h3>Cable Routing</h3>
+            <div class="routing-controls">
+              <label for="routing-tolerance">Connection tolerance (mm)</label>
+              <input id="routing-tolerance" type="number" min="1" step="10" value="100" />
+              <div class="routing-button-grid">
+                <button id="btn-build-routing-graph" class="btn btn-primary">Build Graph</button>
+                <button id="btn-clear-routing-graph" class="btn btn-secondary">Clear</button>
+                <button id="btn-route-start" class="btn btn-secondary" disabled>Set Start</button>
+                <button id="btn-route-end" class="btn btn-secondary" disabled>Set End</button>
+                <button id="btn-calculate-route" class="btn btn-action" disabled>Calculate Route</button>
+              </div>
+              <div id="routing-status" class="routing-status">Load an IFC and build its tray graph.</div>
+              <div id="routing-summary" class="routing-summary">No graph built</div>
+              <div class="routing-legend">
+                <span><i class="legend-line connected"></i>Centerline</span>
+                <span><i class="legend-line uncertain"></i>Low confidence</span>
+                <span><i class="legend-dot open"></i>Open end</span>
+                <span><i class="legend-line route"></i>Route</span>
+              </div>
+            </div>
+          </section>
+
           <!-- Loaded Models Section -->
           <section class="control-group">
             <h3>Loaded Models</h3>

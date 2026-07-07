@@ -4,6 +4,7 @@ import * as OBC from '@thatopen/components';
 import * as OBF from '@thatopen/components-front';
 import * as XLSX from 'xlsx';
 import { initExcelBridge, sendMeasurementToExcel } from './viewer-socket.js';
+import { initRoutingController } from './routing/routing-controller.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 
 // Global variables for active model and state
@@ -275,6 +276,7 @@ async function initApp() {
   const highlighter = components.get(OBF.Highlighter);
   highlighter.setup({ world });
   highlighter.styles.set('select', { color: new THREE.Color('#6366f1'), opacity: 0.6, transparent: true });
+  const routingController = initRoutingController({ world, getLoadedModels: () => loadedModels });
 
   function getAssignmentKey(modelId, localId) {
     return `${modelId}:${Number(localId)}`;
@@ -365,6 +367,7 @@ async function initApp() {
         activeModel = foundModelEntry.model;
         await displayElementProperties(foundModelEntry.model, expressIdNum, foundModelEntry.name);
         selectedIfcElement = await readElementIdentity(foundModelEntry.model, expressIdNum, foundModelEntry.name);
+        routingController.setSelectedElement(foundModelEntry.model, expressIdNum);
         updateTagAssignmentUi();
         refreshLoadedModelsList();
         
@@ -384,6 +387,7 @@ async function initApp() {
 
     activeModel = null;
     selectedIfcElement = null;
+    routingController.setSelectedElement(null, null);
     updateTagAssignmentUi();
     autoRotateActive = false;
     if (orbitIndicator) {
