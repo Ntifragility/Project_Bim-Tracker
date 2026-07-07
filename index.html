@@ -122,28 +122,41 @@
             </div>
           </section>
 
-          <!-- Model Properties/Stats Section -->
-          <section class="control-group stats-group">
-            <h3>Model Properties</h3>
-            <div id="model-stats" class="stats-panel empty">
-              <div class="stats-placeholder">No active model loaded. Click above to load a model.</div>
-              <div class="stats-data" style="display: none;">
-                <div class="stat-row">
-                  <span class="stat-label">Model Name</span>
-                  <span id="stat-name" class="stat-value">-</span>
+          <!-- Element Properties Panel -->
+          <section class="control-group element-props-group">
+            <h3>Element Properties</h3>
+            <div id="element-props-panel" class="element-props-panel empty">
+              <div class="element-props-placeholder">
+                <span class="placeholder-icon">🔍</span>
+                <span>Click an element in the 3D viewer to inspect its properties.</span>
+              </div>
+              <div class="element-props-content" style="display: none;">
+                <!-- Element Identity -->
+                <div class="element-identity">
+                  <div class="element-type-badge" id="prop-type-badge">IfcElement</div>
+                  <div class="prop-row">
+                    <span class="prop-label">Name</span>
+                    <span id="prop-name" class="prop-value" title="">-</span>
+                  </div>
+                  <div class="prop-row">
+                    <span class="prop-label">GlobalId</span>
+                    <span id="prop-globalid" class="prop-value mono" title="">-</span>
+                  </div>
+                  <div class="prop-row">
+                    <span class="prop-label">Tag</span>
+                    <span id="prop-tag" class="prop-value mono" title="">-</span>
+                  </div>
+                  <div class="prop-row">
+                    <span class="prop-label">Express ID</span>
+                    <span id="prop-expressid" class="prop-value mono" title="">-</span>
+                  </div>
+                  <div class="prop-row">
+                    <span class="prop-label">Model</span>
+                    <span id="prop-model" class="prop-value" title="">-</span>
+                  </div>
                 </div>
-                <div class="stat-row">
-                  <span class="stat-label">File Size</span>
-                  <span id="stat-size" class="stat-value">-</span>
-                </div>
-                <div class="stat-row">
-                  <span class="stat-label">Loaded Meshes</span>
-                  <span id="stat-meshes" class="stat-value">-</span>
-                </div>
-                <div class="stat-row">
-                  <span class="stat-label">Total Elements</span>
-                  <span id="stat-elements" class="stat-value">-</span>
-                </div>
+                <!-- Dynamic Property Sets -->
+                <div id="prop-psets-container" class="prop-psets-container"></div>
               </div>
             </div>
           </section>
@@ -171,14 +184,23 @@
           <!-- Selection & Configuration -->
           <div class="excel-config-group">
             <div class="excel-field">
-              <label for="excel-id-column">Match ID Column</label>
+              <label for="excel-id-column">Tag Column</label>
               <select id="excel-id-column" class="excel-select">
-                <option value="">(Select column)</option>
+                <option value="">(Select tag column)</option>
               </select>
             </div>
             <div class="excel-field">
               <input type="text" id="excel-search" class="excel-search-input" placeholder="Search rows..." />
             </div>
+            <div id="tag-assignment-status" class="tag-assignment-status">
+              Select an Excel row and an IFC element.
+            </div>
+            <div class="tag-assignment-actions">
+              <button id="btn-assign-tag" class="btn btn-primary" disabled>Assign Tag</button>
+              <button id="btn-unassign-tag" class="btn btn-secondary" disabled>Unassign</button>
+              <button id="btn-export-tags" class="btn btn-secondary" disabled>Export Mapping</button>
+            </div>
+            <div id="tag-assignment-summary" class="tag-assignment-summary">0 assignments</div>
           </div>
           
           <!-- Excel Table Container -->

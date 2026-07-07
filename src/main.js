@@ -13,6 +13,9 @@ let isWireframe = false;
 let excelData = [];
 let excelColumns = [];
 let selectedExcelIdColumn = "";
+let selectedExcelRowIndex = null;
+let selectedIfcElement = null;
+const tagAssignments = new Map();
 let autoRotateActive = false;
 let isTransformEnabled = false;
 
@@ -45,6 +48,11 @@ const excelSearch = document.getElementById('excel-search');
 const excelDataTable = document.getElementById('excel-data-table');
 const excelTableHeader = document.getElementById('excel-table-header');
 const excelTableBody = document.getElementById('excel-table-body');
+const tagAssignmentStatus = document.getElementById('tag-assignment-status');
+const tagAssignmentSummary = document.getElementById('tag-assignment-summary');
+const btnAssignTag = document.getElementById('btn-assign-tag');
+const btnUnassignTag = document.getElementById('btn-unassign-tag');
+const btnExportTags = document.getElementById('btn-export-tags');
 
 // Loaded Models DOM Elements
 const loadedModelsContainer = document.getElementById('loaded-models-container');
@@ -60,11 +68,14 @@ const loaderTitle = document.getElementById('loader-title');
 const loaderStatus = document.getElementById('loader-status');
 const loaderProgress = document.getElementById('loader-progress');
 
-const modelStats = document.getElementById('model-stats');
-const statName = document.getElementById('stat-name');
-const statSize = document.getElementById('stat-size');
-const statMeshes = document.getElementById('stat-meshes');
-const statElements = document.getElementById('stat-elements');
+const elementPropsPanel = document.getElementById('element-props-panel');
+const propTypeBadge = document.getElementById('prop-type-badge');
+const propName = document.getElementById('prop-name');
+const propGlobalId = document.getElementById('prop-globalid');
+const propTag = document.getElementById('prop-tag');
+const propExpressId = document.getElementById('prop-expressid');
+const propModel = document.getElementById('prop-model');
+const propPsetsContainer = document.getElementById('prop-psets-container');
 
 // Utility: Show loading overlay
 function showLoader(title, status, progressVal) {
@@ -251,23 +262,89 @@ async function initApp() {
   await ifcLoader.setup();
   console.log("IfcLoader WASM set up successfully.");
 
+  // 6.5. Set up IfcRelationsIndexer for querying element property sets
+  let indexer = null;
+  try {
+    indexer = components.get(OBC.IfcRelationsIndexer);
+    console.log("IfcRelationsIndexer ready.");
+  } catch (e) {
+    console.warn("IfcRelationsIndexer not available, will use manual fallback:", e);
+  }
+
   // 7. Set up Highlighter
   const highlighter = components.get(OBF.Highlighter);
   highlighter.setup({ world });
   highlighter.styles.set('select', { color: new THREE.Color('#6366f1'), opacity: 0.6, transparent: true });
 
+  function getAssignmentKey(modelId, localId) {
+    return `${modelId}:${Number(localId)}`;
+  }
+
+  function getSelectedExcelTag() {
+    if (selectedExcelRowIndex === null || !selectedExcelIdColumn) return '';
+    return String(excelData[selectedExcelRowIndex]?.[selectedExcelIdColumn] ?? '').trim();
+  }
+
+  function getAssignmentForElement(element = selectedIfcElement) {
+    if (!element) return null;
+    return tagAssignments.get(getAssignmentKey(element.modelId, element.localId)) || null;
+  }
+
+  function updateTagAssignmentUi(message = '') {
+    const selectedTag = getSelectedExcelTag();
+    const assignment = getAssignmentForElement();
+    const elementLabel = selectedIfcElement
+      ? `${selectedIfcElement.name || selectedIfcElement.type || 'IFC element'} (#${selectedIfcElement.localId})`
+      : 'no IFC element selected';
+    const rowLabel = selectedTag ? `tag “${selectedTag}”` : 'no Excel tag selected';
+
+    tagAssignmentStatus.textContent = message || `${rowLabel}; ${elementLabel}.`;
+    tagAssignmentSummary.textContent = `${tagAssignments.size} assignment${tagAssignments.size === 1 ? '' : 's'}`;
+    btnAssignTag.disabled = !selectedTag || !selectedIfcElement;
+    btnUnassignTag.disabled = !assignment;
+    btnExportTags.disabled = tagAssignments.size === 0;
+
+    if (selectedIfcElement) {
+      const displayedTag = assignment?.tag || selectedIfcElement.ifcTag || '-';
+      propTag.textContent = displayedTag;
+      propTag.title = displayedTag;
+    }
+  }
+
+  async function readElementIdentity(model, localId, modelName) {
+    const data = (await model.getItemsData([Number(localId)], {
+      attributesDefault: true,
+      relationsDefault: { attributes: false, relations: false },
+    }))?.[0] || {};
+    const read = (attribute) => attribute && typeof attribute === 'object' && 'value' in attribute
+      ? attribute.value
+      : attribute;
+    return {
+      modelId: model.modelId || model.uuid,
+      modelName,
+      localId: Number(localId),
+      globalId: read(data.GlobalId ?? data._guid) || '',
+      name: read(data.Name) || '',
+      type: getModernIfcTypeName(data),
+      ifcTag: read(data.Tag) || '',
+    };
+  }
+
   // Bidirectional highlighting: 3D Selection -> Excel Selection & Loaded Models Sync
   highlighter.events.select.onHighlight.add(async (fragmentMap) => {
     if (highlighter.isProgrammaticSelect) return;
 
+    let selectedModelId = null;
     let selectedExpressId = null;
     if (fragmentMap && Object.keys(fragmentMap).length > 0) {
-      for (const fragId in fragmentMap) {
-        const ids = fragmentMap[fragId];
+      for (const modelId in fragmentMap) {
+        const ids = fragmentMap[modelId];
         if (ids && ids.size > 0) {
+          selectedModelId = modelId;
           selectedExpressId = Array.from(ids)[0];
           break;
         } else if (Array.isArray(ids) && ids.length > 0) {
+          selectedModelId = modelId;
           selectedExpressId = ids[0];
           break;
         }
@@ -277,35 +354,18 @@ async function initApp() {
     if (selectedExpressId !== null) {
       const expressIdNum = Number(selectedExpressId);
       
-      // 1. Sync viewport selection to Excel table row if matching column is defined
-      if (selectedExcelIdColumn) {
-        const rows = excelTableBody.querySelectorAll('tr');
-        let foundRow = null;
-        rows.forEach(tr => {
-          tr.classList.remove('active');
-          if (Number(tr.dataset.expressId) === expressIdNum) {
-            foundRow = tr;
-          }
-        });
-        
-        if (foundRow) {
-          foundRow.classList.add('active');
-          foundRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }
-      }
-
-      // 2. Sync viewport selection back to active model state and Loaded Models sidebar list
-      let foundModelEntry = null;
-      for (const m of loadedModels) {
-        if (m.model.expressIDToFragmentMap && (expressIdNum in m.model.expressIDToFragmentMap)) {
-          foundModelEntry = m;
-          break;
-        }
-      }
+      // Sync viewport selection back to active model state and Loaded Models sidebar list
+      const foundModelEntry = loadedModels.find((entry) =>
+        entry.model?.modelId === selectedModelId ||
+        entry.model?.uuid === selectedModelId ||
+        entry.uuid === selectedModelId
+      );
       
       if (foundModelEntry) {
         activeModel = foundModelEntry.model;
-        updateStats(foundModelEntry.name, foundModelEntry.size, foundModelEntry.model);
+        await displayElementProperties(foundModelEntry.model, expressIdNum, foundModelEntry.name);
+        selectedIfcElement = await readElementIdentity(foundModelEntry.model, expressIdNum, foundModelEntry.name);
+        updateTagAssignmentUi();
         refreshLoadedModelsList();
         
         // Auto-attach transform controls to this model if transform mode is enabled
@@ -322,19 +382,16 @@ async function initApp() {
   highlighter.events.select.onClear.add(() => {
     if (highlighter.isProgrammaticSelect) return;
 
-    excelTableBody.querySelectorAll('tr').forEach(tr => tr.classList.remove('active'));
-    
     activeModel = null;
+    selectedIfcElement = null;
+    updateTagAssignmentUi();
     autoRotateActive = false;
     if (orbitIndicator) {
       orbitIndicator.style.display = 'none';
     }
 
-    // Reset stats panel
-    modelStats.classList.add('empty');
-    modelStats.classList.remove('active');
-    modelStats.querySelector('.stats-placeholder').style.display = 'block';
-    modelStats.querySelector('.stats-data').style.display = 'none';
+    // Reset element properties panel
+    clearElementProperties();
     
     // Detach transform controls if active selection cleared
     if (transformControls) {
@@ -585,15 +642,11 @@ async function initApp() {
       if (loadedModels.length > 0) {
         const nextActive = loadedModels[loadedModels.length - 1];
         activeModel = nextActive.model;
-        updateStats(nextActive.name, nextActive.size, nextActive.model);
       } else {
         activeModel = null;
-        // Reset properties panel
-        modelStats.classList.add('empty');
-        modelStats.classList.remove('active');
-        modelStats.querySelector('.stats-placeholder').style.display = 'block';
-        modelStats.querySelector('.stats-data').style.display = 'none';
       }
+      // Reset element properties panel
+      clearElementProperties();
     }
 
     // Clear highlights on unload to prevent stale highlight references
@@ -620,43 +673,375 @@ async function initApp() {
     }
   }
 
-  // Helper: Update model statistics
-  function updateStats(fileName, fileSize, model) {
-    const modelObject = model.object || model;
+  // ──────────────────────────────────────────────
+  //  IFC ELEMENT PROPERTIES INSPECTOR
+  // ──────────────────────────────────────────────
 
-    // Count meshes
-    let meshCount = 0;
-    modelObject.traverse(child => {
-      if (child.isMesh) meshCount++;
-    });
+  // Common IFC type codes → human-readable names
+  const IFC_TYPE_MAP = {
+    3588315303: 'IfcWall', 103090709: 'IfcWallStandardCase',
+    1281925730: 'IfcSlab', 4278956645: 'IfcWindow', 395920057: 'IfcDoor',
+    4243806635: 'IfcColumn', 3027567501: 'IfcBeam', 2391406531: 'IfcStair',
+    331165859: 'IfcStairFlight', 900683007: 'IfcFooting', 1687234759: 'IfcPile',
+    2262370178: 'IfcRailing', 3171933400: 'IfcPlate', 1783015770: 'IfcMember',
+    263784265: 'IfcFurnishingElement', 1529196076: 'IfcBuildingElementProxy',
+    3573737166: 'IfcRoof', 3758799889: 'IfcCovering', 1051757585: 'IfcCurtainWall',
+    1335981549: 'IfcDiscreteAccessory', 4105962743: 'IfcMechanicalFastener',
+    3415622556: 'IfcFastener', 843113511: 'IfcColumn',
+    4031249490: 'IfcBuilding', 3124254112: 'IfcBuildingStorey',
+    3856911033: 'IfcSpace', 1674181508: 'IfcProject', 2706606064: 'IfcSite',
+    3508470533: 'IfcFlowTerminal', 3132237377: 'IfcFlowMovingDevice',
+    987401354: 'IfcFlowSegment', 707683696: 'IfcFlowFitting',
+    2058353004: 'IfcFlowController', 3304561284: 'IfcWindow',
+    3512223829: 'IfcWallStandardCase', 1973544240: 'IfcCovering',
+    2979338954: 'IfcBuildingElementPart', 1095909175: 'IfcBuildingElementProxy',
+    2938176219: 'IfcBurner', 32344328: 'IfcBoiler',
+    3649129432: 'IfcDistributionElement', 1945004755: 'IfcDistributionPort',
+    3040386961: 'IfcDistributionFlowElement', 3313531582: 'IfcSensorType',
+    2188021234: 'IfcFlowMeter', 4136498852: 'IfcCooledBeam',
+    4017108033: 'IfcPipeFitting', 3640358203: 'IfcPipeSegment',
+    4207607924: 'IfcValve', 2056796094: 'IfcAirTerminal',
+    177149247: 'IfcAirTerminalBox', 1060000209: 'IfcLamp',
+    1890029508: 'IfcElectricDistributionBoard', 857184966: 'IfcElectricAppliance',
+    484807127: 'IfcUnitaryEquipment', 4292641817: 'IfcUnitaryControlElement',
+    3415753249: 'IfcSwitchingDevice', 1620046519: 'IfcOutlet',
+    3518393246: 'IfcDuctSegment', 342316401: 'IfcDuctFitting',
+    3760055223: 'IfcDuctSilencer', 2272882330: 'IfcDamper',
+    3902619387: 'IfcChiller', 2474470126: 'IfcMotorConnection',
+    2295281155: 'IfcProtectiveDeviceTrippingUnit', 738039164: 'IfcProtectiveDevice',
+    1904799276: 'IfcElectricMotor', 3694346114: 'IfcCableSegment',
+    1051575348: 'IfcCableCarrierSegment', 635142910: 'IfcCableCarrierFitting',
+    1285652485: 'IfcCableFitting', 3296154744: 'IfcChimney',
+    2143335405: 'IfcPump', 3132237377: 'IfcFan',
+  };
 
-    // Count elements/Express IDs
-    let elementCount = 0;
-    if (model.items && Array.isArray(model.items)) {
-      const expressIDs = new Set();
-      for (const item of model.items) {
-        if (item.ids) {
-          for (const id of item.ids) {
-            expressIDs.add(id);
-          }
-        }
-      }
-      elementCount = expressIDs.size > 0 ? expressIDs.size : model.items.length;
-    } else if (model.expressIDToFragmentMap) {
-      elementCount = Object.keys(model.expressIDToFragmentMap).length;
-    } else {
-      elementCount = meshCount;
+  // IFC property set / quantity type codes
+  const IFCPROPERTYSET = 1451395588;
+  const IFCELEMENTQUANTITY = 1883228015;
+  const IFCRELDEFINESBYPROPERTIES = 4186316022;
+
+  // Format a property value for display
+  function formatPropValue(value) {
+    if (value === null || value === undefined) return '-';
+    if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+    if (typeof value === 'number') {
+      if (Number.isInteger(value)) return String(value);
+      return value.toFixed(3);
+    }
+    if (value === '.T.') return 'Yes';
+    if (value === '.F.') return 'No';
+    if (value === '.U.') return 'Unknown';
+    return String(value);
+  }
+
+  // Render a single property set group (collapsible <details>)
+  function renderPsetGroup(name, entries, isQuantity = false) {
+    const entryKeys = Object.keys(entries);
+    if (entryKeys.length === 0) return;
+
+    const details = document.createElement('details');
+    details.className = `pset-group${isQuantity ? ' quantity-group' : ''}`;
+
+    const summary = document.createElement('summary');
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = name;
+    const countSpan = document.createElement('span');
+    countSpan.className = 'pset-count';
+    countSpan.textContent = `${entryKeys.length}`;
+    summary.appendChild(nameSpan);
+    summary.appendChild(countSpan);
+
+    const propsDiv = document.createElement('div');
+    propsDiv.className = 'pset-properties';
+
+    for (const [key, value] of Object.entries(entries)) {
+      const row = document.createElement('div');
+      row.className = 'prop-row';
+      const label = document.createElement('span');
+      label.className = 'prop-label';
+      label.textContent = key;
+      const val = document.createElement('span');
+      val.className = 'prop-value';
+      const displayVal = formatPropValue(value);
+      val.textContent = displayVal;
+      val.title = displayVal;
+      row.appendChild(label);
+      row.appendChild(val);
+      propsDiv.appendChild(row);
     }
 
-    statName.innerText = fileName;
-    statSize.innerText = fileSize;
-    statMeshes.innerText = meshCount;
-    statElements.innerText = elementCount;
+    details.appendChild(summary);
+    details.appendChild(propsDiv);
+    propPsetsContainer.appendChild(details);
+  }
 
-    modelStats.classList.remove('empty');
-    modelStats.classList.add('active');
-    modelStats.querySelector('.stats-placeholder').style.display = 'none';
-    modelStats.querySelector('.stats-data').style.display = 'flex';
+  // Extract property set entries from an IfcPropertySet or IfcElementQuantity
+  async function extractPsetEntries(model, psetProps) {
+    const entries = {};
+
+    // IfcPropertySet → HasProperties
+    if (psetProps.HasProperties) {
+      for (const propRef of psetProps.HasProperties) {
+        const propId = propRef.value ?? propRef;
+        try {
+          const sp = await model.getProperties(propId);
+          if (sp && sp.Name) {
+            const name = sp.Name.value ?? sp.Name;
+            let value = '-';
+            if (sp.NominalValue !== undefined && sp.NominalValue !== null) {
+              value = sp.NominalValue.value ?? sp.NominalValue;
+            }
+            entries[name] = value;
+          }
+        } catch (_) { /* skip */ }
+      }
+    }
+
+    // IfcElementQuantity → Quantities
+    if (psetProps.Quantities) {
+      for (const qRef of psetProps.Quantities) {
+        const qId = qRef.value ?? qRef;
+        try {
+          const qp = await model.getProperties(qId);
+          if (qp && qp.Name) {
+            const name = qp.Name.value ?? qp.Name;
+            let value = qp.LengthValue?.value ??
+                        qp.AreaValue?.value ??
+                        qp.VolumeValue?.value ??
+                        qp.CountValue?.value ??
+                        qp.WeightValue?.value ??
+                        qp.TimeValue?.value ?? '-';
+            if (typeof value === 'number') value = Math.round(value * 1000) / 1000;
+            entries[name] = value;
+          }
+        } catch (_) { /* skip */ }
+      }
+    }
+
+    return entries;
+  }
+
+  // Strategy 1: Use IfcRelationsIndexer (fast, indexed lookup)
+  async function displayPsetsViaIndexer(model, expressId) {
+    if (!indexer) return false;
+    try {
+      const rels = indexer.getEntityRelations(model, expressId, "IsDefinedBy");
+      if (!rels || rels.length === 0) return false;
+
+      for (const relExpressId of rels) {
+        const psetProps = await model.getProperties(relExpressId);
+        if (!psetProps) continue;
+        const psetName = psetProps.Name?.value || `PropertySet (${relExpressId})`;
+        const isQuantity = psetProps.type === IFCELEMENTQUANTITY;
+        const entries = await extractPsetEntries(model, psetProps);
+        renderPsetGroup(psetName, entries, isQuantity);
+      }
+      return true;
+    } catch (e) {
+      console.warn('[Props] Indexer lookup failed:', e);
+      return false;
+    }
+  }
+
+  // Strategy 2: Manual traversal of IfcRelDefinesByProperties (fallback)
+  async function displayPsetsManual(model, expressId) {
+    try {
+      const allRels = await model.getAllPropertiesOfType(IFCRELDEFINESBYPROPERTIES);
+      if (!allRels) return;
+
+      for (const relId in allRels) {
+        const rel = allRels[relId];
+        if (!rel || !rel.RelatedObjects) continue;
+
+        const relatedIds = Array.isArray(rel.RelatedObjects) ? rel.RelatedObjects : [rel.RelatedObjects];
+        const isRelated = relatedIds.some(obj => Number(obj.value ?? obj) === Number(expressId));
+        if (!isRelated) continue;
+
+        const psetRef = rel.RelatingPropertyDefinition;
+        if (!psetRef) continue;
+
+        const psetId = psetRef.value ?? psetRef;
+        const psetProps = await model.getProperties(psetId);
+        if (!psetProps) continue;
+
+        const psetName = psetProps.Name?.value || `PropertySet (${psetId})`;
+        const isQuantity = psetProps.type === IFCELEMENTQUANTITY;
+        const entries = await extractPsetEntries(model, psetProps);
+        renderPsetGroup(psetName, entries, isQuantity);
+      }
+    } catch (e) {
+      console.warn('[Props] Manual pset retrieval failed:', e);
+    }
+  }
+
+  function unwrapItemValue(attribute) {
+    if (attribute && typeof attribute === 'object' && !Array.isArray(attribute) && 'value' in attribute) {
+      return attribute.value;
+    }
+    return attribute;
+  }
+
+  function getModernIfcTypeName(itemData) {
+    const category = unwrapItemValue(itemData?._category ?? itemData?.Category ?? itemData?.type);
+    if (typeof category === 'number') return IFC_TYPE_MAP[category] || `IFC Type ${category}`;
+    if (typeof category === 'string') {
+      const normalized = category.replace(/^IFC/i, 'Ifc').toLowerCase();
+      const knownType = Object.values(IFC_TYPE_MAP).find((name) => name.toLowerCase() === normalized);
+      if (knownType) return knownType;
+      return category.replace(/^IFC/i, 'Ifc');
+    }
+    return 'IfcElement';
+  }
+
+  function collectModernPropertySets(value, groups, visited = new Set()) {
+    if (!value || typeof value !== 'object' || visited.has(value)) return;
+    visited.add(value);
+
+    if (Array.isArray(value)) {
+      value.forEach((item) => collectModernPropertySets(item, groups, visited));
+      return;
+    }
+
+    const properties = Array.isArray(value.HasProperties) ? value.HasProperties : null;
+    const quantities = Array.isArray(value.Quantities) ? value.Quantities : null;
+    const members = properties || quantities;
+
+    if (members) {
+      const groupName = formatPropValue(unwrapItemValue(value.Name) || (quantities ? 'Quantities' : 'Property Set'));
+      const groupKey = `${quantities ? 'quantity' : 'property'}:${groupName}`;
+      if (!groups.has(groupKey)) {
+        groups.set(groupKey, { name: groupName, entries: {}, isQuantity: Boolean(quantities) });
+      }
+      const group = groups.get(groupKey);
+
+      for (const member of members) {
+        if (!member || typeof member !== 'object') continue;
+        const propertyName = unwrapItemValue(member.Name);
+        if (!propertyName) continue;
+
+        const propertyValue = unwrapItemValue(
+          member.NominalValue ??
+          member.LengthValue ??
+          member.AreaValue ??
+          member.VolumeValue ??
+          member.CountValue ??
+          member.WeightValue ??
+          member.TimeValue ??
+          member.Description
+        );
+        group.entries[propertyName] = propertyValue ?? '-';
+      }
+    }
+
+    for (const nested of Object.values(value)) {
+      collectModernPropertySets(nested, groups, visited);
+    }
+  }
+
+  async function displayElementPropertiesModern(model, localId, modelName) {
+    const results = await model.getItemsData([localId], {
+      attributesDefault: true,
+      relations: {
+        IsDefinedBy: { attributes: true, relations: true },
+        DefinesOccurrence: { attributes: true, relations: true },
+      },
+      relationsDefault: { attributes: false, relations: false },
+    });
+    const itemData = results?.[0];
+    if (!itemData) throw new Error(`No IFC data found for local ID ${localId}.`);
+
+    const name = unwrapItemValue(itemData.Name);
+    const globalId = unwrapItemValue(itemData.GlobalId ?? itemData._guid);
+    const tag = unwrapItemValue(itemData.Tag);
+
+    propTypeBadge.textContent = getModernIfcTypeName(itemData);
+    propName.textContent = formatPropValue(name);
+    propName.title = formatPropValue(name);
+    propGlobalId.textContent = formatPropValue(globalId);
+    propGlobalId.title = formatPropValue(globalId);
+    propTag.textContent = formatPropValue(tag);
+    propTag.title = formatPropValue(tag);
+    propExpressId.textContent = localId;
+    propModel.textContent = modelName || '-';
+    propModel.title = modelName || '';
+
+    propPsetsContainer.innerHTML = '';
+
+    const attributes = {};
+    const relationNames = new Set(['IsDefinedBy', 'DefinesOccurrence']);
+    for (const [key, rawValue] of Object.entries(itemData)) {
+      if (key.startsWith('_') || relationNames.has(key) || Array.isArray(rawValue)) continue;
+      const value = unwrapItemValue(rawValue);
+      if (value === undefined || value === null || typeof value === 'object') continue;
+      if (['Name', 'GlobalId', 'Tag'].includes(key)) continue;
+      attributes[key] = value;
+    }
+    renderPsetGroup('IFC Attributes', attributes);
+
+    const groups = new Map();
+    collectModernPropertySets(itemData, groups);
+    groups.forEach(({ name: groupName, entries, isQuantity }) => {
+      renderPsetGroup(groupName, entries, isQuantity);
+    });
+  }
+
+  // Main display function: show full element properties panel
+  async function displayElementProperties(model, expressId, modelName) {
+    // Activate panel, show loading
+    elementPropsPanel.classList.remove('empty');
+    elementPropsPanel.classList.add('active');
+    elementPropsPanel.querySelector('.element-props-placeholder').style.display = 'none';
+    elementPropsPanel.querySelector('.element-props-content').style.display = 'flex';
+    propPsetsContainer.innerHTML = '<div class="props-loading"><div class="props-loading-spinner"></div>Loading properties…</div>';
+
+    try {
+      if (typeof model.getItemsData === 'function') {
+        await displayElementPropertiesModern(model, expressId, modelName);
+        if (propPsetsContainer.children.length === 0) {
+          propPsetsContainer.innerHTML = '<div style="color: var(--text-muted); font-size: 0.8rem; padding: 8px 0; text-align: center;">No additional properties found for this element.</div>';
+        }
+        return;
+      }
+
+      const props = await model.getProperties(expressId);
+
+      // Identity fields
+      const typeName = (props && IFC_TYPE_MAP[props.type]) || (props ? `IFC Type ${props.type}` : 'Unknown');
+      propTypeBadge.textContent = typeName;
+      propName.textContent = props?.Name?.value ?? '-';
+      propName.title = props?.Name?.value ?? '';
+      propGlobalId.textContent = props?.GlobalId?.value ?? '-';
+      propGlobalId.title = props?.GlobalId?.value ?? '';
+      propTag.textContent = props?.Tag?.value ?? '-';
+      propTag.title = props?.Tag?.value ?? '';
+      propExpressId.textContent = expressId;
+      propModel.textContent = modelName || '-';
+      propModel.title = modelName || '';
+
+      // Property sets — try indexed first, fall back to manual
+      propPsetsContainer.innerHTML = '';
+      const foundViaIndexer = await displayPsetsViaIndexer(model, expressId);
+      if (!foundViaIndexer) {
+        await displayPsetsManual(model, expressId);
+      }
+
+      // If no psets found at all, show a note
+      if (propPsetsContainer.children.length === 0) {
+        propPsetsContainer.innerHTML = '<div style="color: var(--text-muted); font-size: 0.8rem; padding: 8px 0; text-align: center;">No property sets found for this element.</div>';
+      }
+    } catch (err) {
+      console.warn('[Element Properties] Failed:', err);
+      propPsetsContainer.innerHTML = '<div style="color: var(--text-muted); font-size: 0.8rem; padding: 8px 0; text-align: center;">Could not load properties.</div>';
+    }
+  }
+
+  // Clear the element properties panel back to placeholder state
+  function clearElementProperties() {
+    elementPropsPanel.classList.add('empty');
+    elementPropsPanel.classList.remove('active');
+    elementPropsPanel.querySelector('.element-props-placeholder').style.display = 'flex';
+    elementPropsPanel.querySelector('.element-props-content').style.display = 'none';
+    propPsetsContainer.innerHTML = '';
   }
 
   // Helper: Refresh the loaded models UI sidebar list
@@ -770,11 +1155,8 @@ async function initApp() {
             console.warn(err);
           }
           
-          // Reset stats panel
-          modelStats.classList.add('empty');
-          modelStats.classList.remove('active');
-          modelStats.querySelector('.stats-placeholder').style.display = 'block';
-          modelStats.querySelector('.stats-data').style.display = 'none';
+          // Reset element properties panel
+          clearElementProperties();
           
           // Detach TransformControls
           updateTransformAttachment();
@@ -785,7 +1167,7 @@ async function initApp() {
 
         // Select the clicked model
         activeModel = modelEntry.model;
-        updateStats(modelEntry.name, modelEntry.size, modelEntry.model);
+        clearElementProperties();
         
         // 1. Highlight all elements of this model
         if (modelEntry.model.expressIDToFragmentMap) {
@@ -846,6 +1228,10 @@ async function initApp() {
       // Load model using IfcLoader
       try {
         model = await ifcLoader.load(buffer, false, name, {
+          instanceCallback: (importer) => {
+            importer.addAllAttributes();
+            importer.addAllRelations();
+          },
           processData: {
             progressCallback: (progress) => {
               const pct = Math.round(progress * 100);
@@ -868,6 +1254,16 @@ async function initApp() {
       // Add to scene
       world.scene.three.add(modelObject);
 
+      // Index model relations for property queries
+      if (indexer) {
+        try {
+          await indexer.process(model);
+          console.log(`[IfcRelationsIndexer] Indexed relations for '${name}'.`);
+        } catch (e) {
+          console.warn('[IfcRelationsIndexer] Failed to process model:', e);
+        }
+      }
+
       // Create model entry
       const modelEntry = {
         uuid: model.uuid || Math.random().toString(36).substring(7),
@@ -888,8 +1284,8 @@ async function initApp() {
       // Refresh loaded models UI
       refreshLoadedModelsList();
 
-      // Update UI stats
-      updateStats(name, sizeFormatted, model);
+      // Reset element properties (no element selected yet)
+      clearElementProperties();
 
       hideLoader();
       console.log(`Model '${name}' loaded successfully.`);
@@ -1075,6 +1471,9 @@ async function initApp() {
       th.innerText = col;
       excelTableHeader.appendChild(th);
     });
+    const assignmentHeader = document.createElement('th');
+    assignmentHeader.innerText = 'Assignment';
+    excelTableHeader.appendChild(assignmentHeader);
     
     // Create table body rows
     const searchTerm = excelSearch.value.toLowerCase().trim();
@@ -1089,10 +1488,10 @@ async function initApp() {
       
       const tr = document.createElement('tr');
       tr.dataset.index = index;
-      
-      if (selectedExcelIdColumn && row[selectedExcelIdColumn]) {
-        tr.dataset.expressId = row[selectedExcelIdColumn];
-      }
+      if (selectedExcelRowIndex === index) tr.classList.add('active');
+
+      const rowAssignment = Array.from(tagAssignments.values()).find((assignment) => assignment.excelRowIndex === index);
+      if (rowAssignment) tr.classList.add('assigned');
       
       excelColumns.forEach(col => {
         const td = document.createElement('td');
@@ -1100,49 +1499,20 @@ async function initApp() {
         td.title = td.innerText;
         tr.appendChild(td);
       });
+
+      const statusCell = document.createElement('td');
+      statusCell.className = 'assignment-cell';
+      statusCell.textContent = rowAssignment ? `Assigned #${rowAssignment.localId}` : 'Unassigned';
+      statusCell.title = rowAssignment
+        ? `${rowAssignment.modelName} / ${rowAssignment.globalId || `local ID ${rowAssignment.localId}`}`
+        : 'This Excel tag has not been assigned.';
+      tr.appendChild(statusCell);
       
-      tr.addEventListener('click', async () => {
+      tr.addEventListener('click', () => {
         excelTableBody.querySelectorAll('tr').forEach(r => r.classList.remove('active'));
         tr.classList.add('active');
-        
-        if (selectedExcelIdColumn && row[selectedExcelIdColumn]) {
-          const expressId = Number(row[selectedExcelIdColumn]);
-          if (!isNaN(expressId)) {
-            // Find which loaded model has this express ID
-            let foundModelEntry = null;
-            let selectedFragmentMap = null;
-            
-            for (const m of loadedModels) {
-              if (m.model.expressIDToFragmentMap && (expressId in m.model.expressIDToFragmentMap)) {
-                foundModelEntry = m;
-                selectedFragmentMap = m.model.getFragmentMap([expressId]);
-                break;
-              }
-            }
-            
-            if (foundModelEntry && selectedFragmentMap) {
-              // Ensure the model is visible to highlight and zoom to it
-              if (!foundModelEntry.visible) {
-                foundModelEntry.visible = true;
-                const modelObject = foundModelEntry.model.object || foundModelEntry.model;
-                if (modelObject) modelObject.visible = true;
-                refreshLoadedModelsList();
-              }
-              
-              highlighter.isProgrammaticSelect = true;
-              try {
-                await highlighter.highlightByID("select", selectedFragmentMap, true);
-              } catch (err) {
-                console.warn("[Excel Linkage] Selection highlight failed:", err);
-              } finally {
-                highlighter.isProgrammaticSelect = false;
-              }
-              zoomToElementInModel(foundModelEntry.model, expressId);
-            } else {
-              console.warn(`[Excel Linkage] Express ID '${expressId}' not found in any loaded model.`);
-            }
-          }
-        }
+        selectedExcelRowIndex = index;
+        updateTagAssignmentUi();
       });
       
       excelTableBody.appendChild(tr);
@@ -1172,8 +1542,10 @@ async function initApp() {
         if (jsonData.length > 0) {
           excelColumns = Object.keys(jsonData[0]);
           excelData = jsonData;
+          selectedExcelRowIndex = null;
+          tagAssignments.clear();
           
-          excelIdColumn.innerHTML = '<option value="">(Select column)</option>';
+          excelIdColumn.innerHTML = '<option value="">(Select tag column)</option>';
           let preselectedCol = "";
           excelColumns.forEach(col => {
             const option = document.createElement('option');
@@ -1182,7 +1554,7 @@ async function initApp() {
             excelIdColumn.appendChild(option);
             
             const lowerCol = col.toLowerCase();
-            if (lowerCol === 'express id' || lowerCol === 'expressid' || lowerCol === 'id' || lowerCol === 'tag' || lowerCol === 'element id' || lowerCol === 'elementid') {
+            if (lowerCol === 'tag' || lowerCol === 'element tag' || lowerCol === 'elementtag' || lowerCol === 'tray tag' || lowerCol === 'traytag') {
               preselectedCol = col;
             }
           });
@@ -1195,6 +1567,7 @@ async function initApp() {
           }
 
           renderExcelTable();
+          updateTagAssignmentUi('Excel tag list loaded. Select a row and an IFC element.');
           
           // Show the excel panel
           excelPanel.classList.remove('collapsed');
@@ -1220,10 +1593,81 @@ async function initApp() {
   excelIdColumn.addEventListener('change', () => {
     selectedExcelIdColumn = excelIdColumn.value;
     renderExcelTable();
+    updateTagAssignmentUi();
   });
 
   excelSearch.addEventListener('input', () => {
     renderExcelTable();
+  });
+
+  btnAssignTag.addEventListener('click', () => {
+    const tag = getSelectedExcelTag();
+    if (!tag || !selectedIfcElement) return;
+
+    let conflictingKey = null;
+    let conflictingAssignment = null;
+    for (const [key, assignment] of tagAssignments) {
+      if (assignment.tag.toLowerCase() === tag.toLowerCase() &&
+          key !== getAssignmentKey(selectedIfcElement.modelId, selectedIfcElement.localId)) {
+        conflictingKey = key;
+        conflictingAssignment = assignment;
+        break;
+      }
+    }
+    if (conflictingAssignment) {
+      updateTagAssignmentUi(`Tag “${tag}” is already assigned to element #${conflictingAssignment.localId}.`);
+      return;
+    }
+
+    for (const [key, assignment] of tagAssignments) {
+      if (assignment.excelRowIndex === selectedExcelRowIndex) tagAssignments.delete(key);
+    }
+
+    const key = getAssignmentKey(selectedIfcElement.modelId, selectedIfcElement.localId);
+    tagAssignments.set(key, {
+      ...selectedIfcElement,
+      tag,
+      excelRowIndex: selectedExcelRowIndex,
+    });
+
+    const assignedTag = tag;
+    const nextIndex = excelData.findIndex((_, index) =>
+      index > selectedExcelRowIndex &&
+      !Array.from(tagAssignments.values()).some((assignment) => assignment.excelRowIndex === index)
+    );
+    if (nextIndex !== -1) selectedExcelRowIndex = nextIndex;
+
+    renderExcelTable();
+    updateTagAssignmentUi(`Assigned “${assignedTag}” to element #${selectedIfcElement.localId}.`);
+  });
+
+  btnUnassignTag.addEventListener('click', () => {
+    const assignment = getAssignmentForElement();
+    if (!assignment) return;
+    tagAssignments.delete(getAssignmentKey(assignment.modelId, assignment.localId));
+    selectedExcelRowIndex = assignment.excelRowIndex;
+    renderExcelTable();
+    updateTagAssignmentUi(`Removed “${assignment.tag}” from element #${assignment.localId}.`);
+  });
+
+  btnExportTags.addEventListener('click', () => {
+    if (tagAssignments.size === 0) return;
+    const rows = Array.from(tagAssignments.values())
+      .sort((a, b) => a.excelRowIndex - b.excelRowIndex)
+      .map((assignment) => ({
+        Model: assignment.modelName,
+        IFC_GlobalId: assignment.globalId,
+        Local_ID: assignment.localId,
+        Tag: assignment.tag,
+        Element_Name: assignment.name,
+        IFC_Type: assignment.type,
+        Excel_Row: assignment.excelRowIndex + 2,
+      }));
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Tag Mapping');
+    XLSX.writeFile(workbook, 'IFC_Tag_Mapping.xlsx');
+    updateTagAssignmentUi(`Exported ${rows.length} tag assignment${rows.length === 1 ? '' : 's'}.`);
   });
 
   // Toggle Excel Drawer Collapse
