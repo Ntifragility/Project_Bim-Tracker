@@ -22,14 +22,14 @@ test('creates valid-length IFC compressed GUIDs', () => {
   assert.match(guid, /^[0-3][0-9A-Za-z_$]{21}$/);
 });
 
-test('appends Pset_ProjectTag and relates it to the assigned IFC entity', () => {
+test('appends CCP_TAG and relates it to the assigned IFC entity', () => {
   const result = addProjectTagsToIfc(fixture, [{ localId: 10, tag: "CT-'01" }]);
   assert.equal(result.applied.length, 1);
   assert.equal(result.skipped.length, 0);
   assert.match(result.text, /IFCPROPERTYSINGLEVALUE\('Tag',\$,IFCLABEL\('CT-''01'\),\$\)/);
-  assert.match(result.text, /IFCPROPERTYSET\('[0-3][0-9A-Za-z_$]{21}',\$,'Pset_ProjectTag'/);
+  assert.match(result.text, /IFCPROPERTYSET\('[0-3][0-9A-Za-z_$]{21}',\$,'CCP_TAG'/);
   assert.match(result.text, /IFCRELDEFINESBYPROPERTIES\('[0-3][0-9A-Za-z_$]{21}',\$,\$,\$,\(#10\),#/);
-  assert.ok(result.text.indexOf('Pset_ProjectTag') < result.text.lastIndexOf('ENDSEC;'));
+  assert.ok(result.text.indexOf('CCP_TAG') < result.text.lastIndexOf('ENDSEC;'));
 });
 
 test('skips assignments whose element is absent from the source IFC', () => {
@@ -42,4 +42,3 @@ test('skips assignments whose element is absent from the source IFC', () => {
 test('creates a non-destructive tagged IFC filename', () => {
   assert.equal(taggedIfcFileName('CableTray.ifc'), 'CableTray_tagged.ifc');
 });
-

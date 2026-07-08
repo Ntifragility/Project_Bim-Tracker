@@ -44,7 +44,7 @@ After assigning tags, select **Export Tagged IFC**. The viewer downloads a new
 is stored on its assigned element as:
 
 ```text
-Pset_ProjectTag
+CCP_TAG
 └── Tag = CT-001
 ```
 

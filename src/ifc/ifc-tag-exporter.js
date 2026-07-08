@@ -33,7 +33,7 @@ function getEntityIds(source) {
 }
 
 export function addProjectTagsToIfc(sourceBytes, assignments, options = {}) {
-  const propertySetName = options.propertySetName || 'Pset_ProjectTag';
+  const propertySetName = options.propertySetName || 'CCP_TAG';
   const propertyName = options.propertyName || 'Tag';
   const decoder = new TextDecoder('utf-8');
   const encoder = new TextEncoder();
