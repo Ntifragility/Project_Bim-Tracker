@@ -22,6 +22,14 @@ function escapeStepString(value) {
   return String(value).replaceAll("'", "''");
 }
 
+function unescapeStepString(value) {
+  return String(value).replaceAll("''", "'");
+}
+
+function decodeIfc(sourceBytes) {
+  return typeof sourceBytes === 'string' ? sourceBytes : new TextDecoder('utf-8').decode(sourceBytes);
+}
+
 function findDataTerminator(source) {
   const match = /ENDSEC\s*;\s*END-ISO-10303-21\s*;\s*$/i.exec(source);
   if (!match) throw new Error('The IFC DATA section terminator was not found.');
@@ -32,14 +40,53 @@ function getEntityIds(source) {
   return new Set(Array.from(source.matchAll(/^\s*#(\d+)\s*=/gm), (match) => Number(match[1])));
 }
 
+export function extractProjectTagsFromIfc(sourceBytes, options = {}) {
+  const propertySetName = options.propertySetName || 'CCP_TAG';
+  const propertyName = options.propertyName || 'Tag';
+  const source = decodeIfc(sourceBytes);
+  const stringPattern = "((?:''|[^'])*)";
+  const properties = new Map();
+  const propertySets = new Map();
+  const tags = new Map();
+
+  const propertyRegex = new RegExp(
+    `^\\s*#(\\d+)\\s*=\\s*IFCPROPERTYSINGLEVALUE\\(\\s*'${stringPattern}'\\s*,[^,]*,\\s*[A-Z0-9_]+\\(\\s*'${stringPattern}'\\s*\\)`,
+    'gmi',
+  );
+  for (const match of source.matchAll(propertyRegex)) {
+    if (unescapeStepString(match[2]).toLowerCase() !== propertyName.toLowerCase()) continue;
+    properties.set(Number(match[1]), unescapeStepString(match[3]));
+  }
+
+  const propertySetRegex = new RegExp(
+    `^\\s*#(\\d+)\\s*=\\s*IFCPROPERTYSET\\([^;]*?,\\s*'${stringPattern}'\\s*,[^;]*?\\(([^)]*)\\)\\s*\\)\\s*;`,
+    'gmi',
+  );
+  for (const match of source.matchAll(propertySetRegex)) {
+    if (unescapeStepString(match[2]).toLowerCase() !== propertySetName.toLowerCase()) continue;
+    const propertyId = Array.from(match[3].matchAll(/#(\d+)/g), (reference) => Number(reference[1]))
+      .find((id) => properties.has(id));
+    if (propertyId) propertySets.set(Number(match[1]), propertyId);
+  }
+
+  const relationRegex = /^\s*#\d+\s*=\s*IFCRELDEFINESBYPROPERTIES\([^;]*?\(([^)]*)\)\s*,\s*#(\d+)\s*\)\s*;/gmi;
+  for (const match of source.matchAll(relationRegex)) {
+    const propertyId = propertySets.get(Number(match[2]));
+    if (!propertyId) continue;
+    for (const reference of match[1].matchAll(/#(\d+)/g)) {
+      tags.set(Number(reference[1]), { tag: properties.get(propertyId), propertyId });
+    }
+  }
+  return tags;
+}
+
 export function addProjectTagsToIfc(sourceBytes, assignments, options = {}) {
   const propertySetName = options.propertySetName || 'CCP_TAG';
   const propertyName = options.propertyName || 'Tag';
-  const decoder = new TextDecoder('utf-8');
   const encoder = new TextEncoder();
-  const source = typeof sourceBytes === 'string' ? sourceBytes : decoder.decode(sourceBytes);
-  const insertionIndex = findDataTerminator(source);
+  let source = decodeIfc(sourceBytes);
   const entityIds = getEntityIds(source);
+  const existingTags = extractProjectTagsFromIfc(source, { propertySetName, propertyName });
   let maximumEntityId = 0;
   for (const entityId of entityIds) maximumEntityId = Math.max(maximumEntityId, entityId);
   let nextId = maximumEntityId + 1;
@@ -59,6 +106,17 @@ export function addProjectTagsToIfc(sourceBytes, assignments, options = {}) {
       continue;
     }
 
+    const existingTag = existingTags.get(localId);
+    if (existingTag) {
+      const propertyLine = new RegExp(
+        `(^\\s*#${existingTag.propertyId}\\s*=\\s*IFCPROPERTYSINGLEVALUE\\(\\s*'(?:''|[^'])*'\\s*,\\s*[^,]*,\\s*)[A-Z0-9_]+\\(\\s*'(?:''|[^'])*'\\s*\\)(\\s*,[^;]*\\)\\s*;)`,
+        'gmi',
+      );
+      source = source.replace(propertyLine, `$1IFCLABEL('${escapeStepString(tag)}')$2`);
+      applied.push({ localId, tag, propertyId: existingTag.propertyId, action: 'updated' });
+      continue;
+    }
+
     const propertyId = nextId++;
     const propertySetId = nextId++;
     const relationshipId = nextId++;
@@ -67,13 +125,14 @@ export function addProjectTagsToIfc(sourceBytes, assignments, options = {}) {
       `#${propertySetId}=IFCPROPERTYSET('${createIfcGuid()}',$,'${escapeStepString(propertySetName)}',$,(#${propertyId}));`,
       `#${relationshipId}=IFCRELDEFINESBYPROPERTIES('${createIfcGuid()}',$,$,$,(#${localId}),#${propertySetId});`,
     );
-    applied.push({ localId, tag, propertyId, propertySetId, relationshipId });
+    applied.push({ localId, tag, propertyId, propertySetId, relationshipId, action: 'created' });
   }
 
   if (!applied.length) {
     throw new Error('No tag assignments matched elements in the source IFC.');
   }
 
+  const insertionIndex = findDataTerminator(source);
   const prefix = source.slice(0, insertionIndex).replace(/\s*$/, '');
   const suffix = source.slice(insertionIndex);
   const output = `${prefix}\r\n/* BIM Tracker project tags */\r\n${entityLines.join('\r\n')}\r\n${suffix}`;

@@ -48,6 +48,11 @@ CCP_TAG
 └── Tag = CT-001
 ```
 
+When a tagged IFC is loaded again, existing `CCP_TAG` values are preserved and
+shown for their elements. Assigning a different tag asks for confirmation and
+updates the existing property; elements without `CCP_TAG` receive a new property
+set on export.
+
 ## Verification
 
 ```powershell

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   addProjectTagsToIfc,
   createIfcGuid,
+  extractProjectTagsFromIfc,
   taggedIfcFileName,
 } from '../../../src/ifc/ifc-tag-exporter.js';
 
@@ -30,6 +31,32 @@ test('appends CCP_TAG and relates it to the assigned IFC entity', () => {
   assert.match(result.text, /IFCPROPERTYSET\('[0-3][0-9A-Za-z_$]{21}',\$,'CCP_TAG'/);
   assert.match(result.text, /IFCRELDEFINESBYPROPERTIES\('[0-3][0-9A-Za-z_$]{21}',\$,\$,\$,\(#10\),#/);
   assert.ok(result.text.indexOf('CCP_TAG') < result.text.lastIndexOf('ENDSEC;'));
+});
+
+test('detects and updates an existing CCP_TAG without creating a duplicate property set', () => {
+  const firstExport = addProjectTagsToIfc(fixture, [{ localId: 10, tag: 'CT-001' }]);
+  const existing = extractProjectTagsFromIfc(firstExport.bytes);
+  assert.equal(existing.get(10)?.tag, 'CT-001');
+
+  const secondExport = addProjectTagsToIfc(firstExport.bytes, [{ localId: 10, tag: 'CT-002' }]);
+  assert.equal(secondExport.applied[0].action, 'updated');
+  assert.equal(extractProjectTagsFromIfc(secondExport.bytes).get(10)?.tag, 'CT-002');
+  assert.equal((secondExport.text.match(/'CCP_TAG'/g) || []).length, 1);
+});
+
+test('supports a mix of tagged and untagged elements', () => {
+  const twoElementFixture = fixture.replace(
+    'ENDSEC;\nEND-ISO',
+    "#11=IFCBUILDINGELEMENTPART('2aaaaaaaaaaaaaaaaaaaaa',$,'Tray 2',$,$,$,$,$,$);\nENDSEC;\nEND-ISO",
+  );
+  const firstExport = addProjectTagsToIfc(twoElementFixture, [{ localId: 10, tag: 'CT-001' }]);
+  const secondExport = addProjectTagsToIfc(firstExport.bytes, [
+    { localId: 10, tag: 'CT-010' },
+    { localId: 11, tag: 'CT-011' },
+  ]);
+  const tags = extractProjectTagsFromIfc(secondExport.bytes);
+  assert.equal(tags.get(10)?.tag, 'CT-010');
+  assert.equal(tags.get(11)?.tag, 'CT-011');
 });
 
 test('skips assignments whose element is absent from the source IFC', () => {

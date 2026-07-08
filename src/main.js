@@ -5,7 +5,7 @@ import * as OBF from '@thatopen/components-front';
 import * as XLSX from 'xlsx';
 import { initExcelBridge, sendMeasurementToExcel } from './viewer-socket.js';
 import { initRoutingController } from './routing/routing-controller.js';
-import { addProjectTagsToIfc, taggedIfcFileName } from './ifc/ifc-tag-exporter.js';
+import { addProjectTagsToIfc, extractProjectTagsFromIfc, taggedIfcFileName } from './ifc/ifc-tag-exporter.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 
 // Global variables for active model and state
@@ -290,6 +290,14 @@ async function initApp() {
     return tagAssignments.get(getAssignmentKey(element.modelId, element.localId)) || null;
   }
 
+  function getExistingProjectTag(element = selectedIfcElement) {
+    if (!element) return '';
+    const modelEntry = loadedModels.find((entry) =>
+      entry.model?.modelId === element.modelId || entry.model?.uuid === element.modelId
+    );
+    return modelEntry?.existingProjectTags?.get(Number(element.localId))?.tag || '';
+  }
+
   function updateTagAssignmentUi(message = '', tone = '') {
     const selectedTag = getSelectedExcelTag();
     const assignment = getAssignmentForElement();
@@ -308,7 +316,7 @@ async function initApp() {
     btnExportTaggedIfc.disabled = tagAssignments.size === 0;
 
     if (selectedIfcElement) {
-      const displayedTag = assignment?.tag || selectedIfcElement.ifcTag || '-';
+      const displayedTag = assignment?.tag || getExistingProjectTag() || selectedIfcElement.ifcTag || '-';
       propTag.textContent = displayedTag;
       propTag.title = displayedTag;
     }
@@ -1277,6 +1285,7 @@ async function initApp() {
         size: sizeFormatted,
         model: model,
         sourceIfcBytes,
+        existingProjectTags: extractProjectTagsFromIfc(sourceIfcBytes),
         visible: true
       };
 
@@ -1673,6 +1682,24 @@ async function initApp() {
         'warning',
       );
       return;
+    }
+
+    const existingProjectTag = getExistingProjectTag();
+    if (existingProjectTag) {
+      if (existingProjectTag.toLowerCase() === tag.toLowerCase()) {
+        updateTagAssignmentUi(
+          `Warning: element #${selectedIfcElement.localId} already has CCP_TAG “${existingProjectTag}”.`,
+          'warning',
+        );
+        return;
+      }
+      const confirmed = window.confirm(
+        `Element #${selectedIfcElement.localId} already has CCP_TAG “${existingProjectTag}”. Replace it with “${tag}”?`,
+      );
+      if (!confirmed) {
+        updateTagAssignmentUi('Tag replacement cancelled.', 'warning');
+        return;
+      }
     }
 
     let conflictingAssignment = null;
