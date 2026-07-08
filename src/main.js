@@ -916,7 +916,7 @@ async function initApp() {
     if (entryKeys.length === 0) return;
 
     const normalizedName = name.trim().toUpperCase();
-    if (normalizedName === 'CCP_TRAY_SYSTEM' || normalizedName === 'CCP_COMPONENT') {
+    if (normalizedName === 'CCP_TRAY_SYSTEM') {
       propPsetsContainer.querySelector(`[data-pset-name="${normalizedName}"]`)?.remove();
     }
 
@@ -956,10 +956,6 @@ async function initApp() {
     details.appendChild(propsDiv);
     if (normalizedName === 'CCP_TRAY_SYSTEM') {
       propPsetsContainer.insertBefore(details, propPsetsContainer.firstChild);
-    } else if (normalizedName === 'CCP_COMPONENT') {
-      const systemGroup = propPsetsContainer.querySelector('[data-pset-name="CCP_TRAY_SYSTEM"]');
-      if (systemGroup) systemGroup.after(details);
-      else propPsetsContainer.insertBefore(details, propPsetsContainer.firstChild);
     } else {
       propPsetsContainer.appendChild(details);
     }
@@ -977,11 +973,13 @@ async function initApp() {
 
     if (!systemTag) {
       propPsetsContainer.querySelector('[data-pset-name="CCP_TRAY_SYSTEM"]')?.remove();
-      propPsetsContainer.querySelector('[data-pset-name="CCP_COMPONENT"]')?.remove();
       return;
     }
-    renderPsetGroup('CCP_TRAY_SYSTEM', { SystemTag: systemTag });
-    renderPsetGroup('CCP_COMPONENT', { ComponentId: componentId, SequenceNumber: sequenceNumber });
+    renderPsetGroup('CCP_TRAY_SYSTEM', {
+      SystemTag: systemTag,
+      ComponentId: componentId,
+      SequenceNumber: sequenceNumber,
+    });
   }
 
   // Extract property set entries from an IfcPropertySet or IfcElementQuantity

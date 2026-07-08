@@ -47,9 +47,7 @@ original unchanged. Each assigned element receives:
 
 ```text
 CCP_TRAY_SYSTEM
-└── SystemTag = 140ST-900-001
-
-CCP_COMPONENT
+├── SystemTag = 140ST-900-001
 ├── ComponentId = 140ST-900-001-C001
 └── SequenceNumber = 001
 ```

@@ -84,7 +84,7 @@ test('writes and re-reads tray system and sequential component properties', () =
   assert.equal(assignment.componentId, '140ST-900-001-C001');
   assert.equal(assignment.sequenceNumber, '001');
   assert.match(result.text, /'CCP_TRAY_SYSTEM'/);
-  assert.match(result.text, /'CCP_COMPONENT'/);
+  assert.doesNotMatch(result.text, /'CCP_COMPONENT'/);
 });
 
 test('updates tray assignment properties without duplicating property sets', () => {

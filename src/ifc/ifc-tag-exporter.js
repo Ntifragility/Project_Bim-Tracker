@@ -127,17 +127,16 @@ export function extractTraySystemAssignmentsFromIfc(sourceBytes) {
   const assignments = new Map();
   for (const [localId, sets] of elementSets) {
     const system = sets.get('CCP_TRAY_SYSTEM');
-    const component = sets.get('CCP_COMPONENT');
     const systemTag = system?.values.get('systemtag')?.value || '';
-    const componentId = component?.values.get('componentid')?.value || '';
+    const componentId = system?.values.get('componentid')?.value || '';
     if (!systemTag && !componentId) continue;
     assignments.set(localId, {
       systemTag,
       componentId,
-      sequenceNumber: component?.values.get('sequencenumber')?.value || '',
+      sequenceNumber: system?.values.get('sequencenumber')?.value || '',
       systemTagPropertyId: system?.values.get('systemtag')?.propertyId,
-      componentIdPropertyId: component?.values.get('componentid')?.propertyId,
-      sequencePropertyId: component?.values.get('sequencenumber')?.propertyId,
+      componentIdPropertyId: system?.values.get('componentid')?.propertyId,
+      sequencePropertyId: system?.values.get('sequencenumber')?.propertyId,
     });
   }
   return assignments;
@@ -198,8 +197,8 @@ export function addTraySystemAssignmentsToIfc(sourceBytes, assignments) {
       applied.push({ localId, systemTag, componentId, sequenceNumber, action: 'updated' });
       continue;
     }
-    appendPropertySet(localId, 'CCP_TRAY_SYSTEM', [['SystemTag', systemTag]]);
-    appendPropertySet(localId, 'CCP_COMPONENT', [
+    appendPropertySet(localId, 'CCP_TRAY_SYSTEM', [
+      ['SystemTag', systemTag],
       ['ComponentId', componentId],
       ['SequenceNumber', sequenceNumber],
     ]);
