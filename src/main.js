@@ -752,8 +752,14 @@ async function initApp() {
     const entryKeys = Object.keys(entries);
     if (entryKeys.length === 0) return;
 
+    const normalizedName = name.trim().toUpperCase();
+    if (normalizedName === 'CCP_TAG') {
+      propPsetsContainer.querySelector('[data-pset-name="CCP_TAG"]')?.remove();
+    }
+
     const details = document.createElement('details');
     details.className = `pset-group${isQuantity ? ' quantity-group' : ''}`;
+    details.dataset.psetName = normalizedName;
 
     const summary = document.createElement('summary');
     const nameSpan = document.createElement('span');
@@ -785,11 +791,24 @@ async function initApp() {
 
     details.appendChild(summary);
     details.appendChild(propsDiv);
-    if (name.trim().toUpperCase() === 'CCP_TAG') {
+    if (normalizedName === 'CCP_TAG') {
       propPsetsContainer.insertBefore(details, propPsetsContainer.firstChild);
     } else {
       propPsetsContainer.appendChild(details);
     }
+  }
+
+  function syncProjectTagPropertyGroup(model, localId) {
+    const element = { modelId: model.modelId || model.uuid, localId: Number(localId) };
+    const assignment = getAssignmentForElement(element);
+    const tag = assignment?.tag || getExistingProjectTag(element);
+    const existingGroup = propPsetsContainer.querySelector('[data-pset-name="CCP_TAG"]');
+
+    if (!tag) {
+      existingGroup?.remove();
+      return;
+    }
+    renderPsetGroup('CCP_TAG', { Tag: tag });
   }
 
   // Extract property set entries from an IfcPropertySet or IfcElementQuantity
@@ -1000,6 +1019,7 @@ async function initApp() {
     groups.forEach(({ name: groupName, entries, isQuantity }) => {
       renderPsetGroup(groupName, entries, isQuantity);
     });
+    syncProjectTagPropertyGroup(model, localId);
   }
 
   // Main display function: show full element properties panel
@@ -1041,6 +1061,7 @@ async function initApp() {
       if (!foundViaIndexer) {
         await displayPsetsManual(model, expressId);
       }
+      syncProjectTagPropertyGroup(model, expressId);
 
       // If no psets found at all, show a note
       if (propPsetsContainer.children.length === 0) {
@@ -1745,6 +1766,7 @@ async function initApp() {
       `Successfully assigned “${assignedTag}” to element #${selectedIfcElement.localId}.`,
       'success',
     );
+    syncProjectTagPropertyGroup(activeModel, selectedIfcElement.localId);
   });
 
   btnUnassignTag.addEventListener('click', () => {
@@ -1754,6 +1776,7 @@ async function initApp() {
     selectedExcelRowIndex = assignment.excelRowIndex;
     renderExcelTable();
     updateTagAssignmentUi(`Removed “${assignment.tag}” from element #${assignment.localId}.`);
+    syncProjectTagPropertyGroup(activeModel, assignment.localId);
   });
 
   btnExportTags.addEventListener('click', () => {
