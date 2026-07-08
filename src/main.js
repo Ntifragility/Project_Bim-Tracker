@@ -288,7 +288,7 @@ async function initApp() {
     return tagAssignments.get(getAssignmentKey(element.modelId, element.localId)) || null;
   }
 
-  function updateTagAssignmentUi(message = '') {
+  function updateTagAssignmentUi(message = '', tone = '') {
     const selectedTag = getSelectedExcelTag();
     const assignment = getAssignmentForElement();
     const elementLabel = selectedIfcElement
@@ -297,6 +297,8 @@ async function initApp() {
     const rowLabel = selectedTag ? `tag “${selectedTag}”` : 'no Excel tag selected';
 
     tagAssignmentStatus.textContent = message || `${rowLabel}; ${elementLabel}.`;
+    if (tone) tagAssignmentStatus.dataset.tone = tone;
+    else delete tagAssignmentStatus.dataset.tone;
     tagAssignmentSummary.textContent = `${tagAssignments.size} assignment${tagAssignments.size === 1 ? '' : 's'}`;
     btnAssignTag.disabled = !selectedTag || !selectedIfcElement;
     btnUnassignTag.disabled = !assignment;
@@ -1526,11 +1528,48 @@ async function initApp() {
         : 'This Excel tag has not been assigned.';
       tr.appendChild(statusCell);
       
-      tr.addEventListener('click', () => {
+      tr.addEventListener('click', async () => {
         excelTableBody.querySelectorAll('tr').forEach(r => r.classList.remove('active'));
         tr.classList.add('active');
         selectedExcelRowIndex = index;
         updateTagAssignmentUi();
+
+        if (rowAssignment) {
+          const modelEntry = loadedModels.find((entry) =>
+            entry.model?.modelId === rowAssignment.modelId || entry.model?.uuid === rowAssignment.modelId
+          );
+          if (!modelEntry) {
+            updateTagAssignmentUi(`Warning: the model for tag “${rowAssignment.tag}” is not loaded.`, 'warning');
+            return;
+          }
+
+          if (!modelEntry.visible) {
+            modelEntry.visible = true;
+            const modelObject = modelEntry.model.object || modelEntry.model;
+            if (modelObject) modelObject.visible = true;
+            refreshLoadedModelsList();
+          }
+
+          highlighter.isProgrammaticSelect = true;
+          try {
+            await highlighter.highlightByID(
+              'select',
+              { [rowAssignment.modelId]: new Set([Number(rowAssignment.localId)]) },
+              true,
+              true,
+            );
+            activeModel = modelEntry.model;
+            await displayElementProperties(modelEntry.model, rowAssignment.localId, modelEntry.name);
+            selectedIfcElement = await readElementIdentity(modelEntry.model, rowAssignment.localId, modelEntry.name);
+            routingController.setSelectedElement(modelEntry.model, rowAssignment.localId);
+            updateTagAssignmentUi(`Highlighted element #${rowAssignment.localId} for tag “${rowAssignment.tag}”.`);
+          } catch (error) {
+            console.warn('[Excel Linkage] Assigned element highlight failed:', error);
+            updateTagAssignmentUi(`Warning: element #${rowAssignment.localId} could not be highlighted.`, 'warning');
+          } finally {
+            highlighter.isProgrammaticSelect = false;
+          }
+        }
       });
       
       excelTableBody.appendChild(tr);
@@ -1622,18 +1661,28 @@ async function initApp() {
     const tag = getSelectedExcelTag();
     if (!tag || !selectedIfcElement) return;
 
-    let conflictingKey = null;
+    const currentAssignment = getAssignmentForElement();
+    if (currentAssignment) {
+      updateTagAssignmentUi(
+        `Warning: element #${selectedIfcElement.localId} already has tag “${currentAssignment.tag}”. Unassign it before assigning another tag.`,
+        'warning',
+      );
+      return;
+    }
+
     let conflictingAssignment = null;
     for (const [key, assignment] of tagAssignments) {
       if (assignment.tag.toLowerCase() === tag.toLowerCase() &&
           key !== getAssignmentKey(selectedIfcElement.modelId, selectedIfcElement.localId)) {
-        conflictingKey = key;
         conflictingAssignment = assignment;
         break;
       }
     }
     if (conflictingAssignment) {
-      updateTagAssignmentUi(`Tag “${tag}” is already assigned to element #${conflictingAssignment.localId}.`);
+      updateTagAssignmentUi(
+        `Warning: tag “${tag}” is already assigned to element #${conflictingAssignment.localId}.`,
+        'warning',
+      );
       return;
     }
 
@@ -1656,7 +1705,10 @@ async function initApp() {
     if (nextIndex !== -1) selectedExcelRowIndex = nextIndex;
 
     renderExcelTable();
-    updateTagAssignmentUi(`Assigned “${assignedTag}” to element #${selectedIfcElement.localId}.`);
+    updateTagAssignmentUi(
+      `Successfully assigned “${assignedTag}” to element #${selectedIfcElement.localId}.`,
+      'success',
+    );
   });
 
   btnUnassignTag.addEventListener('click', () => {
