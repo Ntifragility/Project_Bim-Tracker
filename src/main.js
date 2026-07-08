@@ -785,7 +785,11 @@ async function initApp() {
 
     details.appendChild(summary);
     details.appendChild(propsDiv);
-    propPsetsContainer.appendChild(details);
+    if (name.trim().toUpperCase() === 'CCP_TAG') {
+      propPsetsContainer.insertBefore(details, propPsetsContainer.firstChild);
+    } else {
+      propPsetsContainer.appendChild(details);
+    }
   }
 
   // Extract property set entries from an IfcPropertySet or IfcElementQuantity
