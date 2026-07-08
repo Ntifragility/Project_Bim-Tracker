@@ -55,6 +55,10 @@ CCP_TRAY_SYSTEM
 System tags may repeat across every component in the same tray system. Component
 IDs are unique within the project.
 
+**Export Mapping** creates `IFC_Tag_Mapping.xlsx` with the system/component
+identifiers and best-effort `Width`, `Height`, and `Length` values read from each
+element's IFC attributes or property sets.
+
 Select **Validate Tags** before export to compare effective IFC tags with the
 selected Excel tag column. Duplicate component IDs, duplicate Excel system tags,
 blank Excel tags, and missing component IDs block export. Unassigned Excel systems

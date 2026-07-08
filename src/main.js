@@ -1088,6 +1088,69 @@ async function initApp() {
     return attribute;
   }
 
+  function collectDimensionCandidates(value, candidates, visited = new Set()) {
+    if (!value || typeof value !== 'object' || visited.has(value)) return;
+    visited.add(value);
+    if (Array.isArray(value)) {
+      value.forEach((item) => collectDimensionCandidates(item, candidates, visited));
+      return;
+    }
+
+    const propertyName = unwrapItemValue(value.Name);
+    const propertyValue = unwrapItemValue(
+      value.NominalValue ?? value.LengthValue ?? value.Description,
+    );
+    if (propertyName && propertyValue !== undefined && propertyValue !== null) {
+      candidates.set(String(propertyName).replace(/[^a-z0-9]/gi, '').toLowerCase(), propertyValue);
+    }
+
+    for (const [key, rawValue] of Object.entries(value)) {
+      const unwrapped = unwrapItemValue(rawValue);
+      if (unwrapped !== undefined && unwrapped !== null && typeof unwrapped !== 'object') {
+        candidates.set(key.replace(/[^a-z0-9]/gi, '').toLowerCase(), unwrapped);
+      } else {
+        collectDimensionCandidates(rawValue, candidates, visited);
+      }
+    }
+  }
+
+  async function readElementDimensions(assignment) {
+    const modelEntry = loadedModels.find((entry) =>
+      entry.model.modelId === assignment.modelId || entry.model.uuid === assignment.modelId
+    );
+    if (!modelEntry || typeof modelEntry.model.getItemsData !== 'function') {
+      return { Width: '', Height: '', Length: '' };
+    }
+    let data;
+    try {
+      data = (await modelEntry.model.getItemsData([Number(assignment.localId)], {
+        attributesDefault: true,
+        relations: {
+          IsDefinedBy: { attributes: true, relations: true },
+          DefinesOccurrence: { attributes: true, relations: true },
+        },
+        relationsDefault: { attributes: false, relations: false },
+      }))?.[0];
+    } catch (error) {
+      console.warn(`[Mapping Export] Could not read dimensions for element #${assignment.localId}:`, error);
+      return { Width: '', Height: '', Length: '' };
+    }
+    const candidates = new Map();
+    collectDimensionCandidates(data, candidates);
+    const pick = (...names) => {
+      for (const name of names) {
+        const value = candidates.get(name);
+        if (value !== undefined && value !== null && value !== '') return formatPropValue(value);
+      }
+      return '';
+    };
+    return {
+      Width: pick('width', 'overallwidth', 'traywidth', 'nominalwidth'),
+      Height: pick('height', 'overallheight', 'trayheight', 'nominalheight'),
+      Length: pick('length', 'overalllength', 'traylength', 'segmentlength'),
+    };
+  }
+
   function getModernIfcTypeName(itemData) {
     const category = unwrapItemValue(itemData?._category ?? itemData?.Category ?? itemData?.type);
     if (typeof category === 'number') return IFC_TYPE_MAP[category] || `IFC Type ${category}`;
@@ -1969,11 +2032,13 @@ async function initApp() {
     );
   });
 
-  btnExportTags.addEventListener('click', () => {
+  btnExportTags.addEventListener('click', async () => {
     if (tagAssignments.size === 0) return;
-    const rows = Array.from(tagAssignments.values())
-      .sort((a, b) => a.excelRowIndex - b.excelRowIndex)
-      .map((assignment) => ({
+    updateTagAssignmentUi('Reading tray dimensions for the mapping export...');
+    btnExportTags.disabled = true;
+    const assignments = Array.from(tagAssignments.values())
+      .sort((a, b) => a.systemTag.localeCompare(b.systemTag) || Number(a.sequenceNumber) - Number(b.sequenceNumber));
+    const rows = await Promise.all(assignments.map(async (assignment) => ({
         Model: assignment.modelName,
         IFC_GlobalId: assignment.globalId,
         Local_ID: assignment.localId,
@@ -1982,8 +2047,9 @@ async function initApp() {
         SequenceNumber: assignment.sequenceNumber,
         Element_Name: assignment.name,
         IFC_Type: assignment.type,
+        ...await readElementDimensions(assignment),
         Excel_Row: assignment.excelRowIndex === null ? '' : assignment.excelRowIndex + 2,
-      }));
+      })));
     const worksheet = XLSX.utils.json_to_sheet(rows);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Tag Mapping');
