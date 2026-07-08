@@ -39,24 +39,27 @@ code-compliance or constructability approval.
 
 ## Tagged IFC export
 
-After assigning tags, select **Export Tagged IFC**. The viewer downloads a new
-`<model-name>_tagged.ifc` file and leaves the original IFC unchanged. Each tag
-is stored on its assigned element as:
+Add IFC elements to the selection basket, choose an Excel system tag, and select
+**Assign System Tag**. The viewer generates sequential component IDs in selection
+order. **Export Tagged IFC** downloads a new `<model-name>_tagged.ifc` and leaves
+the original unchanged. Each assigned element receives:
 
 ```text
-CCP_TAG
-└── Tag = CT-001
+CCP_TRAY_SYSTEM
+└── SystemTag = 140ST-900-001
+
+CCP_COMPONENT
+├── ComponentId = 140ST-900-001-C001
+└── SequenceNumber = 001
 ```
 
-When a tagged IFC is loaded again, existing `CCP_TAG` values are preserved and
-shown for their elements. Assigning a different tag asks for confirmation and
-updates the existing property; elements without `CCP_TAG` receive a new property
-set on export.
+System tags may repeat across every component in the same tray system. Component
+IDs are unique within the project.
 
 Select **Validate Tags** before export to compare effective IFC tags with the
-selected Excel tag column. Duplicate IFC tags, duplicate Excel tags, and blank
-Excel tags block tagged-IFC export. Unassigned Excel tags and IFC tags missing
-from Excel are reported as warnings but do not block export.
+selected Excel tag column. Duplicate component IDs, duplicate Excel system tags,
+blank Excel tags, and missing component IDs block export. Unassigned Excel systems
+and IFC systems missing from Excel are warnings.
 
 ## Verification
 

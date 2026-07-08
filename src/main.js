@@ -5,7 +5,7 @@ import * as OBF from '@thatopen/components-front';
 import * as XLSX from 'xlsx';
 import { initExcelBridge, sendMeasurementToExcel } from './viewer-socket.js';
 import { initRoutingController } from './routing/routing-controller.js';
-import { addProjectTagsToIfc, extractProjectTagsFromIfc, taggedIfcFileName } from './ifc/ifc-tag-exporter.js';
+import { addTraySystemAssignmentsToIfc, extractTraySystemAssignmentsFromIfc, taggedIfcFileName } from './ifc/ifc-tag-exporter.js';
 import { validateTagIntegrity } from './ifc/tag-validator.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 
@@ -19,6 +19,7 @@ let selectedExcelIdColumn = "";
 let selectedExcelRowIndex = null;
 let selectedIfcElement = null;
 const tagAssignments = new Map();
+const traySelection = new Map();
 let autoRotateActive = false;
 let isTransformEnabled = false;
 
@@ -54,6 +55,8 @@ const excelTableBody = document.getElementById('excel-table-body');
 const tagAssignmentStatus = document.getElementById('tag-assignment-status');
 const tagAssignmentSummary = document.getElementById('tag-assignment-summary');
 const btnAssignTag = document.getElementById('btn-assign-tag');
+const btnAddTraySelection = document.getElementById('btn-add-tray-selection');
+const btnClearTraySelection = document.getElementById('btn-clear-tray-selection');
 const btnUnassignTag = document.getElementById('btn-unassign-tag');
 const btnValidateTags = document.getElementById('btn-validate-tags');
 const btnExportTags = document.getElementById('btn-export-tags');
@@ -62,6 +65,7 @@ const tagValidationReport = document.getElementById('tag-validation-report');
 const tagValidationBadge = document.getElementById('tag-validation-badge');
 const tagValidationCounts = document.getElementById('tag-validation-counts');
 const tagValidationIssues = document.getElementById('tag-validation-issues');
+const traySelectionSummary = document.getElementById('tray-selection-summary');
 const tagReplaceDialog = document.getElementById('tag-replace-dialog');
 const tagReplaceMessage = document.getElementById('tag-replace-message');
 const tagReplaceCancel = document.getElementById('tag-replace-cancel');
@@ -110,7 +114,7 @@ function updateLoader(status, progressVal) {
 }
 
 function requestTagReplacement(localId, currentTag, replacementTag) {
-  tagReplaceMessage.textContent = `Element #${localId} already has CCP_TAG “${currentTag}”. Replace it with “${replacementTag}”?`;
+  tagReplaceMessage.textContent = `Element #${localId} belongs to tray system “${currentTag}”. Move it to “${replacementTag}”?`;
   tagReplaceDialog.hidden = false;
   tagReplaceConfirm.focus();
 
@@ -335,35 +339,38 @@ async function initApp() {
     const modelEntry = loadedModels.find((entry) =>
       entry.model?.modelId === element.modelId || entry.model?.uuid === element.modelId
     );
-    return modelEntry?.existingProjectTags?.get(Number(element.localId))?.tag || '';
+    return modelEntry?.existingProjectTags?.get(Number(element.localId))?.systemTag || '';
   }
 
-  function findTagOwner(tag, excludedKey = '') {
+  function findSystemMembers(tag) {
     const normalizedTag = String(tag || '').trim().toLowerCase();
-    if (!normalizedTag) return null;
+    if (!normalizedTag) return [];
+    const members = [];
 
     for (const [key, assignment] of tagAssignments) {
-      if (key !== excludedKey && assignment.tag.toLowerCase() === normalizedTag) return assignment;
+      if (assignment.systemTag.toLowerCase() === normalizedTag) members.push(assignment);
     }
 
     for (const modelEntry of loadedModels) {
       const modelId = modelEntry.model.modelId || modelEntry.model.uuid;
       for (const [localId, projectTag] of modelEntry.existingProjectTags || []) {
         const key = getAssignmentKey(modelId, localId);
-        if (key === excludedKey || tagAssignments.has(key)) continue;
-        if (projectTag.tag.toLowerCase() === normalizedTag) {
-          return {
+        if (tagAssignments.has(key)) continue;
+        if (projectTag.systemTag.toLowerCase() === normalizedTag) {
+          members.push({
             modelId,
             modelName: modelEntry.name,
             localId: Number(localId),
             globalId: '',
-            tag: projectTag.tag,
+            systemTag: projectTag.systemTag,
+            componentId: projectTag.componentId,
+            sequenceNumber: projectTag.sequenceNumber,
             source: 'ifc',
-          };
+          });
         }
       }
     }
-    return null;
+    return members;
   }
 
   function getEffectiveTaggedElements() {
@@ -376,7 +383,9 @@ async function initApp() {
           modelId,
           modelName: modelEntry.name,
           localId: Number(localId),
-          tag: projectTag.tag,
+          systemTag: projectTag.systemTag,
+          componentId: projectTag.componentId,
+          sequenceNumber: projectTag.sequenceNumber,
           source: 'ifc',
         });
       }
@@ -418,7 +427,7 @@ async function initApp() {
     const tone = !result.valid ? 'error' : result.warnings.length ? 'warning' : 'success';
     tagValidationReport.dataset.tone = tone;
     tagValidationBadge.textContent = !result.valid ? 'Blocked' : result.warnings.length ? 'Warnings' : 'Ready';
-    tagValidationCounts.textContent = `${result.counts.ifcTags} IFC tags · ${result.counts.excelTags} Excel rows · ${result.counts.matchedTags} matched`;
+    tagValidationCounts.textContent = `${result.counts.ifcTags} tray systems · ${result.counts.excelTags} Excel rows · ${result.counts.matchedTags} matched`;
     tagValidationIssues.innerHTML = '';
 
     const issues = [
@@ -451,14 +460,17 @@ async function initApp() {
     if (tone) tagAssignmentStatus.dataset.tone = tone;
     else delete tagAssignmentStatus.dataset.tone;
     tagAssignmentSummary.textContent = `${tagAssignments.size} assignment${tagAssignments.size === 1 ? '' : 's'}`;
-    btnAssignTag.disabled = !selectedTag || !selectedIfcElement;
+    traySelectionSummary.textContent = `${traySelection.size} element${traySelection.size === 1 ? '' : 's'} selected`;
+    btnAddTraySelection.disabled = !selectedIfcElement;
+    btnClearTraySelection.disabled = traySelection.size === 0;
+    btnAssignTag.disabled = !selectedTag || (traySelection.size === 0 && !selectedIfcElement);
     btnUnassignTag.disabled = !assignment;
     btnValidateTags.disabled = loadedModels.length === 0 || excelData.length === 0;
     btnExportTags.disabled = tagAssignments.size === 0;
     btnExportTaggedIfc.disabled = tagAssignments.size === 0;
 
     if (selectedIfcElement) {
-      const displayedTag = assignment?.tag || getExistingProjectTag() || selectedIfcElement.ifcTag || '-';
+      const displayedTag = assignment?.systemTag || getExistingProjectTag() || selectedIfcElement.ifcTag || '-';
       propTag.textContent = displayedTag;
       propTag.title = displayedTag;
     }
@@ -900,8 +912,8 @@ async function initApp() {
     if (entryKeys.length === 0) return;
 
     const normalizedName = name.trim().toUpperCase();
-    if (normalizedName === 'CCP_TAG') {
-      propPsetsContainer.querySelector('[data-pset-name="CCP_TAG"]')?.remove();
+    if (normalizedName === 'CCP_TRAY_SYSTEM' || normalizedName === 'CCP_COMPONENT') {
+      propPsetsContainer.querySelector(`[data-pset-name="${normalizedName}"]`)?.remove();
     }
 
     const details = document.createElement('details');
@@ -938,8 +950,12 @@ async function initApp() {
 
     details.appendChild(summary);
     details.appendChild(propsDiv);
-    if (normalizedName === 'CCP_TAG') {
+    if (normalizedName === 'CCP_TRAY_SYSTEM') {
       propPsetsContainer.insertBefore(details, propPsetsContainer.firstChild);
+    } else if (normalizedName === 'CCP_COMPONENT') {
+      const systemGroup = propPsetsContainer.querySelector('[data-pset-name="CCP_TRAY_SYSTEM"]');
+      if (systemGroup) systemGroup.after(details);
+      else propPsetsContainer.insertBefore(details, propPsetsContainer.firstChild);
     } else {
       propPsetsContainer.appendChild(details);
     }
@@ -948,14 +964,20 @@ async function initApp() {
   function syncProjectTagPropertyGroup(model, localId) {
     const element = { modelId: model.modelId || model.uuid, localId: Number(localId) };
     const assignment = getAssignmentForElement(element);
-    const tag = assignment?.tag || getExistingProjectTag(element);
-    const existingGroup = propPsetsContainer.querySelector('[data-pset-name="CCP_TAG"]');
+    const existing = loadedModels.find((entry) =>
+      entry.model.modelId === element.modelId || entry.model.uuid === element.modelId
+    )?.existingProjectTags?.get(element.localId);
+    const systemTag = assignment?.systemTag || existing?.systemTag || '';
+    const componentId = assignment?.componentId || existing?.componentId || '';
+    const sequenceNumber = assignment?.sequenceNumber || existing?.sequenceNumber || '';
 
-    if (!tag) {
-      existingGroup?.remove();
+    if (!systemTag) {
+      propPsetsContainer.querySelector('[data-pset-name="CCP_TRAY_SYSTEM"]')?.remove();
+      propPsetsContainer.querySelector('[data-pset-name="CCP_COMPONENT"]')?.remove();
       return;
     }
-    renderPsetGroup('CCP_TAG', { Tag: tag });
+    renderPsetGroup('CCP_TRAY_SYSTEM', { SystemTag: systemTag });
+    renderPsetGroup('CCP_COMPONENT', { ComponentId: componentId, SequenceNumber: sequenceNumber });
   }
 
   // Extract property set entries from an IfcPropertySet or IfcElementQuantity
@@ -1457,7 +1479,7 @@ async function initApp() {
         size: sizeFormatted,
         model: model,
         sourceIfcBytes,
-        existingProjectTags: extractProjectTagsFromIfc(sourceIfcBytes),
+        existingProjectTags: extractTraySystemAssignmentsFromIfc(sourceIfcBytes),
         visible: true
       };
 
@@ -1698,10 +1720,10 @@ async function initApp() {
       tr.dataset.index = index;
       if (selectedExcelRowIndex === index) tr.classList.add('active');
 
-      const sessionAssignment = Array.from(tagAssignments.values()).find((assignment) => assignment.excelRowIndex === index);
       const rowTag = selectedExcelIdColumn ? String(row[selectedExcelIdColumn] ?? '').trim() : '';
-      const rowAssignment = sessionAssignment || findTagOwner(rowTag);
-      if (rowAssignment) tr.classList.add('assigned');
+      const systemMembers = findSystemMembers(rowTag);
+      const rowAssignment = systemMembers[0] || null;
+      if (systemMembers.length) tr.classList.add('assigned');
       
       excelColumns.forEach(col => {
         const td = document.createElement('td');
@@ -1712,12 +1734,12 @@ async function initApp() {
 
       const statusCell = document.createElement('td');
       statusCell.className = 'assignment-cell';
-      statusCell.textContent = rowAssignment
-        ? `${rowAssignment.source === 'ifc' ? 'Existing' : 'Assigned'} #${rowAssignment.localId}`
+      statusCell.textContent = systemMembers.length
+        ? `Assigned ${systemMembers.length} element${systemMembers.length === 1 ? '' : 's'}`
         : 'Unassigned';
-      statusCell.title = rowAssignment
-        ? `${rowAssignment.modelName} / ${rowAssignment.globalId || `local ID ${rowAssignment.localId}`}`
-        : 'This Excel tag has not been assigned.';
+      statusCell.title = systemMembers.length
+        ? `${systemMembers.length} IFC element${systemMembers.length === 1 ? '' : 's'} belong to this tray system.`
+        : 'This Excel system tag has not been assigned.';
       tr.appendChild(statusCell);
       
       tr.addEventListener('click', async () => {
@@ -1726,12 +1748,12 @@ async function initApp() {
         selectedExcelRowIndex = index;
         updateTagAssignmentUi();
 
-        if (rowAssignment) {
+        if (systemMembers.length) {
           const modelEntry = loadedModels.find((entry) =>
             entry.model?.modelId === rowAssignment.modelId || entry.model?.uuid === rowAssignment.modelId
           );
           if (!modelEntry) {
-            updateTagAssignmentUi(`Warning: the model for tag “${rowAssignment.tag}” is not loaded.`, 'warning');
+            updateTagAssignmentUi(`Warning: the model for system “${rowTag}” is not loaded.`, 'warning');
             return;
           }
 
@@ -1744,17 +1766,17 @@ async function initApp() {
 
           highlighter.isProgrammaticSelect = true;
           try {
-            await highlighter.highlightByID(
-              'select',
-              { [rowAssignment.modelId]: new Set([Number(rowAssignment.localId)]) },
-              true,
-              true,
-            );
+            const fragmentMap = {};
+            for (const member of systemMembers) {
+              if (!fragmentMap[member.modelId]) fragmentMap[member.modelId] = new Set();
+              fragmentMap[member.modelId].add(Number(member.localId));
+            }
+            await highlighter.highlightByID('select', fragmentMap, true, true);
             activeModel = modelEntry.model;
             await displayElementProperties(modelEntry.model, rowAssignment.localId, modelEntry.name);
             selectedIfcElement = await readElementIdentity(modelEntry.model, rowAssignment.localId, modelEntry.name);
             routingController.setSelectedElement(modelEntry.model, rowAssignment.localId);
-            updateTagAssignmentUi(`Highlighted element #${rowAssignment.localId} for tag “${rowAssignment.tag}”.`);
+            updateTagAssignmentUi(`Highlighted ${systemMembers.length} elements for tray system “${rowTag}”.`);
           } catch (error) {
             console.warn('[Excel Linkage] Assigned element highlight failed:', error);
             updateTagAssignmentUi(`Warning: element #${rowAssignment.localId} could not be highlighted.`, 'warning');
@@ -1851,73 +1873,78 @@ async function initApp() {
     renderExcelTable();
   });
 
+  btnAddTraySelection.addEventListener('click', () => {
+    if (!selectedIfcElement) return;
+    traySelection.set(
+      getAssignmentKey(selectedIfcElement.modelId, selectedIfcElement.localId),
+      { ...selectedIfcElement },
+    );
+    updateTagAssignmentUi(`Added element #${selectedIfcElement.localId} to the tray-system selection.`);
+  });
+
+  btnClearTraySelection.addEventListener('click', () => {
+    traySelection.clear();
+    updateTagAssignmentUi('Cleared the tray-system selection.');
+  });
+
   btnAssignTag.addEventListener('click', async () => {
-    const tag = getSelectedExcelTag();
-    if (!tag || !selectedIfcElement) return;
+    const systemTag = getSelectedExcelTag();
+    const selectedElements = traySelection.size
+      ? Array.from(traySelection.values())
+      : selectedIfcElement ? [{ ...selectedIfcElement }] : [];
+    if (!systemTag || !selectedElements.length) return;
 
-    const currentAssignment = getAssignmentForElement();
-    if (currentAssignment) {
-      updateTagAssignmentUi(
-        `Warning: element #${selectedIfcElement.localId} already has tag “${currentAssignment.tag}”. Unassign it before assigning another tag.`,
-        'warning',
-      );
-      return;
-    }
-
-    const selectedElementKey = getAssignmentKey(selectedIfcElement.modelId, selectedIfcElement.localId);
-    const conflictingOwner = findTagOwner(tag, selectedElementKey);
-    if (conflictingOwner) {
-      updateTagAssignmentUi(
-        `Warning: tag “${tag}” is already used by element #${conflictingOwner.localId} in ${conflictingOwner.modelName}.`,
-        'warning',
-      );
-      return;
-    }
-
-    const existingProjectTag = getExistingProjectTag();
-    if (existingProjectTag) {
-      if (existingProjectTag.toLowerCase() === tag.toLowerCase()) {
-        updateTagAssignmentUi(
-          `Warning: element #${selectedIfcElement.localId} already has CCP_TAG “${existingProjectTag}”.`,
-          'warning',
-        );
-        return;
-      }
-      const confirmed = await requestTagReplacement(
-        selectedIfcElement.localId,
-        existingProjectTag,
-        tag,
-      );
-      if (!confirmed) {
-        updateTagAssignmentUi('Tag replacement cancelled.', 'warning');
-        return;
-      }
-    }
-
-    for (const [key, assignment] of tagAssignments) {
-      if (assignment.excelRowIndex === selectedExcelRowIndex) tagAssignments.delete(key);
-    }
-
-    const key = getAssignmentKey(selectedIfcElement.modelId, selectedIfcElement.localId);
-    tagAssignments.set(key, {
-      ...selectedIfcElement,
-      tag,
-      excelRowIndex: selectedExcelRowIndex,
+    const conflict = selectedElements.find((element) => {
+      const assignment = getAssignmentForElement(element);
+      const currentSystem = assignment?.systemTag || getExistingProjectTag(element);
+      return currentSystem && currentSystem.toLowerCase() !== systemTag.toLowerCase();
     });
+    if (conflict) {
+      const currentSystem = getAssignmentForElement(conflict)?.systemTag || getExistingProjectTag(conflict);
+      const confirmed = await requestTagReplacement(conflict.localId, currentSystem, systemTag);
+      if (!confirmed) {
+        updateTagAssignmentUi('Tray-system assignment cancelled.', 'warning');
+        return;
+      }
+    }
 
-    const assignedTag = tag;
+    const usedSequences = getEffectiveTaggedElements()
+      .filter((element) => element.systemTag?.toLowerCase() === systemTag.toLowerCase())
+      .map((element) => Number.parseInt(element.sequenceNumber, 10))
+      .filter(Number.isFinite);
+    let nextSequence = usedSequences.length ? Math.max(...usedSequences) + 1 : 1;
+
+    for (const element of selectedElements) {
+      const key = getAssignmentKey(element.modelId, element.localId);
+      const existingAssignment = getAssignmentForElement(element);
+      const sourceAssignment = loadedModels.find((entry) =>
+        entry.model.modelId === element.modelId || entry.model.uuid === element.modelId
+      )?.existingProjectTags?.get(Number(element.localId));
+      const keepSequence = (existingAssignment?.systemTag || sourceAssignment?.systemTag)?.toLowerCase() === systemTag.toLowerCase();
+      const sequenceNumber = keepSequence
+        ? existingAssignment?.sequenceNumber || sourceAssignment?.sequenceNumber
+        : String(nextSequence++).padStart(3, '0');
+      tagAssignments.set(key, {
+        ...element,
+        systemTag,
+        componentId: `${systemTag}-C${sequenceNumber}`,
+        sequenceNumber,
+        excelRowIndex: selectedExcelRowIndex,
+      });
+    }
     const nextIndex = excelData.findIndex((_, index) =>
       index > selectedExcelRowIndex &&
-      !Array.from(tagAssignments.values()).some((assignment) => assignment.excelRowIndex === index)
+      findSystemMembers(String(excelData[index]?.[selectedExcelIdColumn] ?? '')).length === 0
     );
     if (nextIndex !== -1) selectedExcelRowIndex = nextIndex;
 
+    traySelection.clear();
     renderExcelTable();
     updateTagAssignmentUi(
-      `Successfully assigned “${assignedTag}” to element #${selectedIfcElement.localId}.`,
+      `Successfully assigned tray system “${systemTag}” to ${selectedElements.length} element${selectedElements.length === 1 ? '' : 's'}.`,
       'success',
     );
-    syncProjectTagPropertyGroup(activeModel, selectedIfcElement.localId);
+    if (selectedIfcElement) syncProjectTagPropertyGroup(activeModel, selectedIfcElement.localId);
     refreshValidationReportIfOpen();
   });
 
@@ -1927,7 +1954,7 @@ async function initApp() {
     tagAssignments.delete(getAssignmentKey(assignment.modelId, assignment.localId));
     selectedExcelRowIndex = assignment.excelRowIndex;
     renderExcelTable();
-    updateTagAssignmentUi(`Removed “${assignment.tag}” from element #${assignment.localId}.`);
+    updateTagAssignmentUi(`Removed “${assignment.systemTag}” from element #${assignment.localId}.`);
     syncProjectTagPropertyGroup(activeModel, assignment.localId);
     refreshValidationReportIfOpen();
   });
@@ -1950,7 +1977,9 @@ async function initApp() {
         Model: assignment.modelName,
         IFC_GlobalId: assignment.globalId,
         Local_ID: assignment.localId,
-        Tag: assignment.tag,
+        SystemTag: assignment.systemTag,
+        ComponentId: assignment.componentId,
+        SequenceNumber: assignment.sequenceNumber,
         Element_Name: assignment.name,
         IFC_Type: assignment.type,
         Excel_Row: assignment.excelRowIndex + 2,
@@ -1988,7 +2017,7 @@ async function initApp() {
       }
 
       try {
-        const result = addProjectTagsToIfc(modelEntry.sourceIfcBytes, assignments);
+        const result = addTraySystemAssignmentsToIfc(modelEntry.sourceIfcBytes, assignments);
         const blob = new Blob([result.bytes], { type: 'application/x-step' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');

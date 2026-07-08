@@ -167,7 +167,7 @@
                     <span id="prop-globalid" class="prop-value mono" title="">-</span>
                   </div>
                   <div class="prop-row">
-                    <span class="prop-label">Tag</span>
+                    <span class="prop-label">System Tag</span>
                     <span id="prop-tag" class="prop-value mono" title="">-</span>
                   </div>
                   <div class="prop-row">
@@ -220,12 +220,15 @@
               Select an Excel row and an IFC element.
             </div>
             <div class="tag-assignment-actions">
-              <button id="btn-assign-tag" class="btn btn-primary" disabled>Assign Tag</button>
+              <button id="btn-add-tray-selection" class="btn btn-secondary" disabled>Add Selected Element</button>
+              <button id="btn-clear-tray-selection" class="btn btn-secondary" disabled>Clear Selection</button>
+              <button id="btn-assign-tag" class="btn btn-primary" disabled>Assign System Tag</button>
               <button id="btn-unassign-tag" class="btn btn-secondary" disabled>Unassign</button>
               <button id="btn-validate-tags" class="btn btn-secondary" disabled>Validate Tags</button>
               <button id="btn-export-tags" class="btn btn-secondary" disabled>Export Mapping</button>
               <button id="btn-export-tagged-ifc" class="btn btn-secondary" disabled>Export Tagged IFC</button>
             </div>
+            <div id="tray-selection-summary" class="tag-assignment-summary">0 elements selected</div>
             <div id="tag-assignment-summary" class="tag-assignment-summary">0 assignments</div>
             <section id="tag-validation-report" class="tag-validation-report" hidden aria-live="polite">
               <div class="tag-validation-heading">
@@ -266,7 +269,7 @@
         <section class="viewer-dialog" role="alertdialog" aria-modal="true" aria-labelledby="tag-replace-title" aria-describedby="tag-replace-message">
           <div class="viewer-dialog-icon" aria-hidden="true">!</div>
           <div class="viewer-dialog-content">
-            <h2 id="tag-replace-title">Replace existing CCP_TAG?</h2>
+            <h2 id="tag-replace-title">Replace existing tray-system assignment?</h2>
             <p id="tag-replace-message"></p>
             <div class="viewer-dialog-actions">
               <button id="tag-replace-cancel" class="btn btn-secondary" type="button">Cancel</button>

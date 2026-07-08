@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   addProjectTagsToIfc,
+  addTraySystemAssignmentsToIfc,
   createIfcGuid,
   extractProjectTagsFromIfc,
+  extractTraySystemAssignmentsFromIfc,
   taggedIfcFileName,
 } from '../../../src/ifc/ifc-tag-exporter.js';
 
@@ -68,4 +70,38 @@ test('skips assignments whose element is absent from the source IFC', () => {
 
 test('creates a non-destructive tagged IFC filename', () => {
   assert.equal(taggedIfcFileName('CableTray.ifc'), 'CableTray_tagged.ifc');
+});
+
+test('writes and re-reads tray system and sequential component properties', () => {
+  const result = addTraySystemAssignmentsToIfc(fixture, [{
+    localId: 10,
+    systemTag: '140ST-900-001',
+    componentId: '140ST-900-001-C001',
+    sequenceNumber: '001',
+  }]);
+  const assignment = extractTraySystemAssignmentsFromIfc(result.bytes).get(10);
+  assert.equal(assignment.systemTag, '140ST-900-001');
+  assert.equal(assignment.componentId, '140ST-900-001-C001');
+  assert.equal(assignment.sequenceNumber, '001');
+  assert.match(result.text, /'CCP_TRAY_SYSTEM'/);
+  assert.match(result.text, /'CCP_COMPONENT'/);
+});
+
+test('updates tray assignment properties without duplicating property sets', () => {
+  const first = addTraySystemAssignmentsToIfc(fixture, [{
+    localId: 10,
+    systemTag: 'SYS-A',
+    componentId: 'SYS-A-C001',
+    sequenceNumber: '001',
+  }]);
+  const second = addTraySystemAssignmentsToIfc(first.bytes, [{
+    localId: 10,
+    systemTag: 'SYS-B',
+    componentId: 'SYS-B-C004',
+    sequenceNumber: '004',
+  }]);
+  const assignment = extractTraySystemAssignmentsFromIfc(second.bytes).get(10);
+  assert.equal(assignment.systemTag, 'SYS-B');
+  assert.equal(assignment.componentId, 'SYS-B-C004');
+  assert.equal((second.text.match(/'CCP_TRAY_SYSTEM'/g) || []).length, 1);
 });

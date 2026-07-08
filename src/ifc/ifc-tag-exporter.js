@@ -80,6 +80,139 @@ export function extractProjectTagsFromIfc(sourceBytes, options = {}) {
   return tags;
 }
 
+function extractNamedPropertySets(sourceBytes) {
+  const source = decodeIfc(sourceBytes);
+  const stringPattern = "((?:''|[^'])*)";
+  const properties = new Map();
+  const propertySets = new Map();
+  const elementSets = new Map();
+  const propertyRegex = new RegExp(
+    `^\\s*#(\\d+)\\s*=\\s*IFCPROPERTYSINGLEVALUE\\(\\s*'${stringPattern}'\\s*,[^,]*,\\s*[A-Z0-9_]+\\(\\s*'${stringPattern}'\\s*\\)`,
+    'gmi',
+  );
+  for (const match of source.matchAll(propertyRegex)) {
+    properties.set(Number(match[1]), {
+      name: unescapeStepString(match[2]),
+      value: unescapeStepString(match[3]),
+    });
+  }
+  const propertySetRegex = new RegExp(
+    `^\\s*#(\\d+)\\s*=\\s*IFCPROPERTYSET\\([^;]*?,\\s*'${stringPattern}'\\s*,[^;]*?\\(([^)]*)\\)\\s*\\)\\s*;`,
+    'gmi',
+  );
+  for (const match of source.matchAll(propertySetRegex)) {
+    const values = new Map();
+    for (const reference of match[3].matchAll(/#(\d+)/g)) {
+      const propertyId = Number(reference[1]);
+      const property = properties.get(propertyId);
+      if (property) values.set(property.name.toLowerCase(), { ...property, propertyId });
+    }
+    propertySets.set(Number(match[1]), { name: unescapeStepString(match[2]), values });
+  }
+  const relationRegex = /^\s*#\d+\s*=\s*IFCRELDEFINESBYPROPERTIES\([^;]*?\(([^)]*)\)\s*,\s*#(\d+)\s*\)\s*;/gmi;
+  for (const match of source.matchAll(relationRegex)) {
+    const propertySet = propertySets.get(Number(match[2]));
+    if (!propertySet) continue;
+    for (const reference of match[1].matchAll(/#(\d+)/g)) {
+      const localId = Number(reference[1]);
+      if (!elementSets.has(localId)) elementSets.set(localId, new Map());
+      elementSets.get(localId).set(propertySet.name.toUpperCase(), propertySet);
+    }
+  }
+  return elementSets;
+}
+
+export function extractTraySystemAssignmentsFromIfc(sourceBytes) {
+  const elementSets = extractNamedPropertySets(sourceBytes);
+  const assignments = new Map();
+  for (const [localId, sets] of elementSets) {
+    const system = sets.get('CCP_TRAY_SYSTEM');
+    const component = sets.get('CCP_COMPONENT');
+    const systemTag = system?.values.get('systemtag')?.value || '';
+    const componentId = component?.values.get('componentid')?.value || '';
+    if (!systemTag && !componentId) continue;
+    assignments.set(localId, {
+      systemTag,
+      componentId,
+      sequenceNumber: component?.values.get('sequencenumber')?.value || '',
+      systemTagPropertyId: system?.values.get('systemtag')?.propertyId,
+      componentIdPropertyId: component?.values.get('componentid')?.propertyId,
+      sequencePropertyId: component?.values.get('sequencenumber')?.propertyId,
+    });
+  }
+  return assignments;
+}
+
+function replacePropertyValue(source, propertyId, value) {
+  const propertyLine = new RegExp(
+    `(^\\s*#${propertyId}\\s*=\\s*IFCPROPERTYSINGLEVALUE\\(\\s*'(?:''|[^'])*'\\s*,\\s*[^,]*,\\s*)[A-Z0-9_]+\\(\\s*'(?:''|[^'])*'\\s*\\)(\\s*,[^;]*\\)\\s*;)`,
+    'gmi',
+  );
+  return source.replace(propertyLine, `$1IFCLABEL('${escapeStepString(value)}')$2`);
+}
+
+export function addTraySystemAssignmentsToIfc(sourceBytes, assignments) {
+  const encoder = new TextEncoder();
+  let source = decodeIfc(sourceBytes);
+  const entityIds = getEntityIds(source);
+  const existing = extractTraySystemAssignmentsFromIfc(source);
+  let nextId = 1;
+  for (const entityId of entityIds) nextId = Math.max(nextId, entityId + 1);
+  const entityLines = [];
+  const applied = [];
+  const skipped = [];
+
+  const appendPropertySet = (localId, name, values) => {
+    const propertyIds = values.map(([propertyName, value]) => {
+      const propertyId = nextId++;
+      entityLines.push(`#${propertyId}=IFCPROPERTYSINGLEVALUE('${escapeStepString(propertyName)}',$,IFCLABEL('${escapeStepString(value)}'),$);`);
+      return propertyId;
+    });
+    const propertySetId = nextId++;
+    const relationshipId = nextId++;
+    entityLines.push(
+      `#${propertySetId}=IFCPROPERTYSET('${createIfcGuid()}',$,'${name}',$,(${propertyIds.map((id) => `#${id}`).join(',')}));`,
+      `#${relationshipId}=IFCRELDEFINESBYPROPERTIES('${createIfcGuid()}',$,$,$,(#${localId}),#${propertySetId});`,
+    );
+  };
+
+  for (const assignment of assignments) {
+    const localId = Number(assignment.localId);
+    const systemTag = String(assignment.systemTag ?? '').trim();
+    const componentId = String(assignment.componentId ?? '').trim();
+    const sequenceNumber = String(assignment.sequenceNumber ?? '').trim();
+    if (!Number.isInteger(localId) || !entityIds.has(localId)) {
+      skipped.push({ assignment, reason: 'element-not-found-in-source-ifc' });
+      continue;
+    }
+    if (!systemTag || !componentId || !sequenceNumber) {
+      skipped.push({ assignment, reason: 'incomplete-tray-assignment' });
+      continue;
+    }
+
+    const current = existing.get(localId);
+    if (current?.systemTagPropertyId && current?.componentIdPropertyId && current?.sequencePropertyId) {
+      source = replacePropertyValue(source, current.systemTagPropertyId, systemTag);
+      source = replacePropertyValue(source, current.componentIdPropertyId, componentId);
+      source = replacePropertyValue(source, current.sequencePropertyId, sequenceNumber);
+      applied.push({ localId, systemTag, componentId, sequenceNumber, action: 'updated' });
+      continue;
+    }
+    appendPropertySet(localId, 'CCP_TRAY_SYSTEM', [['SystemTag', systemTag]]);
+    appendPropertySet(localId, 'CCP_COMPONENT', [
+      ['ComponentId', componentId],
+      ['SequenceNumber', sequenceNumber],
+    ]);
+    applied.push({ localId, systemTag, componentId, sequenceNumber, action: 'created' });
+  }
+  if (!applied.length) throw new Error('No tray-system assignments matched elements in the source IFC.');
+  const insertionIndex = findDataTerminator(source);
+  const prefix = source.slice(0, insertionIndex).replace(/\s*$/, '');
+  const suffix = source.slice(insertionIndex);
+  const output = `${prefix}\r\n/* BIM Tracker tray-system assignments */\r\n${entityLines.join('\r\n')}\r\n${suffix}`;
+  return { bytes: encoder.encode(output), text: output, applied, skipped };
+}
+
 export function addProjectTagsToIfc(sourceBytes, assignments, options = {}) {
   const propertySetName = options.propertySetName || 'CCP_TAG';
   const propertyName = options.propertyName || 'Tag';
