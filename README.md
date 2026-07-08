@@ -59,6 +59,10 @@ IDs are unique within the project.
 identifiers and best-effort `Width`, `Height`, and `Length` values read from each
 element's IFC attributes or property sets.
 
+When that workbook is uploaded again, `ComponentId` is selected automatically:
+clicking a row highlights its single IFC element. Selecting `SystemTag` as the
+navigation column instead makes each row highlight the complete tray system.
+
 Select **Validate Tags** before export to compare effective IFC tags with the
 selected Excel tag column. Duplicate component IDs, duplicate Excel system tags,
 blank Excel tags, and missing component IDs block export. Unassigned Excel systems

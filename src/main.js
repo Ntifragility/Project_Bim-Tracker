@@ -373,6 +373,26 @@ async function initApp() {
     return members;
   }
 
+  function normalizeColumnName(name) {
+    return String(name || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+  }
+
+  function isComponentIdColumn(name = selectedExcelIdColumn) {
+    return ['componentid', 'componenttag', 'pieceid'].includes(normalizeColumnName(name));
+  }
+
+  function isSystemTagColumn(name = selectedExcelIdColumn) {
+    return ['systemtag', 'tag', 'traytag'].includes(normalizeColumnName(name));
+  }
+
+  function findComponentById(componentId) {
+    const normalizedId = String(componentId || '').trim().toLowerCase();
+    if (!normalizedId) return null;
+    return getEffectiveTaggedElements().find(
+      (element) => element.componentId?.trim().toLowerCase() === normalizedId,
+    ) || null;
+  }
+
   function getEffectiveTaggedElements() {
     const elements = new Map();
     for (const modelEntry of loadedModels) {
@@ -401,7 +421,7 @@ async function initApp() {
   }
 
   function getExcelTagsForValidation() {
-    if (!selectedExcelIdColumn) return [];
+    if (!selectedExcelIdColumn || !isSystemTagColumn()) return [];
     return excelData.map((row, index) => ({
       rowNumber: index + 2,
       tag: String(row[selectedExcelIdColumn] ?? '').trim(),
@@ -1786,9 +1806,10 @@ async function initApp() {
       if (selectedExcelRowIndex === index) tr.classList.add('active');
 
       const rowTag = selectedExcelIdColumn ? String(row[selectedExcelIdColumn] ?? '').trim() : '';
-      const systemMembers = findSystemMembers(rowTag);
-      const rowAssignment = systemMembers[0] || null;
-      if (systemMembers.length) tr.classList.add('assigned');
+      const componentMatch = isComponentIdColumn() ? findComponentById(rowTag) : null;
+      const rowMembers = componentMatch ? [componentMatch] : isSystemTagColumn() ? findSystemMembers(rowTag) : [];
+      const rowAssignment = rowMembers[0] || null;
+      if (rowMembers.length) tr.classList.add('assigned');
       
       excelColumns.forEach(col => {
         const td = document.createElement('td');
@@ -1799,22 +1820,25 @@ async function initApp() {
 
       const statusCell = document.createElement('td');
       statusCell.className = 'assignment-cell';
-      statusCell.textContent = systemMembers.length
-        ? `Assigned ${systemMembers.length} element${systemMembers.length === 1 ? '' : 's'}`
+      statusCell.textContent = rowMembers.length
+        ? `Assigned ${rowMembers.length} element${rowMembers.length === 1 ? '' : 's'}`
         : 'Unassigned';
-      statusCell.title = systemMembers.length
-        ? `${systemMembers.length} IFC element${systemMembers.length === 1 ? '' : 's'} belong to this tray system.`
-        : 'This Excel system tag has not been assigned.';
+      statusCell.title = rowMembers.length
+        ? isComponentIdColumn()
+          ? `Component ${rowAssignment.componentId} matches IFC element #${rowAssignment.localId}.`
+          : `${rowMembers.length} IFC element${rowMembers.length === 1 ? '' : 's'} belong to this tray system.`
+        : 'This Excel identifier has not been matched.';
       tr.appendChild(statusCell);
       
       tr.addEventListener('click', async () => {
         excelTableBody.querySelectorAll('tr').forEach(r => r.classList.remove('active'));
         tr.classList.add('active');
         selectedExcelRowIndex = index;
-        if (rowTag) systemTagInput.value = rowTag;
+        if (rowAssignment?.systemTag) systemTagInput.value = rowAssignment.systemTag;
+        else if (rowTag && isSystemTagColumn()) systemTagInput.value = rowTag;
         updateTagAssignmentUi();
 
-        if (systemMembers.length) {
+        if (rowMembers.length) {
           const modelEntry = loadedModels.find((entry) =>
             entry.model?.modelId === rowAssignment.modelId || entry.model?.uuid === rowAssignment.modelId
           );
@@ -1833,7 +1857,7 @@ async function initApp() {
           highlighter.isProgrammaticSelect = true;
           try {
             const fragmentMap = {};
-            for (const member of systemMembers) {
+            for (const member of rowMembers) {
               if (!fragmentMap[member.modelId]) fragmentMap[member.modelId] = new Set();
               fragmentMap[member.modelId].add(Number(member.localId));
             }
@@ -1842,7 +1866,11 @@ async function initApp() {
             await displayElementProperties(modelEntry.model, rowAssignment.localId, modelEntry.name);
             selectedIfcElement = await readElementIdentity(modelEntry.model, rowAssignment.localId, modelEntry.name);
             routingController.setSelectedElement(modelEntry.model, rowAssignment.localId);
-            updateTagAssignmentUi(`Highlighted ${systemMembers.length} elements for tray system “${rowTag}”.`);
+            updateTagAssignmentUi(
+              isComponentIdColumn()
+                ? `Highlighted component “${rowAssignment.componentId}” (element #${rowAssignment.localId}).`
+                : `Highlighted ${rowMembers.length} elements for tray system “${rowTag}”.`,
+            );
           } catch (error) {
             console.warn('[Excel Linkage] Assigned element highlight failed:', error);
             updateTagAssignmentUi(`Warning: element #${rowAssignment.localId} could not be highlighted.`, 'warning');
@@ -1882,19 +1910,18 @@ async function initApp() {
           selectedExcelRowIndex = null;
           
           excelIdColumn.innerHTML = '<option value="">(Select tag column)</option>';
-          let preselectedCol = "";
+          let systemTagColumn = "";
+          let componentIdColumn = "";
           excelColumns.forEach(col => {
             const option = document.createElement('option');
             option.value = col;
             option.innerText = col;
             excelIdColumn.appendChild(option);
             
-            const lowerCol = col.toLowerCase();
-            if (lowerCol === 'tag' || lowerCol === 'element tag' || lowerCol === 'elementtag' || lowerCol === 'tray tag' || lowerCol === 'traytag') {
-              preselectedCol = col;
-            }
+            if (isComponentIdColumn(col)) componentIdColumn = col;
+            else if (isSystemTagColumn(col)) systemTagColumn = col;
           });
-          
+          const preselectedCol = componentIdColumn || systemTagColumn;
           if (preselectedCol) {
             excelIdColumn.value = preselectedCol;
             selectedExcelIdColumn = preselectedCol;
