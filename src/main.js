@@ -263,14 +263,10 @@ async function initApp() {
   await ifcLoader.setup();
   console.log("IfcLoader WASM set up successfully.");
 
-  // 6.5. Set up IfcRelationsIndexer for querying element property sets
+  // Current FragmentsModel versions expose relations through getItemsData().
+  // Keep the legacy variable for the old-property fallback without requesting
+  // the removed IfcRelationsIndexer component.
   let indexer = null;
-  try {
-    indexer = components.get(OBC.IfcRelationsIndexer);
-    console.log("IfcRelationsIndexer ready.");
-  } catch (e) {
-    console.warn("IfcRelationsIndexer not available, will use manual fallback:", e);
-  }
 
   // 7. Set up Highlighter
   const highlighter = components.get(OBF.Highlighter);
@@ -1384,6 +1380,24 @@ async function initApp() {
       });
     }
   });
+
+  // Optional deep link for local review and automated validation:
+  // ?ifc=/path/to/model.ifc
+  const linkedIfcUrl = new URLSearchParams(window.location.search).get('ifc');
+  if (linkedIfcUrl) {
+    const linkedName = decodeURIComponent(linkedIfcUrl.split('/').pop() || 'LinkedModel.ifc');
+    showLoader('Loading Linked IFC', `Fetching ${linkedName}...`, 10);
+    try {
+      const response = await fetch(linkedIfcUrl);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.arrayBuffer();
+      await loadModel(new Uint8Array(data), linkedName, formatBytes(data.byteLength));
+    } catch (error) {
+      console.error('[Linked IFC] Load failed:', error);
+      updateLoader(`Linked IFC failed: ${error.message}`, 0);
+      setTimeout(hideLoader, 3000);
+    }
+  }
 
   btnResetCamera.addEventListener('click', () => {
     fitModelsToView();

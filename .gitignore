@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Project IFC models are local validation data and may contain sensitive BIM data.
+*.ifc
+*.IFC
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

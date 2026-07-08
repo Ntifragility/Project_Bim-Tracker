@@ -1,4 +1,5 @@
-export function shortestPath(graph, startNodeId, endNodeId) {
+export function shortestPath(graph, startNodeId, endNodeId, options = {}) {
+  const excludedEdgeIds = new Set(options.excludeEdgeIds || []);
   if (!graph.nodes.has(startNodeId) || !graph.nodes.has(endNodeId)) {
     return { found: false, reason: 'unknown-node', nodeIds: [], edgeIds: [], length: Infinity };
   }
@@ -18,6 +19,7 @@ export function shortestPath(graph, startNodeId, endNodeId) {
     if (current === endNodeId) break;
 
     for (const edgeId of graph.nodes.get(current).edgeIds) {
+      if (excludedEdgeIds.has(edgeId)) continue;
       const edge = graph.edges.get(edgeId);
       const neighbor = edge.from === current ? edge.to : edge.from;
       if (!remaining.has(neighbor)) continue;
@@ -46,4 +48,3 @@ export function shortestPath(graph, startNodeId, endNodeId) {
 
   return { found: true, nodeIds, edgeIds, length: distances.get(endNodeId) };
 }
-

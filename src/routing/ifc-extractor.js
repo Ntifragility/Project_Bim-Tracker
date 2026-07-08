@@ -41,21 +41,39 @@ function isTrayData(data) {
 
 async function getWorldVertices(model, localId) {
   const geometry = await model.getItem(localId).getGeometry();
-  if (!geometry) return [];
-  const vertexGroups = await geometry.getVertices();
-  if (!vertexGroups?.length) return [];
-  const transforms = await geometry.getTransform();
-  model.object.updateMatrixWorld(true);
-
-  const result = [];
-  vertexGroups.forEach((vertices, index) => {
-    const sampleTransform = transforms?.[index] || new THREE.Matrix4();
-    for (const vertex of vertices) {
-      const transformed = vertex.clone().applyMatrix4(sampleTransform).applyMatrix4(model.object.matrixWorld);
-      result.push({ x: transformed.x, y: transformed.y, z: transformed.z });
+  if (geometry) {
+    try {
+      const vertexGroups = await geometry.getVertices();
+      if (vertexGroups?.length) {
+        const transforms = await geometry.getTransform();
+        model.object.updateMatrixWorld(true);
+        const result = [];
+        vertexGroups.forEach((vertices, index) => {
+          const sampleTransform = transforms?.[index] || new THREE.Matrix4();
+          for (const vertex of vertices) {
+            const transformed = vertex.clone().applyMatrix4(sampleTransform).applyMatrix4(model.object.matrixWorld);
+            result.push({ x: transformed.x, y: transformed.y, z: transformed.z });
+          }
+        });
+        if (result.length) return { points: result, source: 'vertices' };
+      }
+    } catch (_) {
+      // Revizto can advertise a geometry item whose internal sample list is
+      // unavailable. The caller reports aggregate fallback counts in the UI.
     }
-  });
-  return result;
+  }
+
+  const boxes = await model.getBoxes([Number(localId)]);
+  const box = boxes?.[0];
+  if (!box || box.isEmpty()) return { points: [], source: 'none' };
+  const { min, max } = box;
+  const points = [];
+  for (const x of [min.x, max.x]) {
+    for (const y of [min.y, max.y]) {
+      for (const z of [min.z, max.z]) points.push({ x, y, z });
+    }
+  }
+  return { points, source: 'bounding-box' };
 }
 
 export async function extractTraySegments(model, options = {}) {
@@ -86,8 +104,8 @@ export async function extractTraySegments(model, options = {}) {
       continue;
     }
 
-    const vertices = await getWorldVertices(model, Number(localId));
-    const centerline = deriveCenterline(vertices, { minimumLength: options.minimumLength ?? 0.02 });
+    const geometryData = await getWorldVertices(model, Number(localId));
+    const centerline = deriveCenterline(geometryData.points, { minimumLength: options.minimumLength ?? 0.02 });
     if (!centerline.valid) {
       rejected.push({ localId, reason: centerline.reason });
       continue;
@@ -104,9 +122,10 @@ export async function extractTraySegments(model, options = {}) {
       category,
       name: String(unwrap(data.Name) || ''),
       ...centerline,
+      confidence: centerline.confidence * (geometryData.source === 'vertices' ? 1 : 0.7),
+      geometrySource: geometryData.source,
     });
   }
 
   return { segments, rejected, candidateCount: candidateIds.length };
 }
-

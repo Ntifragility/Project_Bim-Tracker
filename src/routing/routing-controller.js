@@ -93,16 +93,17 @@ export function initRoutingController({ world, getLoadedModels }) {
       const results = await Promise.all(loadedModels.map(({ model }) => extractTraySegments(model)));
       const segments = results.flatMap((result) => result.segments);
       const rejectedCount = results.reduce((sum, result) => sum + result.rejected.length, 0);
+      const fallbackCount = segments.filter((segment) => segment.geometrySource === 'bounding-box').length;
       const tolerance = Math.max(0.001, Number(toleranceInput.value) / 1000);
       graph = buildConnectivityGraph(segments, { tolerance });
       diagnostics = diagnoseGraph(graph);
       startEdgeId = null;
       endEdgeId = null;
       renderGraph();
-      summary.textContent = `${diagnostics.segmentCount} segments · ${diagnostics.nodeCount} nodes · ${diagnostics.componentCount} components · ${diagnostics.danglingNodes.length} open ends`;
+      summary.textContent = `${diagnostics.segmentCount} segments · ${diagnostics.nodeCount} nodes · ${diagnostics.componentCount} components · ${diagnostics.danglingNodes.length} open ends · ${diagnostics.lowConfidenceEdges.length} low confidence`;
       setStatus(
-        rejectedCount
-          ? `Graph built. ${rejectedCount} candidates were rejected; inspect warnings before trusting routes.`
+        rejectedCount || fallbackCount
+          ? `Graph built. ${rejectedCount} non-geometric candidates rejected; ${fallbackCount} centerlines used box fallback.`
           : 'Graph built successfully.',
         diagnostics.isConnected ? 'success' : 'warning',
       );
@@ -129,11 +130,29 @@ export function initRoutingController({ world, getLoadedModels }) {
     if (!graph || !startEdgeId || !endEdgeId) return;
     const startEdge = graph.edges.get(startEdgeId);
     const endEdge = graph.edges.get(endEdgeId);
+    if (startEdgeId === endEdgeId) {
+      if (routeLine) overlay.remove(routeLine);
+      routeLine = lineObject([startEdge.segment.start, startEdge.segment.end], 0xfacc15, 1);
+      routeLine.material.depthTest = false;
+      routeLine.renderOrder = 10;
+      overlay.add(routeLine);
+      setStatus(`Start and destination are the same tray segment (${startEdge.length.toFixed(2)} m).`, 'success');
+      return;
+    }
     const candidatePairs = [
       [startEdge.from, endEdge.from], [startEdge.from, endEdge.to],
       [startEdge.to, endEdge.from], [startEdge.to, endEdge.to],
     ];
-    const candidates = candidatePairs.map(([start, end]) => shortestPath(graph, start, end));
+    const candidates = candidatePairs.map(([start, end]) => {
+      const internal = shortestPath(graph, start, end, { excludeEdgeIds: [startEdgeId, endEdgeId] });
+      return internal.found
+        ? {
+            ...internal,
+            edgeIds: [startEdgeId, ...internal.edgeIds, endEdgeId],
+            length: startEdge.length / 2 + internal.length + endEdge.length / 2,
+          }
+        : internal;
+    });
     const route = candidates.filter((candidate) => candidate.found).sort((a, b) => a.length - b.length)[0];
     if (!route) {
       setStatus('No connected route exists between the selected tray elements.', 'error');
@@ -175,4 +194,3 @@ export function initRoutingController({ world, getLoadedModels }) {
     getDiagnostics: () => diagnostics,
   };
 }
-

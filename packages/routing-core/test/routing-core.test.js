@@ -61,3 +61,18 @@ test('calculates the shortest weighted path', () => {
   assert.equal(result.length, 2);
 });
 
+test('can exclude endpoint edges from an internal route search', () => {
+  const graph = buildConnectivityGraph([
+    { id: 'start', start: point(0, 0), end: point(1, 0), length: 1 },
+    { id: 'middle', start: point(1, 0), end: point(2, 0), length: 1 },
+    { id: 'end', start: point(2, 0), end: point(3, 0), length: 1 },
+  ], { tolerance: 0.001 });
+  const result = shortestPath(
+    graph,
+    graph.edges.get('start').to,
+    graph.edges.get('end').from,
+    { excludeEdgeIds: ['start', 'end'] },
+  );
+  assert.equal(result.found, true);
+  assert.deepEqual(result.edgeIds, ['middle']);
+});
