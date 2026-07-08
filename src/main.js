@@ -6,6 +6,7 @@ import * as XLSX from 'xlsx';
 import { initExcelBridge, sendMeasurementToExcel } from './viewer-socket.js';
 import { initRoutingController } from './routing/routing-controller.js';
 import { addProjectTagsToIfc, extractProjectTagsFromIfc, taggedIfcFileName } from './ifc/ifc-tag-exporter.js';
+import { validateTagIntegrity } from './ifc/tag-validator.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 
 // Global variables for active model and state
@@ -54,8 +55,13 @@ const tagAssignmentStatus = document.getElementById('tag-assignment-status');
 const tagAssignmentSummary = document.getElementById('tag-assignment-summary');
 const btnAssignTag = document.getElementById('btn-assign-tag');
 const btnUnassignTag = document.getElementById('btn-unassign-tag');
+const btnValidateTags = document.getElementById('btn-validate-tags');
 const btnExportTags = document.getElementById('btn-export-tags');
 const btnExportTaggedIfc = document.getElementById('btn-export-tagged-ifc');
+const tagValidationReport = document.getElementById('tag-validation-report');
+const tagValidationBadge = document.getElementById('tag-validation-badge');
+const tagValidationCounts = document.getElementById('tag-validation-counts');
+const tagValidationIssues = document.getElementById('tag-validation-issues');
 const tagReplaceDialog = document.getElementById('tag-replace-dialog');
 const tagReplaceMessage = document.getElementById('tag-replace-message');
 const tagReplaceCancel = document.getElementById('tag-replace-cancel');
@@ -360,6 +366,79 @@ async function initApp() {
     return null;
   }
 
+  function getEffectiveTaggedElements() {
+    const elements = new Map();
+    for (const modelEntry of loadedModels) {
+      const modelId = modelEntry.model.modelId || modelEntry.model.uuid;
+      for (const [localId, projectTag] of modelEntry.existingProjectTags || []) {
+        const key = getAssignmentKey(modelId, localId);
+        elements.set(key, {
+          modelId,
+          modelName: modelEntry.name,
+          localId: Number(localId),
+          tag: projectTag.tag,
+          source: 'ifc',
+        });
+      }
+    }
+    for (const [key, assignment] of tagAssignments) {
+      if (loadedModels.some((entry) =>
+        entry.model.modelId === assignment.modelId || entry.model.uuid === assignment.modelId
+      )) {
+        elements.set(key, { ...assignment, source: 'pending' });
+      }
+    }
+    return Array.from(elements.values());
+  }
+
+  function getExcelTagsForValidation() {
+    if (!selectedExcelIdColumn) return [];
+    return excelData.map((row, index) => ({
+      rowNumber: index + 2,
+      tag: String(row[selectedExcelIdColumn] ?? '').trim(),
+    }));
+  }
+
+  function runTagValidation() {
+    const result = validateTagIntegrity({
+      elements: getEffectiveTaggedElements(),
+      excelTags: getExcelTagsForValidation(),
+    });
+
+    if (!excelData.length || !selectedExcelIdColumn) {
+      result.valid = false;
+      result.errors.unshift({
+        code: 'missing-excel-tags',
+        message: excelData.length ? 'Select the Excel tag column.' : 'Upload an Excel tag list.',
+      });
+      result.counts.errors = result.errors.length;
+    }
+
+    tagValidationReport.hidden = false;
+    const tone = !result.valid ? 'error' : result.warnings.length ? 'warning' : 'success';
+    tagValidationReport.dataset.tone = tone;
+    tagValidationBadge.textContent = !result.valid ? 'Blocked' : result.warnings.length ? 'Warnings' : 'Ready';
+    tagValidationCounts.textContent = `${result.counts.ifcTags} IFC tags · ${result.counts.excelTags} Excel rows · ${result.counts.matchedTags} matched`;
+    tagValidationIssues.innerHTML = '';
+
+    const issues = [
+      ...result.errors.map((issue) => ({ ...issue, level: 'error' })),
+      ...result.warnings.map((issue) => ({ ...issue, level: 'warning' })),
+    ];
+    if (!issues.length) issues.push({ level: 'success', message: 'No tag integrity problems found.' });
+    for (const issue of issues) {
+      const item = document.createElement('li');
+      item.className = `validation-${issue.level}`;
+      item.textContent = issue.message;
+      tagValidationIssues.appendChild(item);
+    }
+    return result;
+  }
+
+  function refreshValidationReportIfOpen() {
+    if (!tagValidationReport.hidden) runTagValidation();
+  }
+
   function updateTagAssignmentUi(message = '', tone = '') {
     const selectedTag = getSelectedExcelTag();
     const assignment = getAssignmentForElement();
@@ -374,6 +453,7 @@ async function initApp() {
     tagAssignmentSummary.textContent = `${tagAssignments.size} assignment${tagAssignments.size === 1 ? '' : 's'}`;
     btnAssignTag.disabled = !selectedTag || !selectedIfcElement;
     btnUnassignTag.disabled = !assignment;
+    btnValidateTags.disabled = loadedModels.length === 0 || excelData.length === 0;
     btnExportTags.disabled = tagAssignments.size === 0;
     btnExportTaggedIfc.disabled = tagAssignments.size === 0;
 
@@ -710,8 +790,12 @@ async function initApp() {
     }
 
     // Remove from loadedModels
+    for (const [key, assignment] of tagAssignments) {
+      if (assignment.modelId === model.modelId || assignment.modelId === model.uuid) tagAssignments.delete(key);
+    }
     loadedModels = loadedModels.filter(m => m.uuid !== modelEntry.uuid);
     renderExcelTable();
+    refreshValidationReportIfOpen();
 
     // If the unloaded model was the active model, update activeModel reference
     if (activeModel === model) {
@@ -1379,6 +1463,7 @@ async function initApp() {
 
       loadedModels.push(modelEntry);
       renderExcelTable();
+      refreshValidationReportIfOpen();
 
       // Fit camera to model
       fitModelToView(model);
@@ -1731,6 +1816,7 @@ async function initApp() {
           }
 
           renderExcelTable();
+          refreshValidationReportIfOpen();
           updateTagAssignmentUi('Excel tag list loaded. Select a row and an IFC element.');
           
           // Show the excel panel
@@ -1757,6 +1843,7 @@ async function initApp() {
   excelIdColumn.addEventListener('change', () => {
     selectedExcelIdColumn = excelIdColumn.value;
     renderExcelTable();
+    refreshValidationReportIfOpen();
     updateTagAssignmentUi();
   });
 
@@ -1831,6 +1918,7 @@ async function initApp() {
       'success',
     );
     syncProjectTagPropertyGroup(activeModel, selectedIfcElement.localId);
+    refreshValidationReportIfOpen();
   });
 
   btnUnassignTag.addEventListener('click', () => {
@@ -1841,6 +1929,17 @@ async function initApp() {
     renderExcelTable();
     updateTagAssignmentUi(`Removed “${assignment.tag}” from element #${assignment.localId}.`);
     syncProjectTagPropertyGroup(activeModel, assignment.localId);
+    refreshValidationReportIfOpen();
+  });
+
+  btnValidateTags.addEventListener('click', () => {
+    const result = runTagValidation();
+    updateTagAssignmentUi(
+      result.valid
+        ? `Validation complete: ${result.counts.errors} errors and ${result.counts.warnings} warnings.`
+        : `Validation blocked export: ${result.counts.errors} error${result.counts.errors === 1 ? '' : 's'} found.`,
+      result.valid ? (result.warnings.length ? 'warning' : 'success') : 'warning',
+    );
   });
 
   btnExportTags.addEventListener('click', () => {
@@ -1865,6 +1964,15 @@ async function initApp() {
 
   btnExportTaggedIfc.addEventListener('click', () => {
     if (tagAssignments.size === 0) return;
+
+    const validation = runTagValidation();
+    if (!validation.valid) {
+      updateTagAssignmentUi(
+        `Export blocked: resolve ${validation.counts.errors} tag validation error${validation.counts.errors === 1 ? '' : 's'} first.`,
+        'warning',
+      );
+      return;
+    }
 
     let exportedModels = 0;
     let exportedTags = 0;

@@ -53,6 +53,11 @@ shown for their elements. Assigning a different tag asks for confirmation and
 updates the existing property; elements without `CCP_TAG` receive a new property
 set on export.
 
+Select **Validate Tags** before export to compare effective IFC tags with the
+selected Excel tag column. Duplicate IFC tags, duplicate Excel tags, and blank
+Excel tags block tagged-IFC export. Unassigned Excel tags and IFC tags missing
+from Excel are reported as warnings but do not block export.
+
 ## Verification
 
 ```powershell
