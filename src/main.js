@@ -332,6 +332,34 @@ async function initApp() {
     return modelEntry?.existingProjectTags?.get(Number(element.localId))?.tag || '';
   }
 
+  function findTagOwner(tag, excludedKey = '') {
+    const normalizedTag = String(tag || '').trim().toLowerCase();
+    if (!normalizedTag) return null;
+
+    for (const [key, assignment] of tagAssignments) {
+      if (key !== excludedKey && assignment.tag.toLowerCase() === normalizedTag) return assignment;
+    }
+
+    for (const modelEntry of loadedModels) {
+      const modelId = modelEntry.model.modelId || modelEntry.model.uuid;
+      for (const [localId, projectTag] of modelEntry.existingProjectTags || []) {
+        const key = getAssignmentKey(modelId, localId);
+        if (key === excludedKey || tagAssignments.has(key)) continue;
+        if (projectTag.tag.toLowerCase() === normalizedTag) {
+          return {
+            modelId,
+            modelName: modelEntry.name,
+            localId: Number(localId),
+            globalId: '',
+            tag: projectTag.tag,
+            source: 'ifc',
+          };
+        }
+      }
+    }
+    return null;
+  }
+
   function updateTagAssignmentUi(message = '', tone = '') {
     const selectedTag = getSelectedExcelTag();
     const assignment = getAssignmentForElement();
@@ -683,6 +711,7 @@ async function initApp() {
 
     // Remove from loadedModels
     loadedModels = loadedModels.filter(m => m.uuid !== modelEntry.uuid);
+    renderExcelTable();
 
     // If the unloaded model was the active model, update activeModel reference
     if (activeModel === model) {
@@ -1349,6 +1378,7 @@ async function initApp() {
       };
 
       loadedModels.push(modelEntry);
+      renderExcelTable();
 
       // Fit camera to model
       fitModelToView(model);
@@ -1583,7 +1613,9 @@ async function initApp() {
       tr.dataset.index = index;
       if (selectedExcelRowIndex === index) tr.classList.add('active');
 
-      const rowAssignment = Array.from(tagAssignments.values()).find((assignment) => assignment.excelRowIndex === index);
+      const sessionAssignment = Array.from(tagAssignments.values()).find((assignment) => assignment.excelRowIndex === index);
+      const rowTag = selectedExcelIdColumn ? String(row[selectedExcelIdColumn] ?? '').trim() : '';
+      const rowAssignment = sessionAssignment || findTagOwner(rowTag);
       if (rowAssignment) tr.classList.add('assigned');
       
       excelColumns.forEach(col => {
@@ -1595,7 +1627,9 @@ async function initApp() {
 
       const statusCell = document.createElement('td');
       statusCell.className = 'assignment-cell';
-      statusCell.textContent = rowAssignment ? `Assigned #${rowAssignment.localId}` : 'Unassigned';
+      statusCell.textContent = rowAssignment
+        ? `${rowAssignment.source === 'ifc' ? 'Existing' : 'Assigned'} #${rowAssignment.localId}`
+        : 'Unassigned';
       statusCell.title = rowAssignment
         ? `${rowAssignment.modelName} / ${rowAssignment.globalId || `local ID ${rowAssignment.localId}`}`
         : 'This Excel tag has not been assigned.';
@@ -1743,6 +1777,16 @@ async function initApp() {
       return;
     }
 
+    const selectedElementKey = getAssignmentKey(selectedIfcElement.modelId, selectedIfcElement.localId);
+    const conflictingOwner = findTagOwner(tag, selectedElementKey);
+    if (conflictingOwner) {
+      updateTagAssignmentUi(
+        `Warning: tag “${tag}” is already used by element #${conflictingOwner.localId} in ${conflictingOwner.modelName}.`,
+        'warning',
+      );
+      return;
+    }
+
     const existingProjectTag = getExistingProjectTag();
     if (existingProjectTag) {
       if (existingProjectTag.toLowerCase() === tag.toLowerCase()) {
@@ -1761,22 +1805,6 @@ async function initApp() {
         updateTagAssignmentUi('Tag replacement cancelled.', 'warning');
         return;
       }
-    }
-
-    let conflictingAssignment = null;
-    for (const [key, assignment] of tagAssignments) {
-      if (assignment.tag.toLowerCase() === tag.toLowerCase() &&
-          key !== getAssignmentKey(selectedIfcElement.modelId, selectedIfcElement.localId)) {
-        conflictingAssignment = assignment;
-        break;
-      }
-    }
-    if (conflictingAssignment) {
-      updateTagAssignmentUi(
-        `Warning: tag “${tag}” is already assigned to element #${conflictingAssignment.localId}.`,
-        'warning',
-      );
-      return;
     }
 
     for (const [key, assignment] of tagAssignments) {
