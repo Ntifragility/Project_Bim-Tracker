@@ -893,7 +893,8 @@ body {
   font-size: 0.75rem;
 }
 
-.tag-assignment-actions #btn-export-tags {
+.tag-assignment-actions #btn-export-tags,
+.tag-assignment-actions #btn-export-tagged-ifc {
   grid-column: 1 / -1;
 }
 

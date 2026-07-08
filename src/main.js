@@ -5,6 +5,7 @@ import * as OBF from '@thatopen/components-front';
 import * as XLSX from 'xlsx';
 import { initExcelBridge, sendMeasurementToExcel } from './viewer-socket.js';
 import { initRoutingController } from './routing/routing-controller.js';
+import { addProjectTagsToIfc, taggedIfcFileName } from './ifc/ifc-tag-exporter.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 
 // Global variables for active model and state
@@ -54,6 +55,7 @@ const tagAssignmentSummary = document.getElementById('tag-assignment-summary');
 const btnAssignTag = document.getElementById('btn-assign-tag');
 const btnUnassignTag = document.getElementById('btn-unassign-tag');
 const btnExportTags = document.getElementById('btn-export-tags');
+const btnExportTaggedIfc = document.getElementById('btn-export-tagged-ifc');
 
 // Loaded Models DOM Elements
 const loadedModelsContainer = document.getElementById('loaded-models-container');
@@ -303,6 +305,7 @@ async function initApp() {
     btnAssignTag.disabled = !selectedTag || !selectedIfcElement;
     btnUnassignTag.disabled = !assignment;
     btnExportTags.disabled = tagAssignments.size === 0;
+    btnExportTaggedIfc.disabled = tagAssignments.size === 0;
 
     if (selectedIfcElement) {
       const displayedTag = assignment?.tag || selectedIfcElement.ifcTag || '-';
@@ -1208,6 +1211,7 @@ async function initApp() {
   // Loader function
   async function loadModel(buffer, name, sizeFormatted) {
     showLoader("Loading Model", `Parsing '${name}'...`, 30);
+    const sourceIfcBytes = buffer.slice();
     
     // Check if the model with the same name is already loaded to avoid collisions
     if (loadedModels.some(m => m.name === name)) {
@@ -1272,6 +1276,7 @@ async function initApp() {
         name: name,
         size: sizeFormatted,
         model: model,
+        sourceIfcBytes,
         visible: true
       };
 
@@ -1738,6 +1743,52 @@ async function initApp() {
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Tag Mapping');
     XLSX.writeFile(workbook, 'IFC_Tag_Mapping.xlsx');
     updateTagAssignmentUi(`Exported ${rows.length} tag assignment${rows.length === 1 ? '' : 's'}.`);
+  });
+
+  btnExportTaggedIfc.addEventListener('click', () => {
+    if (tagAssignments.size === 0) return;
+
+    let exportedModels = 0;
+    let exportedTags = 0;
+    let skippedTags = 0;
+    for (const modelEntry of loadedModels) {
+      const assignments = Array.from(tagAssignments.values()).filter((assignment) =>
+        assignment.modelId === modelEntry.model.modelId || assignment.modelId === modelEntry.model.uuid
+      );
+      if (!assignments.length) continue;
+      if (!modelEntry.sourceIfcBytes) {
+        skippedTags += assignments.length;
+        continue;
+      }
+
+      try {
+        const result = addProjectTagsToIfc(modelEntry.sourceIfcBytes, assignments);
+        const blob = new Blob([result.bytes], { type: 'application/x-step' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = taggedIfcFileName(modelEntry.name);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+        exportedModels += 1;
+        exportedTags += result.applied.length;
+        skippedTags += result.skipped.length;
+      } catch (error) {
+        console.error(`[IFC Tag Export] ${modelEntry.name}:`, error);
+        skippedTags += assignments.length;
+      }
+    }
+
+    if (exportedModels === 0) {
+      updateTagAssignmentUi('Warning: no tagged IFC could be generated from the loaded source models.', 'warning');
+      return;
+    }
+    updateTagAssignmentUi(
+      `Successfully exported ${exportedTags} tag${exportedTags === 1 ? '' : 's'} into ${exportedModels} new IFC file${exportedModels === 1 ? '' : 's'}${skippedTags ? `; ${skippedTags} skipped` : ''}.`,
+      skippedTags ? 'warning' : 'success',
+    );
   });
 
   // Toggle Excel Drawer Collapse

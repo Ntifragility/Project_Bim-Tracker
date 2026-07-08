@@ -37,6 +37,17 @@ Overlay colors:
 The graph is an inference from model geometry. A successful path is not yet a
 code-compliance or constructability approval.
 
+## Tagged IFC export
+
+After assigning tags, select **Export Tagged IFC**. The viewer downloads a new
+`<model-name>_tagged.ifc` file and leaves the original IFC unchanged. Each tag
+is stored on its assigned element as:
+
+```text
+Pset_ProjectTag
+└── Tag = CT-001
+```
+
 ## Verification
 
 ```powershell
@@ -46,4 +57,3 @@ npm run build
 
 See [routing architecture](docs/routing-architecture.md) and
 [Revizto validation evidence](docs/revizto-validation.md).
-
