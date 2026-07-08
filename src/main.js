@@ -56,6 +56,10 @@ const btnAssignTag = document.getElementById('btn-assign-tag');
 const btnUnassignTag = document.getElementById('btn-unassign-tag');
 const btnExportTags = document.getElementById('btn-export-tags');
 const btnExportTaggedIfc = document.getElementById('btn-export-tagged-ifc');
+const tagReplaceDialog = document.getElementById('tag-replace-dialog');
+const tagReplaceMessage = document.getElementById('tag-replace-message');
+const tagReplaceCancel = document.getElementById('tag-replace-cancel');
+const tagReplaceConfirm = document.getElementById('tag-replace-confirm');
 
 // Loaded Models DOM Elements
 const loadedModelsContainer = document.getElementById('loaded-models-container');
@@ -97,6 +101,36 @@ function hideLoader() {
 function updateLoader(status, progressVal) {
   loaderStatus.innerText = status;
   loaderProgress.style.width = `${progressVal}%`;
+}
+
+function requestTagReplacement(localId, currentTag, replacementTag) {
+  tagReplaceMessage.textContent = `Element #${localId} already has CCP_TAG “${currentTag}”. Replace it with “${replacementTag}”?`;
+  tagReplaceDialog.hidden = false;
+  tagReplaceConfirm.focus();
+
+  return new Promise((resolve) => {
+    const finish = (confirmed) => {
+      tagReplaceDialog.hidden = true;
+      tagReplaceConfirm.removeEventListener('click', confirm);
+      tagReplaceCancel.removeEventListener('click', cancel);
+      tagReplaceDialog.removeEventListener('click', cancelFromBackdrop);
+      document.removeEventListener('keydown', cancelFromEscape);
+      resolve(confirmed);
+    };
+    const confirm = () => finish(true);
+    const cancel = () => finish(false);
+    const cancelFromBackdrop = (event) => {
+      if (event.target === tagReplaceDialog) finish(false);
+    };
+    const cancelFromEscape = (event) => {
+      if (event.key === 'Escape') finish(false);
+    };
+
+    tagReplaceConfirm.addEventListener('click', confirm);
+    tagReplaceCancel.addEventListener('click', cancel);
+    tagReplaceDialog.addEventListener('click', cancelFromBackdrop);
+    document.addEventListener('keydown', cancelFromEscape);
+  });
 }
 
 // Utility: Format bytes
@@ -1696,7 +1730,7 @@ async function initApp() {
     renderExcelTable();
   });
 
-  btnAssignTag.addEventListener('click', () => {
+  btnAssignTag.addEventListener('click', async () => {
     const tag = getSelectedExcelTag();
     if (!tag || !selectedIfcElement) return;
 
@@ -1718,8 +1752,10 @@ async function initApp() {
         );
         return;
       }
-      const confirmed = window.confirm(
-        `Element #${selectedIfcElement.localId} already has CCP_TAG “${existingProjectTag}”. Replace it with “${tag}”?`,
+      const confirmed = await requestTagReplacement(
+        selectedIfcElement.localId,
+        existingProjectTag,
+        tag,
       );
       if (!confirmed) {
         updateTagAssignmentUi('Tag replacement cancelled.', 'warning');

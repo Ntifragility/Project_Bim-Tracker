@@ -679,6 +679,81 @@ body {
   width: 0%;
 }
 
+.viewer-dialog-backdrop[hidden] {
+  display: none;
+}
+
+.viewer-dialog-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(4, 6, 12, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+.viewer-dialog {
+  width: min(460px, 100%);
+  display: flex;
+  gap: 16px;
+  padding: 22px;
+  border: 1px solid rgba(245, 158, 11, 0.55);
+  border-radius: 16px;
+  background: var(--bg-secondary);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+}
+
+.viewer-dialog-icon {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #fcd34d;
+  background: rgba(245, 158, 11, 0.14);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  font-weight: 800;
+}
+
+.viewer-dialog-content {
+  min-width: 0;
+  flex: 1;
+}
+
+.viewer-dialog h2 {
+  margin-bottom: 8px;
+  font-size: 1rem;
+  color: #fcd34d;
+}
+
+.viewer-dialog p {
+  color: var(--text-secondary);
+  font-size: 0.86rem;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.viewer-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.viewer-dialog-confirm {
+  color: #1c1202;
+  background: #f59e0b;
+  border-color: #fbbf24;
+}
+
+.viewer-dialog-confirm:hover {
+  background: #fbbf24;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
   #sidebar {

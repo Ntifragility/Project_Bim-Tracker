@@ -253,6 +253,20 @@
         </div>
       </div>
 
+      <div id="tag-replace-dialog" class="viewer-dialog-backdrop" hidden>
+        <section class="viewer-dialog" role="alertdialog" aria-modal="true" aria-labelledby="tag-replace-title" aria-describedby="tag-replace-message">
+          <div class="viewer-dialog-icon" aria-hidden="true">!</div>
+          <div class="viewer-dialog-content">
+            <h2 id="tag-replace-title">Replace existing CCP_TAG?</h2>
+            <p id="tag-replace-message"></p>
+            <div class="viewer-dialog-actions">
+              <button id="tag-replace-cancel" class="btn btn-secondary" type="button">Cancel</button>
+              <button id="tag-replace-confirm" class="btn viewer-dialog-confirm" type="button">Replace tag</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
       <!-- Auto-Orbit Notification Badge -->
       <div id="orbit-indicator" class="orbit-indicator" style="display: none;">
         <span>🔄</span> Auto-Orbit Active (Click canvas to stop)
