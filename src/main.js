@@ -50,12 +50,14 @@ const excelFileName = document.getElementById('excel-file-name');
 const excelIdColumn = document.getElementById('excel-id-column');
 const excelSearch = document.getElementById('excel-search');
 const systemTagInput = document.getElementById('system-tag-input');
+const systemTagSuggestions = document.getElementById('system-tag-suggestions');
 const excelDataTable = document.getElementById('excel-data-table');
 const excelTableHeader = document.getElementById('excel-table-header');
 const excelTableBody = document.getElementById('excel-table-body');
 const tagAssignmentStatus = document.getElementById('tag-assignment-status');
 const tagAssignmentSummary = document.getElementById('tag-assignment-summary');
 const btnAssignTag = document.getElementById('btn-assign-tag');
+const btnHighlightSystem = document.getElementById('btn-highlight-system');
 const btnAddTraySelection = document.getElementById('btn-add-tray-selection');
 const btnClearTraySelection = document.getElementById('btn-clear-tray-selection');
 const btnUnassignTag = document.getElementById('btn-unassign-tag');
@@ -459,7 +461,20 @@ async function initApp() {
     if (!tagValidationReport.hidden) runTagValidation();
   }
 
+  function refreshSystemTagSuggestions() {
+    const tags = Array.from(new Set(
+      getEffectiveTaggedElements().map((element) => element.systemTag).filter(Boolean),
+    )).sort((a, b) => a.localeCompare(b));
+    systemTagSuggestions.innerHTML = '';
+    for (const tag of tags) {
+      const option = document.createElement('option');
+      option.value = tag;
+      systemTagSuggestions.appendChild(option);
+    }
+  }
+
   function updateTagAssignmentUi(message = '', tone = '') {
+    refreshSystemTagSuggestions();
     const selectedTag = getEnteredSystemTag();
     const assignment = getAssignmentForElement();
     const elementLabel = selectedIfcElement
@@ -475,6 +490,7 @@ async function initApp() {
     btnAddTraySelection.disabled = !selectedIfcElement;
     btnClearTraySelection.disabled = traySelection.size === 0;
     btnAssignTag.disabled = !selectedTag || (traySelection.size === 0 && !selectedIfcElement);
+    btnHighlightSystem.disabled = !selectedTag || findSystemMembers(selectedTag).length === 0;
     btnUnassignTag.disabled = !assignment;
     btnValidateTags.disabled = loadedModels.length === 0 || getEffectiveTaggedElements().length === 0;
     btnExportTags.disabled = tagAssignments.size === 0;
@@ -1766,6 +1782,48 @@ async function initApp() {
     await zoomToElementInModel(activeModel, expressId);
   }
 
+  async function highlightTrayMembers(members, message) {
+    if (!members.length) return false;
+    const firstMember = members[0];
+    const firstModelEntry = loadedModels.find((entry) =>
+      entry.model?.modelId === firstMember.modelId || entry.model?.uuid === firstMember.modelId
+    );
+    if (!firstModelEntry) return false;
+
+    const fragmentMap = {};
+    for (const member of members) {
+      const modelEntry = loadedModels.find((entry) =>
+        entry.model?.modelId === member.modelId || entry.model?.uuid === member.modelId
+      );
+      if (!modelEntry) continue;
+      if (!modelEntry.visible) {
+        modelEntry.visible = true;
+        const modelObject = modelEntry.model.object || modelEntry.model;
+        if (modelObject) modelObject.visible = true;
+      }
+      if (!fragmentMap[member.modelId]) fragmentMap[member.modelId] = new Set();
+      fragmentMap[member.modelId].add(Number(member.localId));
+    }
+    refreshLoadedModelsList();
+
+    highlighter.isProgrammaticSelect = true;
+    try {
+      await highlighter.highlightByID('select', fragmentMap, true, true);
+      activeModel = firstModelEntry.model;
+      await displayElementProperties(firstModelEntry.model, firstMember.localId, firstModelEntry.name);
+      selectedIfcElement = await readElementIdentity(firstModelEntry.model, firstMember.localId, firstModelEntry.name);
+      routingController.setSelectedElement(firstModelEntry.model, firstMember.localId);
+      updateTagAssignmentUi(message);
+      return true;
+    } catch (error) {
+      console.warn('[Tray Systems] Member highlight failed:', error);
+      updateTagAssignmentUi('Warning: the tray-system elements could not be highlighted.', 'warning');
+      return false;
+    } finally {
+      highlighter.isProgrammaticSelect = false;
+    }
+  }
+
   // Render parsed Excel table rows in UI
   function renderExcelTable() {
     excelTableHeader.innerHTML = '';
@@ -1967,6 +2025,26 @@ async function initApp() {
 
   systemTagInput.addEventListener('input', () => {
     updateTagAssignmentUi();
+  });
+
+  systemTagInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && !btnHighlightSystem.disabled) {
+      event.preventDefault();
+      btnHighlightSystem.click();
+    }
+  });
+
+  btnHighlightSystem.addEventListener('click', async () => {
+    const systemTag = getEnteredSystemTag();
+    const members = findSystemMembers(systemTag);
+    if (!members.length) {
+      updateTagAssignmentUi(`Warning: no loaded components belong to tray system “${systemTag}”.`, 'warning');
+      return;
+    }
+    await highlightTrayMembers(
+      members,
+      `Highlighted ${members.length} components for tray system “${systemTag}”.`,
+    );
   });
 
   btnAddTraySelection.addEventListener('click', () => {

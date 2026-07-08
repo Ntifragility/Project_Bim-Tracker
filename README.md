@@ -63,6 +63,10 @@ When that workbook is uploaded again, `ComponentId` is selected automatically:
 clicking a row highlights its single IFC element. Selecting `SystemTag` as the
 navigation column instead makes each row highlight the complete tray system.
 
+To inspect a complete tray system without Excel, type or choose its system tag and
+select **Highlight System** (or press Enter). Every loaded component assigned to
+that system is highlighted.
+
 Select **Validate Tags** before export to compare effective IFC tags with the
 selected Excel tag column. Duplicate component IDs, duplicate Excel system tags,
 blank Excel tags, and missing component IDs block export. Unassigned Excel systems

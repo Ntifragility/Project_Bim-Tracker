@@ -209,7 +209,8 @@
           <div class="excel-config-group">
             <div class="excel-field">
               <label for="system-tag-input">System Tag</label>
-              <input type="text" id="system-tag-input" class="excel-search-input" placeholder="Example: 140ST-900-001" autocomplete="off" />
+              <input type="text" id="system-tag-input" class="excel-search-input" placeholder="Example: 140ST-900-001" autocomplete="off" list="system-tag-suggestions" />
+              <datalist id="system-tag-suggestions"></datalist>
             </div>
             <div class="excel-field">
               <label for="excel-id-column">Optional Navigation Column</label>
@@ -227,6 +228,7 @@
               <button id="btn-add-tray-selection" class="btn btn-secondary" disabled>Add Selected Element</button>
               <button id="btn-clear-tray-selection" class="btn btn-secondary" disabled>Clear Selection</button>
               <button id="btn-assign-tag" class="btn btn-primary" disabled>Assign System Tag</button>
+              <button id="btn-highlight-system" class="btn btn-secondary" disabled>Highlight System</button>
               <button id="btn-unassign-tag" class="btn btn-secondary" disabled>Unassign</button>
               <button id="btn-validate-tags" class="btn btn-secondary" disabled>Validate Tags</button>
               <button id="btn-export-tags" class="btn btn-secondary" disabled>Export Mapping</button>

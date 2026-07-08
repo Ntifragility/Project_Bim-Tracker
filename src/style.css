@@ -1028,7 +1028,8 @@ body {
 }
 
 .tag-assignment-actions #btn-export-tags,
-.tag-assignment-actions #btn-export-tagged-ifc {
+.tag-assignment-actions #btn-export-tagged-ifc,
+.tag-assignment-actions #btn-highlight-system {
   grid-column: 1 / -1;
 }
 
