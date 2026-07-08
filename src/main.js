@@ -49,6 +49,7 @@ const btnExcelPanelClose = document.getElementById('excel-panel-close');
 const excelFileName = document.getElementById('excel-file-name');
 const excelIdColumn = document.getElementById('excel-id-column');
 const excelSearch = document.getElementById('excel-search');
+const systemTagInput = document.getElementById('system-tag-input');
 const excelDataTable = document.getElementById('excel-data-table');
 const excelTableHeader = document.getElementById('excel-table-header');
 const excelTableBody = document.getElementById('excel-table-body');
@@ -324,9 +325,8 @@ async function initApp() {
     return `${modelId}:${Number(localId)}`;
   }
 
-  function getSelectedExcelTag() {
-    if (selectedExcelRowIndex === null || !selectedExcelIdColumn) return '';
-    return String(excelData[selectedExcelRowIndex]?.[selectedExcelIdColumn] ?? '').trim();
+  function getEnteredSystemTag() {
+    return systemTagInput.value.trim();
   }
 
   function getAssignmentForElement(element = selectedIfcElement) {
@@ -414,15 +414,6 @@ async function initApp() {
       excelTags: getExcelTagsForValidation(),
     });
 
-    if (!excelData.length || !selectedExcelIdColumn) {
-      result.valid = false;
-      result.errors.unshift({
-        code: 'missing-excel-tags',
-        message: excelData.length ? 'Select the Excel tag column.' : 'Upload an Excel tag list.',
-      });
-      result.counts.errors = result.errors.length;
-    }
-
     tagValidationReport.hidden = false;
     const tone = !result.valid ? 'error' : result.warnings.length ? 'warning' : 'success';
     tagValidationReport.dataset.tone = tone;
@@ -449,12 +440,12 @@ async function initApp() {
   }
 
   function updateTagAssignmentUi(message = '', tone = '') {
-    const selectedTag = getSelectedExcelTag();
+    const selectedTag = getEnteredSystemTag();
     const assignment = getAssignmentForElement();
     const elementLabel = selectedIfcElement
       ? `${selectedIfcElement.name || selectedIfcElement.type || 'IFC element'} (#${selectedIfcElement.localId})`
       : 'no IFC element selected';
-    const rowLabel = selectedTag ? `tag “${selectedTag}”` : 'no Excel tag selected';
+    const rowLabel = selectedTag ? `system “${selectedTag}”` : 'no system tag entered';
 
     tagAssignmentStatus.textContent = message || `${rowLabel}; ${elementLabel}.`;
     if (tone) tagAssignmentStatus.dataset.tone = tone;
@@ -465,7 +456,7 @@ async function initApp() {
     btnClearTraySelection.disabled = traySelection.size === 0;
     btnAssignTag.disabled = !selectedTag || (traySelection.size === 0 && !selectedIfcElement);
     btnUnassignTag.disabled = !assignment;
-    btnValidateTags.disabled = loadedModels.length === 0 || excelData.length === 0;
+    btnValidateTags.disabled = loadedModels.length === 0 || getEffectiveTaggedElements().length === 0;
     btnExportTags.disabled = tagAssignments.size === 0;
     btnExportTaggedIfc.disabled = tagAssignments.size === 0;
 
@@ -501,18 +492,31 @@ async function initApp() {
 
     let selectedModelId = null;
     let selectedExpressId = null;
+    const viewportSelection = [];
     if (fragmentMap && Object.keys(fragmentMap).length > 0) {
       for (const modelId in fragmentMap) {
         const ids = fragmentMap[modelId];
         if (ids && ids.size > 0) {
-          selectedModelId = modelId;
-          selectedExpressId = Array.from(ids)[0];
-          break;
+          for (const id of ids) viewportSelection.push({ modelId, localId: Number(id) });
         } else if (Array.isArray(ids) && ids.length > 0) {
-          selectedModelId = modelId;
-          selectedExpressId = ids[0];
-          break;
+          for (const id of ids) viewportSelection.push({ modelId, localId: Number(id) });
         }
+      }
+      selectedModelId = viewportSelection[0]?.modelId ?? null;
+      selectedExpressId = viewportSelection[0]?.localId ?? null;
+    }
+
+    if (viewportSelection.length > 1) {
+      traySelection.clear();
+      for (const selected of viewportSelection) {
+        const modelEntry = loadedModels.find((entry) =>
+          entry.model?.modelId === selected.modelId ||
+          entry.model?.uuid === selected.modelId ||
+          entry.uuid === selected.modelId
+        );
+        if (!modelEntry) continue;
+        const identity = await readElementIdentity(modelEntry.model, selected.localId, modelEntry.name);
+        traySelection.set(getAssignmentKey(identity.modelId, identity.localId), identity);
       }
     }
     
@@ -1746,6 +1750,7 @@ async function initApp() {
         excelTableBody.querySelectorAll('tr').forEach(r => r.classList.remove('active'));
         tr.classList.add('active');
         selectedExcelRowIndex = index;
+        if (rowTag) systemTagInput.value = rowTag;
         updateTagAssignmentUi();
 
         if (systemMembers.length) {
@@ -1814,7 +1819,6 @@ async function initApp() {
           excelColumns = Object.keys(jsonData[0]);
           excelData = jsonData;
           selectedExcelRowIndex = null;
-          tagAssignments.clear();
           
           excelIdColumn.innerHTML = '<option value="">(Select tag column)</option>';
           let preselectedCol = "";
@@ -1873,6 +1877,10 @@ async function initApp() {
     renderExcelTable();
   });
 
+  systemTagInput.addEventListener('input', () => {
+    updateTagAssignmentUi();
+  });
+
   btnAddTraySelection.addEventListener('click', () => {
     if (!selectedIfcElement) return;
     traySelection.set(
@@ -1888,7 +1896,7 @@ async function initApp() {
   });
 
   btnAssignTag.addEventListener('click', async () => {
-    const systemTag = getSelectedExcelTag();
+    const systemTag = getEnteredSystemTag();
     const selectedElements = traySelection.size
       ? Array.from(traySelection.values())
       : selectedIfcElement ? [{ ...selectedIfcElement }] : [];
@@ -1932,12 +1940,6 @@ async function initApp() {
         excelRowIndex: selectedExcelRowIndex,
       });
     }
-    const nextIndex = excelData.findIndex((_, index) =>
-      index > selectedExcelRowIndex &&
-      findSystemMembers(String(excelData[index]?.[selectedExcelIdColumn] ?? '')).length === 0
-    );
-    if (nextIndex !== -1) selectedExcelRowIndex = nextIndex;
-
     traySelection.clear();
     renderExcelTable();
     updateTagAssignmentUi(
@@ -1982,7 +1984,7 @@ async function initApp() {
         SequenceNumber: assignment.sequenceNumber,
         Element_Name: assignment.name,
         IFC_Type: assignment.type,
-        Excel_Row: assignment.excelRowIndex + 2,
+        Excel_Row: assignment.excelRowIndex === null ? '' : assignment.excelRowIndex + 2,
       }));
     const worksheet = XLSX.utils.json_to_sheet(rows);
     const workbook = XLSX.utils.book_new();

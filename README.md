@@ -39,10 +39,11 @@ code-compliance or constructability approval.
 
 ## Tagged IFC export
 
-Add IFC elements to the selection basket, choose an Excel system tag, and select
-**Assign System Tag**. The viewer generates sequential component IDs in selection
-order. **Export Tagged IFC** downloads a new `<model-name>_tagged.ifc` and leaves
-the original unchanged. Each assigned element receives:
+Select multiple IFC elements in the viewer (or add them individually to the
+selection basket), type the system tag, and select **Assign System Tag**. Excel is
+optional. The viewer generates sequential component IDs in selection order.
+**Export Tagged IFC** downloads a new `<model-name>_tagged.ifc` and leaves the
+original unchanged. Each assigned element receives:
 
 ```text
 CCP_TRAY_SYSTEM

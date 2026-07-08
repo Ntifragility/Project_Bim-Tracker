@@ -198,8 +198,8 @@
         </button>
         <header class="excel-panel-header">
           <div class="excel-logo">
-            <span class="excel-logo-icon">📊</span>
-            <h2>Excel Linkage</h2>
+            <span class="excel-logo-icon">🏷️</span>
+            <h2>Tray Systems</h2>
           </div>
           <p id="excel-file-name" class="excel-subtitle">No Excel file linked</p>
         </header>
@@ -208,7 +208,11 @@
           <!-- Selection & Configuration -->
           <div class="excel-config-group">
             <div class="excel-field">
-              <label for="excel-id-column">Tag Column</label>
+              <label for="system-tag-input">System Tag</label>
+              <input type="text" id="system-tag-input" class="excel-search-input" placeholder="Example: 140ST-900-001" autocomplete="off" />
+            </div>
+            <div class="excel-field">
+              <label for="excel-id-column">Optional Excel Tag Column</label>
               <select id="excel-id-column" class="excel-select">
                 <option value="">(Select tag column)</option>
               </select>
@@ -217,7 +221,7 @@
               <input type="text" id="excel-search" class="excel-search-input" placeholder="Search rows..." />
             </div>
             <div id="tag-assignment-status" class="tag-assignment-status">
-              Select an Excel row and an IFC element.
+              Type a system tag and select one or more IFC elements.
             </div>
             <div class="tag-assignment-actions">
               <button id="btn-add-tray-selection" class="btn btn-secondary" disabled>Add Selected Element</button>

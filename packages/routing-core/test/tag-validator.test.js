@@ -43,3 +43,11 @@ test('reports unmatched tags as non-blocking warnings', () => {
     'ifc-tags-missing-from-excel',
   ]);
 });
+
+test('validates tray assignments without requiring an Excel list', () => {
+  const result = validateTagIntegrity({
+    elements: [{ localId: 1, systemTag: 'SYS-001', componentId: 'SYS-001-C001' }],
+  });
+  assert.equal(result.valid, true);
+  assert.equal(result.warnings.length, 0);
+});

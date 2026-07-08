@@ -71,10 +71,10 @@ export function validateTagIntegrity({ elements = [], excelTags = [] } = {}) {
   }
 
   const uniqueSystems = Array.from(elementGroups.values(), (items) => items[0]);
-  const missingFromExcel = uniqueSystems.filter((item) => {
+  const missingFromExcel = excelTags.length ? uniqueSystems.filter((item) => {
     const normalized = normalizeTag(item.systemTag ?? item.tag);
     return normalized && !excelGroups.has(normalized);
-  });
+  }) : [];
   if (missingFromExcel.length) {
     warnings.push({
       code: 'ifc-tags-missing-from-excel',
