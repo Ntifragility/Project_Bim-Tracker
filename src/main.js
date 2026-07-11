@@ -3,11 +3,10 @@ import * as THREE from 'three';
 import * as OBC from '@thatopen/components';
 import * as OBF from '@thatopen/components-front';
 import * as XLSX from 'xlsx';
-import { initExcelBridge, sendMeasurementToExcel } from './viewer-socket.js';
+import { initExcelBridge } from './viewer-socket.js';
 import { initRoutingController } from './routing/routing-controller.js';
 import { addTraySystemAssignmentsToIfc, extractTraySystemAssignmentsFromIfc, taggedIfcFileName } from './ifc/ifc-tag-exporter.js';
 import { validateTagIntegrity } from './ifc/tag-validator.js';
-import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 
 // Global variables for active model and state
 let activeModel = null;
@@ -18,28 +17,38 @@ let excelColumns = [];
 let selectedExcelIdColumn = "";
 let selectedExcelRowIndex = null;
 let selectedIfcElement = null;
+let currentSelectionMap = {};
+let lastIsolatedSelectionMap = {};
+let isolationActive = false;
+let selectedAppearanceColor = '#f54242';
+let selectionHighlightColor = localStorage.getItem('bim-selection-highlight-color') || '#6366f1';
+const appearanceColorMaps = new Map();
 const tagAssignments = new Map();
 const traySelection = new Map();
 let autoRotateActive = false;
-let isTransformEnabled = false;
 
 // DOM Elements
 const container = document.getElementById('viewer-container');
+const viewerContextMenu = document.getElementById('viewer-context-menu');
+const contextFocusItem = document.getElementById('context-focus-item');
+const contextIsolateItem = document.getElementById('context-isolate-item');
+const contextColorControl = document.getElementById('context-color-control');
+const contextSelectionColor = document.getElementById('context-selection-color');
+const contextColorHex = document.getElementById('context-color-hex');
+const contextShowAll = document.getElementById('context-show-all');
 const sidebar = document.getElementById('sidebar');
 const btnSidebarToggle = document.getElementById('sidebar-toggle');
 const btnLoadSample = document.getElementById('btn-load-sample');
 const btnUpload = document.getElementById('btn-upload');
 const fileInput = document.getElementById('file-input');
 const btnResetCamera = document.getElementById('btn-reset-camera');
+const btnViewerSettings = document.getElementById('btn-viewer-settings');
+const viewerSettingsPanel = document.getElementById('viewer-settings-panel');
+const selectionHighlightColorInput = document.getElementById('selection-highlight-color');
+const selectionHighlightHex = document.getElementById('selection-highlight-hex');
 const toggleGrid = document.getElementById('toggle-grid');
 const toggleWireframe = document.getElementById('toggle-wireframe');
 const toggleDarkMode = document.getElementById('toggle-darkmode');
-
-// Measurement DOM Elements
-const btnToggleMeasure = document.getElementById('btn-toggle-measure');
-const btnClearMeasure = document.getElementById('btn-clear-measure');
-const measurementsListContainer = document.getElementById('measurements-list-container');
-const measurementsListItems = document.getElementById('measurements-list-items');
 
 // Excel DOM Elements
 const excelFileInput = document.getElementById('excel-file-input');
@@ -49,21 +58,33 @@ const btnExcelPanelClose = document.getElementById('excel-panel-close');
 const excelFileName = document.getElementById('excel-file-name');
 const excelIdColumn = document.getElementById('excel-id-column');
 const excelSearch = document.getElementById('excel-search');
+const excelOnlyFields = document.querySelectorAll('.excel-only-field');
 const systemTagInput = document.getElementById('system-tag-input');
 const systemTagSuggestions = document.getElementById('system-tag-suggestions');
 const excelDataTable = document.getElementById('excel-data-table');
+const excelTableColgroup = document.getElementById('excel-table-colgroup');
 const excelTableHeader = document.getElementById('excel-table-header');
 const excelTableBody = document.getElementById('excel-table-body');
 const tagAssignmentStatus = document.getElementById('tag-assignment-status');
 const tagAssignmentSummary = document.getElementById('tag-assignment-summary');
+const traySystemManagerSummary = document.getElementById('tray-system-manager-summary');
+const traySystemList = document.getElementById('tray-system-list');
+const traySystemComponentList = document.getElementById('tray-system-component-list');
+const traySystemSequenceStatus = document.getElementById('tray-system-sequence-status');
 const btnAssignTag = document.getElementById('btn-assign-tag');
 const btnHighlightSystem = document.getElementById('btn-highlight-system');
 const btnAddTraySelection = document.getElementById('btn-add-tray-selection');
-const btnClearTraySelection = document.getElementById('btn-clear-tray-selection');
 const btnUnassignTag = document.getElementById('btn-unassign-tag');
 const btnValidateTags = document.getElementById('btn-validate-tags');
 const btnExportTags = document.getElementById('btn-export-tags');
 const btnExportTaggedIfc = document.getElementById('btn-export-tagged-ifc');
+const btnRefreshTraySystems = document.getElementById('btn-refresh-tray-systems');
+const btnManagerHighlight = document.getElementById('btn-manager-highlight');
+const btnManagerIsolate = document.getElementById('btn-manager-isolate');
+const btnManagerAddSelection = document.getElementById('btn-manager-add-selection');
+const btnManagerRemoveSelection = document.getElementById('btn-manager-remove-selection');
+const btnManagerRegenerateSequence = document.getElementById('btn-manager-regenerate-sequence');
+const btnManagerRename = document.getElementById('btn-manager-rename');
 const tagValidationReport = document.getElementById('tag-validation-report');
 const tagValidationBadge = document.getElementById('tag-validation-badge');
 const tagValidationCounts = document.getElementById('tag-validation-counts');
@@ -73,14 +94,18 @@ const tagReplaceDialog = document.getElementById('tag-replace-dialog');
 const tagReplaceMessage = document.getElementById('tag-replace-message');
 const tagReplaceCancel = document.getElementById('tag-replace-cancel');
 const tagReplaceConfirm = document.getElementById('tag-replace-confirm');
+const excelColumnWidths = new Map();
+const MIN_EXCEL_COLUMN_WIDTH = 92;
+const DEFAULT_EXCEL_COLUMN_WIDTH = 150;
+const ASSIGNMENT_COLUMN_KEY = '__assignment__';
+let selectedTraySystemTag = '';
 
 // Loaded Models DOM Elements
 const loadedModelsContainer = document.getElementById('loaded-models-container');
 const loadedModelsList = document.getElementById('loaded-models-list');
 const modelsPlaceholder = loadedModelsContainer ? loadedModelsContainer.querySelector('.models-placeholder') : null;
 
-// Transform & Orbit DOM Elements
-const toggleTransform = document.getElementById('toggle-transform');
+// Orbit DOM Elements
 const orbitIndicator = document.getElementById('orbit-indicator');
 
 const loadingOverlay = document.getElementById('loading-overlay');
@@ -176,65 +201,11 @@ async function initApp() {
 
 
   // ──────────────────────────────────────────────
-  //  MODEL DRAGGING (TransformControls)
+  //  AUTOCAD-STYLE CAMERA PANNING
   // ──────────────────────────────────────────────
-  let transformControls = null;
-
-  // Lock camera when dragging transform axes
-  function onTransformDraggingChanged(event) {
-    if (world.camera && world.camera.controls) {
-      world.camera.controls.enabled = !event.value;
-    }
-  }
-
-  function enableTransformControls() {
-    if (!transformControls && world.camera && world.renderer) {
-      transformControls = new TransformControls(world.camera.three, world.renderer.three.domElement);
-      world.scene.three.add(transformControls);
-      transformControls.addEventListener('dragging-changed', onTransformDraggingChanged);
-      console.log("[TransformControls] Enabled and listeners bound.");
-    }
-  }
-
-  function disableTransformControls() {
-    if (transformControls) {
-      transformControls.detach();
-      transformControls.removeEventListener('dragging-changed', onTransformDraggingChanged);
-      world.scene.three.remove(transformControls);
-      transformControls.dispose();
-      transformControls = null;
-      console.log("[TransformControls] Disabled and listeners disposed.");
-      
-      // Ensure camera controls are re-enabled
-      if (world.camera && world.camera.controls) {
-        world.camera.controls.enabled = true;
-      }
-    }
-  }
-
-  // Attach/Detach controls to active model
-  function updateTransformAttachment() {
-    if (isTransformEnabled) {
-      enableTransformControls();
-      if (transformControls && activeModel) {
-        const modelObject = activeModel.object || activeModel;
-        if (modelObject) {
-          transformControls.attach(modelObject);
-          return;
-        }
-      }
-    } else {
-      disableTransformControls();
-    }
-  }
-
-  // Handle Dragging Checkbox Toggle
-  if (toggleTransform) {
-    toggleTransform.addEventListener('change', () => {
-      isTransformEnabled = toggleTransform.checked;
-      updateTransformAttachment();
-    });
-  }
+  // AutoCAD-style navigation: hold the mouse wheel and drag to pan the view.
+  // This moves the camera target, never the IFC model or its coordinates.
+  world.camera.controls.mouseButtons.middle = world.camera.controls.constructor.ACTION.TRUCK;
 
   // ──────────────────────────────────────────────
   //  AUTO-ORBIT CAMERA ROTATION
@@ -320,11 +291,146 @@ async function initApp() {
   // 7. Set up Highlighter
   const highlighter = components.get(OBF.Highlighter);
   highlighter.setup({ world });
-  highlighter.styles.set('select', { color: new THREE.Color('#6366f1'), opacity: 0.6, transparent: true });
+  setSelectionHighlightStyle(selectionHighlightColor);
+  const hider = components.get(OBC.Hider);
   const routingController = initRoutingController({ world, getLoadedModels: () => loadedModels });
 
   function getAssignmentKey(modelId, localId) {
     return `${modelId}:${Number(localId)}`;
+  }
+
+  function cloneModelIdMap(modelIdMap = {}) {
+    const clone = {};
+    for (const [modelId, ids] of Object.entries(modelIdMap || {})) {
+      const values = ids instanceof Set ? Array.from(ids) : Array.isArray(ids) ? ids : [];
+      if (values.length) clone[modelId] = new Set(values.map(Number));
+    }
+    return clone;
+  }
+
+  function countModelIdMapItems(modelIdMap = {}) {
+    return Object.values(modelIdMap).reduce((sum, ids) => {
+      if (ids instanceof Set) return sum + ids.size;
+      if (Array.isArray(ids)) return sum + ids.length;
+      return sum;
+    }, 0);
+  }
+
+  function areModelIdMapsEqual(a = {}, b = {}) {
+    const aKeys = Object.keys(a).filter((key) => countModelIdMapItems({ [key]: a[key] }) > 0).sort();
+    const bKeys = Object.keys(b).filter((key) => countModelIdMapItems({ [key]: b[key] }) > 0).sort();
+    if (aKeys.length !== bKeys.length) return false;
+    for (let i = 0; i < aKeys.length; i++) {
+      const key = aKeys[i];
+      if (key !== bKeys[i]) return false;
+      const aValues = a[key] instanceof Set ? Array.from(a[key]) : Array.isArray(a[key]) ? a[key] : [];
+      const bValues = b[key] instanceof Set ? Array.from(b[key]) : Array.isArray(b[key]) ? b[key] : [];
+      if (aValues.length !== bValues.length) return false;
+      const bSet = new Set(bValues.map(Number));
+      if (aValues.some((id) => !bSet.has(Number(id)))) return false;
+    }
+    return true;
+  }
+
+  function getSelectedModelIdMap() {
+    if (countModelIdMapItems(currentSelectionMap)) return cloneModelIdMap(currentSelectionMap);
+    if (!selectedIfcElement) return {};
+    return { [selectedIfcElement.modelId]: new Set([Number(selectedIfcElement.localId)]) };
+  }
+
+  function addModelIdMapItems(target, source) {
+    for (const [modelId, ids] of Object.entries(source || {})) {
+      const values = ids instanceof Set ? Array.from(ids) : Array.isArray(ids) ? ids : [];
+      if (!values.length) continue;
+      if (!target[modelId]) target[modelId] = new Set();
+      for (const id of values) target[modelId].add(Number(id));
+    }
+  }
+
+  function removeModelIdMapItems(target, source) {
+    for (const [modelId, ids] of Object.entries(source || {})) {
+      if (!target[modelId]) continue;
+      const values = ids instanceof Set ? Array.from(ids) : Array.isArray(ids) ? ids : [];
+      for (const id of values) target[modelId].delete(Number(id));
+      if (target[modelId].size === 0) delete target[modelId];
+    }
+  }
+
+  function appearanceStyleName(color) {
+    return `appearance-${color.replace('#', '').toLowerCase()}`;
+  }
+
+  function normalizeHexColor(value) {
+    const raw = String(value || '').trim();
+    const withHash = raw.startsWith('#') ? raw : `#${raw}`;
+    return /^#[0-9a-fA-F]{6}$/.test(withHash) ? withHash.toLowerCase() : null;
+  }
+
+  function setSelectionHighlightStyle(color) {
+    const normalized = normalizeHexColor(color) || '#6366f1';
+    selectionHighlightColor = normalized;
+    highlighter.styles.set('select', {
+      color: new THREE.Color(selectionHighlightColor),
+      opacity: 0.6,
+      transparent: true,
+    });
+    if (selectionHighlightColorInput) selectionHighlightColorInput.value = selectionHighlightColor;
+    if (selectionHighlightHex) selectionHighlightHex.value = selectionHighlightColor.toUpperCase();
+    localStorage.setItem('bim-selection-highlight-color', selectionHighlightColor);
+  }
+
+  async function applySelectionHighlightSetting(color) {
+    setSelectionHighlightStyle(color);
+    const selection = getSelectedModelIdMap();
+    if (countModelIdMapItems(selection) === 0) return;
+
+    highlighter.isProgrammaticSelect = true;
+    try {
+      await highlighter.clear('select');
+      await highlighter.highlightByID('select', selection, false, false);
+      currentSelectionMap = cloneModelIdMap(selection);
+    } catch (error) {
+      console.warn('[Selection Highlight] Could not refresh selected element color:', error);
+      updateTagAssignmentUi('Warning: selected element highlight color could not be refreshed.', 'warning');
+    } finally {
+      highlighter.isProgrammaticSelect = false;
+    }
+  }
+
+  async function reapplyAppearanceColors() {
+    for (const [color, modelIdMap] of appearanceColorMaps) {
+      const styleName = appearanceStyleName(color);
+      await highlighter.clear(styleName);
+      if (countModelIdMapItems(modelIdMap) === 0) continue;
+      highlighter.styles.set(styleName, {
+        color: new THREE.Color(color),
+        opacity: 0.85,
+        transparent: true,
+      });
+      await highlighter.highlightByID(styleName, modelIdMap, false, false);
+    }
+  }
+
+  async function applyAppearanceColorToCurrentSelection() {
+    const selection = getSelectedModelIdMap();
+    if (countModelIdMapItems(selection) === 0) return;
+    highlighter.isProgrammaticSelect = true;
+    try {
+      for (const [, modelIdMap] of appearanceColorMaps) {
+        removeModelIdMapItems(modelIdMap, selection);
+      }
+      if (!appearanceColorMaps.has(selectedAppearanceColor)) {
+        appearanceColorMaps.set(selectedAppearanceColor, {});
+      }
+      addModelIdMapItems(appearanceColorMaps.get(selectedAppearanceColor), selection);
+      await reapplyAppearanceColors();
+      currentSelectionMap = cloneModelIdMap(selection);
+    } catch (error) {
+      console.warn('[Appearance Color] Could not color selected elements:', error);
+      updateTagAssignmentUi('Warning: selected elements could not be colored.', 'warning');
+    } finally {
+      highlighter.isProgrammaticSelect = false;
+    }
   }
 
   function getEnteredSystemTag() {
@@ -344,13 +450,40 @@ async function initApp() {
     return modelEntry?.existingProjectTags?.get(Number(element.localId))?.systemTag || '';
   }
 
+  function findLoadedModelEntry(modelId) {
+    return loadedModels.find((entry) =>
+      entry.model?.modelId === modelId ||
+      entry.model?.uuid === modelId ||
+      entry.uuid === modelId
+    ) || null;
+  }
+
+  function getExistingTrayAssignment(element) {
+    if (!element) return null;
+    return findLoadedModelEntry(element.modelId)?.existingProjectTags?.get(Number(element.localId)) || null;
+  }
+
+  function getAssignmentSourceLabel(element) {
+    if (!element) return 'Unknown';
+    if (element.source === 'pending' && element.wasSaved) return 'Modified';
+    if (element.source === 'pending') return 'Pending';
+    return 'Saved';
+  }
+
   function findSystemMembers(tag) {
     const normalizedTag = String(tag || '').trim().toLowerCase();
     if (!normalizedTag) return [];
     const members = [];
 
     for (const [key, assignment] of tagAssignments) {
-      if (assignment.systemTag.toLowerCase() === normalizedTag) members.push(assignment);
+      if (assignment.systemTag.toLowerCase() === normalizedTag) {
+        const existing = getExistingTrayAssignment(assignment);
+        members.push({
+          ...assignment,
+          source: 'pending',
+          wasSaved: Boolean(existing),
+        });
+      }
     }
 
     for (const modelEntry of loadedModels) {
@@ -373,6 +506,224 @@ async function initApp() {
       }
     }
     return members;
+  }
+
+  function getTraySystemSummaries() {
+    const systems = new Map();
+    for (const element of getEffectiveTaggedElements()) {
+      const tag = String(element.systemTag || '').trim();
+      if (!tag) continue;
+      const normalized = tag.toLowerCase();
+      if (!systems.has(normalized)) {
+        systems.set(normalized, {
+          tag,
+          members: [],
+          modelNames: new Set(),
+          modifiedCount: 0,
+          pendingCount: 0,
+          ifcCount: 0,
+        });
+      }
+      const system = systems.get(normalized);
+      system.members.push(element);
+      if (element.modelName) system.modelNames.add(element.modelName);
+      if (element.source === 'pending' && element.wasSaved) system.modifiedCount += 1;
+      else if (element.source === 'pending') system.pendingCount += 1;
+      else system.ifcCount += 1;
+    }
+
+    return Array.from(systems.values())
+      .map((system) => ({
+        ...system,
+        count: system.members.length,
+        models: Array.from(system.modelNames).sort((a, b) => a.localeCompare(b)),
+        status: system.modifiedCount && !system.pendingCount && !system.ifcCount
+          ? 'Modified'
+          : (system.pendingCount || system.modifiedCount) && system.ifcCount
+          ? 'Mixed'
+          : system.pendingCount ? 'Pending'
+          : system.modifiedCount ? 'Modified'
+          : 'Saved',
+      }))
+      .sort((a, b) => a.tag.localeCompare(b.tag));
+  }
+
+  function parseSequenceNumber(value) {
+    const parsed = Number.parseInt(String(value || '').replace(/\D/g, ''), 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function sortSystemMembers(members = []) {
+    return [...members].sort((a, b) => {
+      const aSeq = parseSequenceNumber(a.sequenceNumber);
+      const bSeq = parseSequenceNumber(b.sequenceNumber);
+      if (aSeq !== null && bSeq !== null && aSeq !== bSeq) return aSeq - bSeq;
+      if (aSeq !== null && bSeq === null) return -1;
+      if (aSeq === null && bSeq !== null) return 1;
+      return Number(a.localId) - Number(b.localId);
+    });
+  }
+
+  function getSequenceDiagnostics(members = []) {
+    if (!members.length) return { tone: '', message: 'Select a system' };
+    const sequenceCounts = new Map();
+    let missing = 0;
+    for (const member of members) {
+      const sequence = parseSequenceNumber(member.sequenceNumber);
+      if (sequence === null) {
+        missing += 1;
+        continue;
+      }
+      sequenceCounts.set(sequence, (sequenceCounts.get(sequence) || 0) + 1);
+    }
+    const duplicates = Array.from(sequenceCounts.values()).filter((count) => count > 1).length;
+    const sequenceValues = Array.from(sequenceCounts.keys()).sort((a, b) => a - b);
+    let gaps = 0;
+    for (let expected = 1; expected <= sequenceValues.length; expected++) {
+      if (!sequenceCounts.has(expected)) gaps += 1;
+    }
+    if (missing || duplicates || gaps) {
+      const parts = [];
+      if (missing) parts.push(`${missing} missing`);
+      if (duplicates) parts.push(`${duplicates} duplicate`);
+      if (gaps) parts.push(`${gaps} gap${gaps === 1 ? '' : 's'}`);
+      return { tone: 'warning', message: parts.join(' · ') };
+    }
+    return { tone: 'success', message: 'Sequence OK' };
+  }
+
+  async function highlightSingleTrayComponent(member) {
+    const modelEntry = findLoadedModelEntry(member.modelId);
+    if (!modelEntry) {
+      updateTagAssignmentUi(`Warning: model for component #${member.localId} is not loaded.`, 'warning');
+      return;
+    }
+    const modelId = modelEntry.model.modelId || modelEntry.model.uuid || member.modelId;
+    highlighter.isProgrammaticSelect = true;
+    try {
+      const fragmentMap = { [modelId]: new Set([Number(member.localId)]) };
+      await highlighter.highlightByID('select', fragmentMap, true, true);
+      currentSelectionMap = cloneModelIdMap(fragmentMap);
+      activeModel = modelEntry.model;
+      await displayElementProperties(modelEntry.model, member.localId, modelEntry.name);
+      selectedIfcElement = await readElementIdentity(modelEntry.model, member.localId, modelEntry.name);
+      routingController.setSelectedElement(modelEntry.model, member.localId);
+      updateTagAssignmentUi(`Highlighted component "${member.componentId || `#${member.localId}`}".`);
+    } catch (error) {
+      console.warn('[Tray Systems] Component highlight failed:', error);
+      updateTagAssignmentUi(`Warning: component #${member.localId} could not be highlighted.`, 'warning');
+    } finally {
+      highlighter.isProgrammaticSelect = false;
+    }
+  }
+
+  function renderTraySystemComponents(system) {
+    if (!traySystemComponentList || !traySystemSequenceStatus) return;
+    traySystemComponentList.innerHTML = '';
+    if (!system) {
+      traySystemSequenceStatus.textContent = 'Select a system';
+      delete traySystemSequenceStatus.dataset.tone;
+      const empty = document.createElement('div');
+      empty.className = 'tray-system-empty';
+      empty.textContent = 'Select a tray system to inspect its components.';
+      traySystemComponentList.appendChild(empty);
+      return;
+    }
+
+    const members = sortSystemMembers(system.members);
+    const diagnostics = getSequenceDiagnostics(members);
+    traySystemSequenceStatus.textContent = diagnostics.message;
+    if (diagnostics.tone) traySystemSequenceStatus.dataset.tone = diagnostics.tone;
+    else delete traySystemSequenceStatus.dataset.tone;
+
+    if (!members.length) {
+      const empty = document.createElement('div');
+      empty.className = 'tray-system-empty';
+      empty.textContent = 'This tray system has no components.';
+      traySystemComponentList.appendChild(empty);
+      return;
+    }
+
+    for (const member of members) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'tray-system-component-item';
+      item.title = 'Click to highlight this component in the viewer.';
+
+      const componentId = document.createElement('span');
+      componentId.className = 'tray-system-component-id';
+      componentId.textContent = member.componentId || '(missing component ID)';
+
+      const meta = document.createElement('span');
+      meta.className = 'tray-system-component-meta';
+      meta.textContent = `Seq ${member.sequenceNumber || '-'} · #${member.localId} · ${member.source === 'pending' ? 'Pending' : 'Saved'}`;
+
+      item.append(componentId, meta);
+      meta.textContent = `Seq ${member.sequenceNumber || '-'} | #${member.localId} | ${getAssignmentSourceLabel(member)}`;
+      item.addEventListener('click', () => highlightSingleTrayComponent(member));
+      traySystemComponentList.appendChild(item);
+    }
+  }
+
+  function renderTraySystemManager() {
+    if (!traySystemList) return;
+    const systems = getTraySystemSummaries();
+    const selectedStillExists = systems.some((system) => system.tag.toLowerCase() === selectedTraySystemTag.toLowerCase());
+    if (!selectedStillExists) selectedTraySystemTag = '';
+
+    if (traySystemManagerSummary) {
+      traySystemManagerSummary.textContent = systems.length
+        ? `${systems.length} system${systems.length === 1 ? '' : 's'} loaded.`
+        : 'No tray systems loaded.';
+    }
+    traySystemList.innerHTML = '';
+
+    if (!systems.length) {
+      const empty = document.createElement('div');
+      empty.className = 'tray-system-empty';
+      empty.textContent = 'Assign or load tray-system tags to manage them here.';
+      traySystemList.appendChild(empty);
+    } else {
+      for (const system of systems) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'tray-system-item';
+        if (system.tag.toLowerCase() === selectedTraySystemTag.toLowerCase()) button.classList.add('active');
+        button.innerHTML = `
+          <span class="tray-system-tag">${system.tag}</span>
+          <span class="tray-system-meta">
+            <span>${system.count} component${system.count === 1 ? '' : 's'}</span>
+            <span>${system.status}</span>
+          </span>
+          <span class="tray-system-state-counts">
+            ${system.ifcCount} saved · ${system.pendingCount} pending · ${system.modifiedCount} modified
+          </span>
+          <span class="tray-system-models">${system.models.join(', ') || 'Loaded model'}</span>
+        `;
+        button.addEventListener('click', () => {
+          selectedTraySystemTag = system.tag;
+          systemTagInput.value = system.tag;
+          updateTagAssignmentUi(`Selected tray system "${system.tag}".`);
+        });
+        traySystemList.appendChild(button);
+      }
+    }
+
+    const selectedSystem = systems.find((system) => system.tag.toLowerCase() === selectedTraySystemTag.toLowerCase()) || null;
+    renderTraySystemComponents(selectedSystem);
+
+    const hasSelectedSystem = Boolean(selectedSystem);
+    const selectedElementCount = countModelIdMapItems(getSelectedModelIdMap());
+    if (btnManagerHighlight) btnManagerHighlight.disabled = !hasSelectedSystem;
+    if (btnManagerIsolate) btnManagerIsolate.disabled = !hasSelectedSystem;
+    if (btnManagerAddSelection) btnManagerAddSelection.disabled = !hasSelectedSystem || selectedElementCount === 0;
+    if (btnManagerRemoveSelection) btnManagerRemoveSelection.disabled = !hasSelectedSystem || selectedElementCount === 0;
+    if (btnManagerRegenerateSequence) btnManagerRegenerateSequence.disabled = !hasSelectedSystem;
+    if (btnManagerRename) {
+      btnManagerRename.disabled = !hasSelectedSystem ||
+        !getEnteredSystemTag() ||
+        getEnteredSystemTag().toLowerCase() === selectedTraySystemTag.toLowerCase();
+    }
   }
 
   function normalizeColumnName(name) {
@@ -473,10 +824,20 @@ async function initApp() {
     }
   }
 
+  function updateExcelNavigationUi() {
+    const hasExcelRows = excelData.length > 0;
+    excelOnlyFields.forEach((field) => {
+      field.hidden = !hasExcelRows;
+      field.style.display = hasExcelRows ? '' : 'none';
+    });
+  }
+
   function updateTagAssignmentUi(message = '', tone = '') {
     refreshSystemTagSuggestions();
+    updateExcelNavigationUi();
     const selectedTag = getEnteredSystemTag();
     const assignment = getAssignmentForElement();
+    const selectedElementCount = traySelection.size || (selectedIfcElement ? 1 : 0);
     const elementLabel = selectedIfcElement
       ? `${selectedIfcElement.name || selectedIfcElement.type || 'IFC element'} (#${selectedIfcElement.localId})`
       : 'no IFC element selected';
@@ -486,15 +847,20 @@ async function initApp() {
     if (tone) tagAssignmentStatus.dataset.tone = tone;
     else delete tagAssignmentStatus.dataset.tone;
     tagAssignmentSummary.textContent = `${tagAssignments.size} assignment${tagAssignments.size === 1 ? '' : 's'}`;
-    traySelectionSummary.textContent = `${traySelection.size} element${traySelection.size === 1 ? '' : 's'} selected`;
+    traySelectionSummary.textContent = traySelection.size
+      ? `${traySelection.size} element${traySelection.size === 1 ? '' : 's'} selected · click empty space to clear`
+      : selectedIfcElement ? '1 current element' : '0 elements selected';
+    btnAssignTag.textContent = selectedTag && selectedElementCount
+      ? `Assign ${selectedTag} to ${selectedElementCount} element${selectedElementCount === 1 ? '' : 's'}`
+      : 'Assign System Tag';
     btnAddTraySelection.disabled = !selectedIfcElement;
-    btnClearTraySelection.disabled = traySelection.size === 0;
     btnAssignTag.disabled = !selectedTag || (traySelection.size === 0 && !selectedIfcElement);
     btnHighlightSystem.disabled = !selectedTag || findSystemMembers(selectedTag).length === 0;
     btnUnassignTag.disabled = !assignment;
     btnValidateTags.disabled = loadedModels.length === 0 || getEffectiveTaggedElements().length === 0;
     btnExportTags.disabled = tagAssignments.size === 0;
     btnExportTaggedIfc.disabled = tagAssignments.size === 0;
+    renderTraySystemManager();
 
     if (selectedIfcElement) {
       const displayedTag = assignment?.systemTag || getExistingProjectTag() || selectedIfcElement.ifcTag || '-';
@@ -526,6 +892,7 @@ async function initApp() {
   highlighter.events.select.onHighlight.add(async (fragmentMap) => {
     if (highlighter.isProgrammaticSelect) return;
 
+    currentSelectionMap = cloneModelIdMap(fragmentMap);
     let selectedModelId = null;
     let selectedExpressId = null;
     const viewportSelection = [];
@@ -571,16 +938,10 @@ async function initApp() {
         await displayElementProperties(foundModelEntry.model, expressIdNum, foundModelEntry.name);
         selectedIfcElement = await readElementIdentity(foundModelEntry.model, expressIdNum, foundModelEntry.name);
         routingController.setSelectedElement(foundModelEntry.model, expressIdNum);
+        await setOrbitTargetToElement(foundModelEntry.model, expressIdNum);
         updateTagAssignmentUi();
         refreshLoadedModelsList();
         
-        // Auto-attach transform controls to this model if transform mode is enabled
-        if (isTransformEnabled && transformControls) {
-          const modelObject = activeModel.object || activeModel;
-          if (modelObject) {
-            transformControls.attach(modelObject);
-          }
-        }
       }
     }
   });
@@ -590,6 +951,8 @@ async function initApp() {
 
     activeModel = null;
     selectedIfcElement = null;
+    currentSelectionMap = {};
+    traySelection.clear();
     routingController.setSelectedElement(null, null);
     updateTagAssignmentUi();
     autoRotateActive = false;
@@ -600,153 +963,7 @@ async function initApp() {
     // Reset element properties panel
     clearElementProperties();
     
-    // Detach transform controls if active selection cleared
-    if (transformControls) {
-      transformControls.detach();
-    }
-
     refreshLoadedModelsList();
-  });
-
-  // ──────────────────────────────────────────────
-  //  3D LENGTH MEASUREMENT TOOLKIT
-  // ──────────────────────────────────────────────
-  const measurer = components.get(OBF.LengthMeasurement);
-  measurer.world = world;
-  measurer.units = 'm';
-  measurer.rounding = 2;
-  measurer.color = new THREE.Color('#6366f1');
-  let isMeasuring = false;
-
-  // Format distance value for display
-  function formatMeasureValue(line) {
-    try {
-      return `${line.value.toFixed(2)} m`;
-    } catch {
-      return '—';
-    }
-  }
-
-  // Rebuild the sidebar dimension list from the measurer's dataset
-  function refreshMeasurementsList() {
-    if (!measurementsListItems) return;
-    measurementsListItems.innerHTML = '';
-
-    const entries = Array.from(measurer.list);
-    if (entries.length === 0) {
-      if (measurementsListContainer) measurementsListContainer.style.display = 'none';
-      return;
-    }
-    if (measurementsListContainer) measurementsListContainer.style.display = 'block';
-
-    entries.forEach((line, idx) => {
-      const li = document.createElement('li');
-      li.className = 'measure-item';
-
-      // Distance value
-      const valueSpan = document.createElement('span');
-      valueSpan.className = 'measure-value';
-      valueSpan.textContent = formatMeasureValue(line);
-
-      // Action buttons container
-      const actionsDiv = document.createElement('div');
-      actionsDiv.className = 'measure-actions';
-
-      // Zoom button
-      const zoomBtn = document.createElement('button');
-      zoomBtn.className = 'measure-btn zoom';
-      zoomBtn.title = 'Zoom to fit';
-      zoomBtn.textContent = '🔍';
-      zoomBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        try {
-          const center = new THREE.Vector3();
-          line.getCenter(center);
-          const sphere = new THREE.Sphere(center, Math.max(line.distance() * 0.8, 1.0));
-          if (world.camera && world.camera.controls) {
-            world.camera.controls.fitToSphere(sphere, true);
-          }
-        } catch (err) {
-          console.warn('[Measurements] Zoom to dimension failed:', err);
-        }
-      });
-
-      // Link to Excel button
-      const linkBtn = document.createElement('button');
-      linkBtn.className = 'measure-btn link';
-      linkBtn.title = 'Send value to Excel';
-      linkBtn.textContent = '📊';
-      linkBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const val = formatMeasureValue(line);
-        const sent = sendMeasurementToExcel(val);
-        if (sent) {
-          linkBtn.textContent = '✅';
-          setTimeout(() => { linkBtn.textContent = '📊'; }, 1200);
-        } else {
-          linkBtn.textContent = '⚠️';
-          setTimeout(() => { linkBtn.textContent = '📊'; }, 1200);
-        }
-      });
-
-      // Delete button
-      const deleteBtn = document.createElement('button');
-      deleteBtn.className = 'measure-btn delete';
-      deleteBtn.title = 'Delete measurement';
-      deleteBtn.textContent = '🗑️';
-      deleteBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        try {
-          measurer.list.delete(line);
-        } catch (err) {
-          console.warn('[Measurements] Delete single dimension failed:', err);
-        }
-      });
-
-      actionsDiv.appendChild(zoomBtn);
-      actionsDiv.appendChild(linkBtn);
-      actionsDiv.appendChild(deleteBtn);
-
-      li.appendChild(valueSpan);
-      li.appendChild(actionsDiv);
-      measurementsListItems.appendChild(li);
-    });
-  }
-
-  // Subscribe to DataSet events on the measurer's list
-  measurer.list.onItemAdded.add(() => refreshMeasurementsList());
-  measurer.list.onItemDeleted.add(() => refreshMeasurementsList());
-  measurer.list.onCleared.add(() => refreshMeasurementsList());
-
-  // Toggle measuring mode
-  if (btnToggleMeasure) {
-    btnToggleMeasure.addEventListener('click', () => {
-      isMeasuring = !isMeasuring;
-      measurer.enabled = isMeasuring;
-      btnToggleMeasure.innerHTML = isMeasuring
-        ? '<span>📐</span> Disable Measuring'
-        : '<span>📐</span> Enable Measuring';
-      btnToggleMeasure.classList.toggle('btn-primary', isMeasuring);
-      btnToggleMeasure.classList.toggle('btn-action', !isMeasuring);
-    });
-  }
-
-  // Clear all measurements
-  if (btnClearMeasure) {
-    btnClearMeasure.addEventListener('click', () => {
-      try {
-        measurer.list.clear();
-      } catch (err) {
-        console.warn('[Measurements] Clear all failed:', err);
-      }
-    });
-  }
-
-  // Allow Delete key to remove hovered measurement
-  window.addEventListener('keydown', (event) => {
-    if ((event.code === 'Delete' || event.code === 'Backspace') && measurer.enabled) {
-      measurer.delete();
-    }
   });
 
   // Helper: Fit camera to all visible models or a single model
@@ -812,11 +1029,6 @@ async function initApp() {
   function unloadModel(modelEntry) {
     const model = modelEntry.model;
     const modelObject = model.object || model;
-    
-    // Detach TransformControls if attached to the model being unloaded
-    if (transformControls && transformControls.object === modelObject) {
-      transformControls.detach();
-    }
     
     // Stop auto-rotate if the model being deleted was the active model
     if (activeModel === model) {
@@ -998,6 +1210,7 @@ async function initApp() {
   }
 
   function syncProjectTagPropertyGroup(model, localId) {
+    if (!model || !localId) return;
     const element = { modelId: model.modelId || model.uuid, localId: Number(localId) };
     const assignment = getAssignmentForElement(element);
     const existing = loadedModels.find((entry) =>
@@ -1466,9 +1679,6 @@ async function initApp() {
           // Reset element properties panel
           clearElementProperties();
           
-          // Detach TransformControls
-          updateTransformAttachment();
-          
           refreshLoadedModelsList();
           return;
         }
@@ -1501,9 +1711,6 @@ async function initApp() {
         }
         console.log(`[Auto-Orbit] Activated for model: ${modelEntry.name}`);
 
-        // 4. Update model transform axes attachment
-        updateTransformAttachment();
-        
         refreshLoadedModelsList();
       });
 
@@ -1716,6 +1923,27 @@ async function initApp() {
     fitModelsToView();
   });
 
+  if (btnViewerSettings && viewerSettingsPanel) {
+    btnViewerSettings.addEventListener('click', () => {
+      const willOpen = viewerSettingsPanel.hidden;
+      viewerSettingsPanel.hidden = !willOpen;
+      btnViewerSettings.setAttribute('aria-expanded', String(willOpen));
+    });
+  }
+
+  selectionHighlightColorInput?.addEventListener('input', async () => {
+    await applySelectionHighlightSetting(selectionHighlightColorInput.value);
+  });
+
+  selectionHighlightHex?.addEventListener('change', async () => {
+    const normalized = normalizeHexColor(selectionHighlightHex.value);
+    if (!normalized) {
+      selectionHighlightHex.value = selectionHighlightColor.toUpperCase();
+      return;
+    }
+    await applySelectionHighlightSetting(normalized);
+  });
+
   toggleGrid.addEventListener('change', () => {
     if ('visible' in grid) {
       grid.visible = toggleGrid.checked;
@@ -1757,13 +1985,35 @@ async function initApp() {
     });
   }
 
+  // Make an IFC element the pivot for subsequent left-mouse orbiting.
+  async function setOrbitTargetToElement(model, expressId) {
+    if (!model) return;
+    const bboxer = components.get(OBC.BoundingBoxer);
+    try {
+      bboxer.list.clear();
+      const modelId = model.modelId || model.uuid;
+      await bboxer.addFromModelIdMap({ [modelId]: new Set([Number(expressId)]) });
+      const box = bboxer.get();
+      if (box && !box.isEmpty()) {
+        const center = new THREE.Vector3();
+        box.getCenter(center);
+        world.camera.controls.setOrbitPoint(center.x, center.y, center.z);
+      }
+    } catch (error) {
+      console.warn('[Camera Orbit] Could not set the selected element as pivot:', error);
+    } finally {
+      bboxer.list.clear();
+    }
+  }
+
   // Helper: Zoom to a specific Express ID inside a specific model
   async function zoomToElementInModel(model, expressId) {
     if (!model) return;
     try {
       const bboxer = components.get(OBC.BoundingBoxer);
       bboxer.list.clear();
-      await bboxer.addFromModelIdMap({ [model.uuid]: new Set([Number(expressId)]) });
+      const modelId = model.modelId || model.uuid;
+      await bboxer.addFromModelIdMap({ [modelId]: new Set([Number(expressId)]) });
       const box = bboxer.get();
       if (box && !box.isEmpty()) {
         const sphere = new THREE.Sphere();
@@ -1781,6 +2031,171 @@ async function initApp() {
   async function zoomToElement(expressId) {
     await zoomToElementInModel(activeModel, expressId);
   }
+
+  function closeViewerContextMenu() {
+    viewerContextMenu.hidden = true;
+  }
+
+  function ensureModelObjectsVisible(modelIdMap) {
+    for (const modelId of Object.keys(modelIdMap || {})) {
+      const modelEntry = loadedModels.find((entry) =>
+        entry.model?.modelId === modelId ||
+        entry.model?.uuid === modelId ||
+        entry.uuid === modelId
+      );
+      if (!modelEntry) continue;
+      modelEntry.visible = true;
+      const modelObject = modelEntry.model.object || modelEntry.model;
+      if (modelObject) modelObject.visible = true;
+    }
+    refreshLoadedModelsList();
+  }
+
+  function updateContextMenuActions() {
+    const selection = getSelectedModelIdMap();
+    const selectionCount = countModelIdMapItems(selection);
+    const currentSelectionIsAlreadyIsolated = isolationActive && areModelIdMapsEqual(selection, lastIsolatedSelectionMap);
+    contextFocusItem.hidden = !selectedIfcElement;
+    contextIsolateItem.hidden = selectionCount === 0 || currentSelectionIsAlreadyIsolated;
+    contextColorControl.hidden = selectionCount === 0;
+    contextIsolateItem.textContent = selectionCount > 1
+      ? `◌ Isolate ${selectionCount} Selected`
+      : '◌ Isolate Selected';
+    contextSelectionColor.value = selectedAppearanceColor;
+    contextColorHex.value = selectedAppearanceColor.toUpperCase();
+    contextShowAll.hidden = !isolationActive;
+  }
+
+  container.addEventListener('contextmenu', (event) => {
+    closeViewerContextMenu();
+    updateContextMenuActions();
+    if (contextFocusItem.hidden && contextIsolateItem.hidden && contextColorControl.hidden && contextShowAll.hidden) return;
+
+    event.preventDefault();
+    viewerContextMenu.hidden = false;
+    const menuRect = viewerContextMenu.getBoundingClientRect();
+    viewerContextMenu.style.left = `${Math.max(8, Math.min(event.clientX, window.innerWidth - menuRect.width - 8))}px`;
+    viewerContextMenu.style.top = `${Math.max(8, Math.min(event.clientY, window.innerHeight - menuRect.height - 8))}px`;
+    const firstVisibleAction = [
+      contextFocusItem,
+      contextIsolateItem,
+      contextColorControl.hidden ? null : contextSelectionColor,
+      contextShowAll,
+    ].filter(Boolean).find((item) => !item.hidden);
+    firstVisibleAction?.focus();
+  });
+
+  contextSelectionColor.addEventListener('input', async () => {
+    selectedAppearanceColor = contextSelectionColor.value.toLowerCase();
+    contextColorHex.value = selectedAppearanceColor.toUpperCase();
+    await applyAppearanceColorToCurrentSelection();
+  });
+
+  contextColorHex.addEventListener('change', async () => {
+    const normalized = normalizeHexColor(contextColorHex.value);
+    if (!normalized) {
+      contextColorHex.value = selectedAppearanceColor.toUpperCase();
+      return;
+    }
+    selectedAppearanceColor = normalized;
+    contextSelectionColor.value = selectedAppearanceColor;
+    contextColorHex.value = selectedAppearanceColor.toUpperCase();
+    await applyAppearanceColorToCurrentSelection();
+  });
+
+  contextIsolateItem.addEventListener('click', async () => {
+    const selection = getSelectedModelIdMap();
+    const selectionCount = countModelIdMapItems(selection);
+    closeViewerContextMenu();
+    if (!selectionCount) return;
+    if (isolationActive && areModelIdMapsEqual(selection, lastIsolatedSelectionMap)) return;
+
+    try {
+      ensureModelObjectsVisible(selection);
+      await hider.isolate(selection);
+      isolationActive = true;
+      lastIsolatedSelectionMap = cloneModelIdMap(selection);
+      updateTagAssignmentUi(
+        `Isolated ${selectionCount} selected element${selectionCount === 1 ? '' : 's'}.`,
+        'success',
+      );
+    } catch (error) {
+      console.warn('[Isolate] Failed:', error);
+      updateTagAssignmentUi('Warning: selected elements could not be isolated.', 'warning');
+    }
+  });
+
+  contextShowAll.addEventListener('click', async () => {
+    closeViewerContextMenu();
+    try {
+      await hider.set(true);
+      isolationActive = false;
+      lastIsolatedSelectionMap = {};
+      for (const modelEntry of loadedModels) {
+        modelEntry.visible = true;
+        const modelObject = modelEntry.model.object || modelEntry.model;
+        if (modelObject) modelObject.visible = true;
+      }
+      refreshLoadedModelsList();
+      updateTagAssignmentUi('All IFC elements are visible again.', 'success');
+    } catch (error) {
+      console.warn('[Isolate] Show all failed:', error);
+      updateTagAssignmentUi('Warning: hidden elements could not be restored.', 'warning');
+    }
+  });
+
+  contextFocusItem.addEventListener('click', async () => {
+    const element = selectedIfcElement ? { ...selectedIfcElement } : null;
+    closeViewerContextMenu();
+    if (!element) return;
+
+    const modelEntry = loadedModels.find((entry) =>
+      entry.model?.modelId === element.modelId ||
+      entry.model?.uuid === element.modelId ||
+      entry.uuid === element.modelId
+    );
+    if (!modelEntry) return;
+
+    if (!modelEntry.visible) {
+      modelEntry.visible = true;
+      const modelObject = modelEntry.model.object || modelEntry.model;
+      if (modelObject) modelObject.visible = true;
+      refreshLoadedModelsList();
+    }
+
+    const modelId = modelEntry.model.modelId || modelEntry.model.uuid || element.modelId;
+    highlighter.isProgrammaticSelect = true;
+    try {
+      await highlighter.highlightByID(
+        'select',
+        { [modelId]: new Set([Number(element.localId)]) },
+        true,
+        true,
+      );
+      activeModel = modelEntry.model;
+      await displayElementProperties(modelEntry.model, element.localId, modelEntry.name);
+      selectedIfcElement = await readElementIdentity(modelEntry.model, element.localId, modelEntry.name);
+      routingController.setSelectedElement(modelEntry.model, element.localId);
+      await zoomToElementInModel(modelEntry.model, element.localId);
+      updateTagAssignmentUi(`Focused on element #${element.localId}.`);
+    } catch (error) {
+      console.warn('[Focus on Item] Failed:', error);
+      updateTagAssignmentUi(`Warning: element #${element.localId} could not be focused.`, 'warning');
+    } finally {
+      highlighter.isProgrammaticSelect = false;
+    }
+  });
+
+  document.addEventListener('pointerdown', (event) => {
+    if (!viewerContextMenu.hidden && !viewerContextMenu.contains(event.target)) {
+      closeViewerContextMenu();
+    }
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeViewerContextMenu();
+  });
+  window.addEventListener('blur', closeViewerContextMenu);
+  window.addEventListener('resize', closeViewerContextMenu);
 
   async function highlightTrayMembers(members, message) {
     if (!members.length) return false;
@@ -1809,6 +2224,7 @@ async function initApp() {
     highlighter.isProgrammaticSelect = true;
     try {
       await highlighter.highlightByID('select', fragmentMap, true, true);
+      currentSelectionMap = cloneModelIdMap(fragmentMap);
       activeModel = firstModelEntry.model;
       await displayElementProperties(firstModelEntry.model, firstMember.localId, firstModelEntry.name);
       selectedIfcElement = await readElementIdentity(firstModelEntry.model, firstMember.localId, firstModelEntry.name);
@@ -1824,28 +2240,251 @@ async function initApp() {
     }
   }
 
+  async function isolateTrayMembers(members, message) {
+    if (!members.length) return false;
+    const fragmentMap = {};
+    for (const member of members) {
+      if (!fragmentMap[member.modelId]) fragmentMap[member.modelId] = new Set();
+      fragmentMap[member.modelId].add(Number(member.localId));
+    }
+
+    try {
+      ensureModelObjectsVisible(fragmentMap);
+      await hider.isolate(fragmentMap);
+      isolationActive = true;
+      currentSelectionMap = cloneModelIdMap(fragmentMap);
+      lastIsolatedSelectionMap = cloneModelIdMap(fragmentMap);
+      updateTagAssignmentUi(message || `Isolated ${members.length} tray-system component${members.length === 1 ? '' : 's'}.`, 'success');
+      return true;
+    } catch (error) {
+      console.warn('[Tray Systems] Member isolation failed:', error);
+      updateTagAssignmentUi('Warning: the tray-system elements could not be isolated.', 'warning');
+      return false;
+    }
+  }
+
+  async function getElementsFromModelIdMap(modelIdMap) {
+    const elements = [];
+    for (const [modelId, ids] of Object.entries(modelIdMap || {})) {
+      const modelEntry = findLoadedModelEntry(modelId);
+      if (!modelEntry) continue;
+      const values = ids instanceof Set ? Array.from(ids) : Array.isArray(ids) ? ids : [];
+      for (const localId of values) {
+        elements.push(await readElementIdentity(modelEntry.model, Number(localId), modelEntry.name));
+      }
+    }
+    return elements;
+  }
+
+  async function getCurrentSelectionElements() {
+    const selection = getSelectedModelIdMap();
+    if (countModelIdMapItems(selection) > 0) return getElementsFromModelIdMap(selection);
+    return selectedIfcElement ? [{ ...selectedIfcElement }] : [];
+  }
+
+  async function assignElementsToSystem(systemTag, selectedElements, options = {}) {
+    const normalizedSystemTag = String(systemTag || '').trim();
+    if (!normalizedSystemTag || !selectedElements.length) return false;
+
+    const conflict = selectedElements.find((element) => {
+      const assignment = getAssignmentForElement(element);
+      const currentSystem = assignment?.systemTag || getExistingProjectTag(element);
+      return currentSystem && currentSystem.toLowerCase() !== normalizedSystemTag.toLowerCase();
+    });
+    if (conflict && !options.skipConflictPrompt) {
+      const currentSystem = getAssignmentForElement(conflict)?.systemTag || getExistingProjectTag(conflict);
+      const confirmed = await requestTagReplacement(conflict.localId, currentSystem, normalizedSystemTag);
+      if (!confirmed) {
+        updateTagAssignmentUi('Tray-system assignment cancelled.', 'warning');
+        return false;
+      }
+    }
+
+    const usedSequences = getEffectiveTaggedElements()
+      .filter((element) => element.systemTag?.toLowerCase() === normalizedSystemTag.toLowerCase())
+      .map((element) => Number.parseInt(element.sequenceNumber, 10))
+      .filter(Number.isFinite);
+    let nextSequence = usedSequences.length ? Math.max(...usedSequences) + 1 : 1;
+
+    for (const element of selectedElements) {
+      const key = getAssignmentKey(element.modelId, element.localId);
+      const existingAssignment = getAssignmentForElement(element);
+      const sourceAssignment = findLoadedModelEntry(element.modelId)?.existingProjectTags?.get(Number(element.localId));
+      const keepSequence = (existingAssignment?.systemTag || sourceAssignment?.systemTag)?.toLowerCase() === normalizedSystemTag.toLowerCase();
+      const sequenceNumber = keepSequence
+        ? existingAssignment?.sequenceNumber || sourceAssignment?.sequenceNumber
+        : String(nextSequence++).padStart(3, '0');
+      tagAssignments.set(key, {
+        ...element,
+        systemTag: normalizedSystemTag,
+        componentId: `${normalizedSystemTag}-C${sequenceNumber}`,
+        sequenceNumber,
+        excelRowIndex: selectedExcelRowIndex,
+      });
+      if (selectedIfcElement?.modelId === element.modelId && Number(selectedIfcElement.localId) === Number(element.localId)) {
+        syncProjectTagPropertyGroup(findLoadedModelEntry(element.modelId)?.model || activeModel, element.localId);
+      }
+    }
+
+    selectedTraySystemTag = normalizedSystemTag;
+    systemTagInput.value = normalizedSystemTag;
+    traySelection.clear();
+    renderExcelTable();
+    refreshValidationReportIfOpen();
+    updateTagAssignmentUi(
+      options.message || `Successfully assigned tray system "${normalizedSystemTag}" to ${selectedElements.length} element${selectedElements.length === 1 ? '' : 's'}.`,
+      'success',
+    );
+    return true;
+  }
+
+  async function regenerateSelectedSystemSequence() {
+    if (!selectedTraySystemTag) return false;
+    const members = sortSystemMembers(findSystemMembers(selectedTraySystemTag));
+    if (!members.length) {
+      updateTagAssignmentUi(`Warning: no loaded components belong to tray system "${selectedTraySystemTag}".`, 'warning');
+      return false;
+    }
+
+    let sequenceIndex = 1;
+    for (const member of members) {
+      const modelEntry = findLoadedModelEntry(member.modelId);
+      if (!modelEntry) continue;
+      const identity = await readElementIdentity(modelEntry.model, member.localId, modelEntry.name);
+      const sequenceNumber = String(sequenceIndex++).padStart(3, '0');
+      tagAssignments.set(getAssignmentKey(member.modelId, member.localId), {
+        ...identity,
+        systemTag: selectedTraySystemTag,
+        componentId: `${selectedTraySystemTag}-C${sequenceNumber}`,
+        sequenceNumber,
+        excelRowIndex: member.excelRowIndex ?? selectedExcelRowIndex,
+      });
+      if (selectedIfcElement?.modelId === member.modelId && Number(selectedIfcElement.localId) === Number(member.localId)) {
+        syncProjectTagPropertyGroup(modelEntry.model, member.localId);
+      }
+    }
+
+    renderExcelTable();
+    refreshValidationReportIfOpen();
+    updateTagAssignmentUi(
+      `Regenerated ${members.length} component ID${members.length === 1 ? '' : 's'} for tray system "${selectedTraySystemTag}".`,
+      'success',
+    );
+    return true;
+  }
+
+  function getExcelColumnKey(columnName) {
+    return String(columnName || '');
+  }
+
+  function getDefaultExcelColumnWidth(columnName) {
+    if (columnName === ASSIGNMENT_COLUMN_KEY) return 135;
+    if (isComponentIdColumn(columnName)) return 240;
+    const labelWidth = String(columnName || '').length * 9 + 48;
+    return Math.max(DEFAULT_EXCEL_COLUMN_WIDTH, Math.min(labelWidth, 220));
+  }
+
+  function getExcelColumnWidth(columnName) {
+    const key = getExcelColumnKey(columnName);
+    return excelColumnWidths.get(key) || getDefaultExcelColumnWidth(columnName);
+  }
+
+  function setExcelColumnWidth(columnName, width) {
+    const key = getExcelColumnKey(columnName);
+    excelColumnWidths.set(key, Math.max(MIN_EXCEL_COLUMN_WIDTH, Math.round(width)));
+  }
+
+  function applyExcelColumnWidths(columns) {
+    if (!excelTableColgroup) return;
+    const totalWidth = columns.reduce((sum, columnName) => sum + getExcelColumnWidth(columnName), 0);
+    const visibleWidth = excelDataTable.parentElement?.clientWidth || 0;
+    excelDataTable.style.minWidth = `${Math.max(totalWidth, visibleWidth)}px`;
+
+    Array.from(excelTableColgroup.children).forEach((colElement, index) => {
+      const columnName = columns[index];
+      if (!columnName) return;
+      colElement.style.width = `${getExcelColumnWidth(columnName)}px`;
+    });
+  }
+
+  function startExcelColumnResize(event, columnName, columns) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const startX = event.clientX;
+    const startWidth = getExcelColumnWidth(columnName);
+
+    document.body.classList.add('is-resizing-excel-column');
+
+    const resize = (moveEvent) => {
+      const nextWidth = startWidth + moveEvent.clientX - startX;
+      setExcelColumnWidth(columnName, nextWidth);
+      applyExcelColumnWidths(columns);
+    };
+
+    const stopResize = () => {
+      document.body.classList.remove('is-resizing-excel-column');
+      document.removeEventListener('pointermove', resize);
+      document.removeEventListener('pointerup', stopResize);
+      document.removeEventListener('pointercancel', stopResize);
+    };
+
+    document.addEventListener('pointermove', resize);
+    document.addEventListener('pointerup', stopResize);
+    document.addEventListener('pointercancel', stopResize);
+  }
+
   // Render parsed Excel table rows in UI
   function renderExcelTable() {
+    updateExcelNavigationUi();
+    if (excelTableColgroup) excelTableColgroup.innerHTML = '';
     excelTableHeader.innerHTML = '';
     excelTableBody.innerHTML = '';
     
     if (excelData.length === 0) {
       excelDataTable.style.display = 'none';
+      excelDataTable.style.minWidth = '';
       excelPanel.querySelector('.excel-placeholder').style.display = 'block';
       return;
     }
     
     excelPanel.querySelector('.excel-placeholder').style.display = 'none';
     excelDataTable.style.display = 'table';
+
+    const tableColumns = [...excelColumns, ASSIGNMENT_COLUMN_KEY];
+    if (excelTableColgroup) {
+      tableColumns.forEach((columnName) => {
+        const col = document.createElement('col');
+        col.style.width = `${getExcelColumnWidth(columnName)}px`;
+        excelTableColgroup.appendChild(col);
+      });
+      applyExcelColumnWidths(tableColumns);
+    }
     
     // Create header row
     excelColumns.forEach(col => {
       const th = document.createElement('th');
-      th.innerText = col;
+      th.dataset.column = col;
+      const label = document.createElement('span');
+      label.className = 'excel-column-label';
+      label.innerText = col;
+      const resizeHandle = document.createElement('span');
+      resizeHandle.className = 'excel-column-resizer';
+      resizeHandle.setAttribute('aria-hidden', 'true');
+      resizeHandle.addEventListener('pointerdown', (event) => startExcelColumnResize(event, col, tableColumns));
+      th.append(label, resizeHandle);
       excelTableHeader.appendChild(th);
     });
     const assignmentHeader = document.createElement('th');
-    assignmentHeader.innerText = 'Assignment';
+    assignmentHeader.dataset.column = ASSIGNMENT_COLUMN_KEY;
+    const assignmentLabel = document.createElement('span');
+    assignmentLabel.className = 'excel-column-label';
+    assignmentLabel.innerText = 'Assignment';
+    const assignmentResizeHandle = document.createElement('span');
+    assignmentResizeHandle.className = 'excel-column-resizer';
+    assignmentResizeHandle.setAttribute('aria-hidden', 'true');
+    assignmentResizeHandle.addEventListener('pointerdown', (event) => startExcelColumnResize(event, ASSIGNMENT_COLUMN_KEY, tableColumns));
+    assignmentHeader.append(assignmentLabel, assignmentResizeHandle);
     excelTableHeader.appendChild(assignmentHeader);
     
     // Create table body rows
@@ -1920,6 +2559,7 @@ async function initApp() {
               fragmentMap[member.modelId].add(Number(member.localId));
             }
             await highlighter.highlightByID('select', fragmentMap, true, true);
+            currentSelectionMap = cloneModelIdMap(fragmentMap);
             activeModel = modelEntry.model;
             await displayElementProperties(modelEntry.model, rowAssignment.localId, modelEntry.name);
             selectedIfcElement = await readElementIdentity(modelEntry.model, rowAssignment.localId, modelEntry.name);
@@ -2056,9 +2696,119 @@ async function initApp() {
     updateTagAssignmentUi(`Added element #${selectedIfcElement.localId} to the tray-system selection.`);
   });
 
-  btnClearTraySelection.addEventListener('click', () => {
-    traySelection.clear();
-    updateTagAssignmentUi('Cleared the tray-system selection.');
+  btnRefreshTraySystems?.addEventListener('click', () => {
+    renderTraySystemManager();
+    updateTagAssignmentUi('Tray System Manager refreshed.');
+  });
+
+  btnManagerHighlight?.addEventListener('click', async () => {
+    if (!selectedTraySystemTag) return;
+    const members = findSystemMembers(selectedTraySystemTag);
+    if (!members.length) {
+      updateTagAssignmentUi(`Warning: no loaded components belong to tray system "${selectedTraySystemTag}".`, 'warning');
+      return;
+    }
+    await highlightTrayMembers(
+      members,
+      `Highlighted ${members.length} components for tray system "${selectedTraySystemTag}".`,
+    );
+  });
+
+  btnManagerIsolate?.addEventListener('click', async () => {
+    if (!selectedTraySystemTag) return;
+    const members = findSystemMembers(selectedTraySystemTag);
+    if (!members.length) {
+      updateTagAssignmentUi(`Warning: no loaded components belong to tray system "${selectedTraySystemTag}".`, 'warning');
+      return;
+    }
+    await isolateTrayMembers(
+      members,
+      `Isolated ${members.length} components for tray system "${selectedTraySystemTag}".`,
+    );
+  });
+
+  btnManagerAddSelection?.addEventListener('click', async () => {
+    if (!selectedTraySystemTag) return;
+    const selectedElements = await getCurrentSelectionElements();
+    if (!selectedElements.length) {
+      updateTagAssignmentUi('Warning: select one or more IFC elements before adding to a tray system.', 'warning');
+      return;
+    }
+    await assignElementsToSystem(selectedTraySystemTag, selectedElements, {
+      message: `Added ${selectedElements.length} selected element${selectedElements.length === 1 ? '' : 's'} to tray system "${selectedTraySystemTag}".`,
+    });
+  });
+
+  btnManagerRemoveSelection?.addEventListener('click', async () => {
+    if (!selectedTraySystemTag) return;
+    const selectedElements = await getCurrentSelectionElements();
+    if (!selectedElements.length) {
+      updateTagAssignmentUi('Warning: select one or more IFC elements before removing from a tray system.', 'warning');
+      return;
+    }
+
+    let removed = 0;
+    let savedSkipped = 0;
+    for (const element of selectedElements) {
+      const key = getAssignmentKey(element.modelId, element.localId);
+      const pending = tagAssignments.get(key);
+      if (pending?.systemTag?.toLowerCase() === selectedTraySystemTag.toLowerCase()) {
+        tagAssignments.delete(key);
+        syncProjectTagPropertyGroup(findLoadedModelEntry(element.modelId)?.model || activeModel, element.localId);
+        removed += 1;
+      } else if (getExistingProjectTag(element).toLowerCase() === selectedTraySystemTag.toLowerCase()) {
+        savedSkipped += 1;
+      }
+    }
+
+    renderExcelTable();
+    refreshValidationReportIfOpen();
+    updateTagAssignmentUi(
+      removed
+        ? `Removed ${removed} pending element${removed === 1 ? '' : 's'} from "${selectedTraySystemTag}"${savedSkipped ? `; ${savedSkipped} saved IFC tag${savedSkipped === 1 ? '' : 's'} not deleted` : ''}.`
+        : savedSkipped
+          ? `Warning: ${savedSkipped} selected element${savedSkipped === 1 ? '' : 's'} came from saved IFC tags; deletion is not implemented yet.`
+          : `No selected pending elements belonged to "${selectedTraySystemTag}".`,
+      removed ? 'success' : 'warning',
+    );
+  });
+
+  btnManagerRegenerateSequence?.addEventListener('click', async () => {
+    await regenerateSelectedSystemSequence();
+  });
+
+  btnManagerRename?.addEventListener('click', async () => {
+    const oldTag = selectedTraySystemTag;
+    const newTag = getEnteredSystemTag();
+    if (!oldTag || !newTag || oldTag.toLowerCase() === newTag.toLowerCase()) return;
+
+    const members = findSystemMembers(oldTag);
+    if (!members.length) {
+      updateTagAssignmentUi(`Warning: no loaded components belong to tray system "${oldTag}".`, 'warning');
+      return;
+    }
+
+    for (const member of members) {
+      const modelEntry = findLoadedModelEntry(member.modelId);
+      if (!modelEntry) continue;
+      const identity = await readElementIdentity(modelEntry.model, member.localId, modelEntry.name);
+      const sequenceNumber = member.sequenceNumber || '001';
+      tagAssignments.set(getAssignmentKey(member.modelId, member.localId), {
+        ...identity,
+        systemTag: newTag,
+        componentId: `${newTag}-C${sequenceNumber}`,
+        sequenceNumber,
+        excelRowIndex: member.excelRowIndex ?? selectedExcelRowIndex,
+      });
+      if (selectedIfcElement?.modelId === member.modelId && Number(selectedIfcElement.localId) === Number(member.localId)) {
+        syncProjectTagPropertyGroup(modelEntry.model, member.localId);
+      }
+    }
+
+    selectedTraySystemTag = newTag;
+    renderExcelTable();
+    refreshValidationReportIfOpen();
+    updateTagAssignmentUi(`Renamed tray system "${oldTag}" to "${newTag}" for ${members.length} component${members.length === 1 ? '' : 's'}.`, 'success');
   });
 
   btnAssignTag.addEventListener('click', async () => {
@@ -2066,6 +2816,8 @@ async function initApp() {
     const selectedElements = traySelection.size
       ? Array.from(traySelection.values())
       : selectedIfcElement ? [{ ...selectedIfcElement }] : [];
+    await assignElementsToSystem(systemTag, selectedElements);
+    return;
     if (!systemTag || !selectedElements.length) return;
 
     const conflict = selectedElements.find((element) => {
@@ -2150,6 +2902,11 @@ async function initApp() {
         SystemTag: assignment.systemTag,
         ComponentId: assignment.componentId,
         SequenceNumber: assignment.sequenceNumber,
+        SourceState: getAssignmentSourceLabel({
+          ...assignment,
+          source: 'pending',
+          wasSaved: Boolean(getExistingTrayAssignment(assignment)),
+        }),
         Element_Name: assignment.name,
         IFC_Type: assignment.type,
         ...await readElementDimensions(assignment),

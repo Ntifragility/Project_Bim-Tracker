@@ -13,6 +13,30 @@
     <div id="app">
       <!-- 3D Viewport Canvas Container -->
       <div id="viewer-container"></div>
+      <div id="viewer-context-menu" class="viewer-context-menu" role="menu" hidden>
+        <button id="context-focus-item" type="button" role="menuitem">
+          <span aria-hidden="true">◎</span>
+          Focus on Item
+        </button>
+        <button id="context-isolate-item" type="button" role="menuitem">
+          <span aria-hidden="true">◌</span>
+          Isolate Selected
+        </button>
+        <div id="context-color-control" class="viewer-context-color" role="group" aria-label="Selected element appearance color" hidden>
+          <label for="context-selection-color">
+            <span aria-hidden="true">▣</span>
+            Appearance Color
+          </label>
+          <div class="viewer-context-color-controls">
+            <input id="context-selection-color" type="color" value="#f54242" aria-label="Selected element appearance RGB color" />
+            <input id="context-color-hex" type="text" value="#F54242" aria-label="Selected element appearance HEX color" maxlength="7" />
+          </div>
+        </div>
+        <button id="context-show-all" type="button" role="menuitem" hidden>
+          <span aria-hidden="true">●</span>
+          Show All
+        </button>
+      </div>
 
       <!-- Glassmorphic Sidebar Controls -->
       <aside id="sidebar">
@@ -59,7 +83,20 @@
               <button id="btn-reset-camera" class="btn btn-action">
                 <span>🔄</span> Reset Camera
               </button>
-              
+
+              <button id="btn-viewer-settings" class="btn btn-secondary" type="button" aria-expanded="false" aria-controls="viewer-settings-panel">
+                Settings
+              </button>
+
+              <div id="viewer-settings-panel" class="viewer-settings-panel" hidden>
+                <label for="selection-highlight-color">Selection Highlight Color</label>
+                <div class="viewer-settings-color-controls">
+                  <input id="selection-highlight-color" type="color" value="#6366f1" aria-label="Selection highlight RGB color" />
+                  <input id="selection-highlight-hex" type="text" value="#6366F1" aria-label="Selection highlight HEX color" maxlength="7" />
+                </div>
+                <p>Color used when you click/select IFC elements.</p>
+              </div>
+
               <div class="toggle-option">
                 <label for="toggle-grid">
                   <input type="checkbox" id="toggle-grid" checked />
@@ -84,32 +121,6 @@
                 </label>
               </div>
 
-              <div class="toggle-option">
-                <label for="toggle-transform">
-                  <input type="checkbox" id="toggle-transform" />
-                  <span class="custom-checkbox"></span>
-                  Enable Model Dragging
-                </label>
-              </div>
-            </div>
-          </section>
-
-          <!-- Measurements Section -->
-          <section class="control-group">
-            <h3>Measurements</h3>
-            <div class="control-options">
-              <button id="btn-toggle-measure" class="btn btn-action">
-                <span>📐</span> Enable Measuring
-              </button>
-              <button id="btn-clear-measure" class="btn btn-secondary" style="margin-top: 8px;">
-                <span>🗑️</span> Clear Measures
-              </button>
-              
-              <!-- Dynamic Dimensions List -->
-              <div id="measurements-list-container" class="measurements-list" style="display: none; margin-top: 12px; border-top: 1px solid var(--glass-border); padding-top: 12px;">
-                <h4 style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; font-weight: 600; letter-spacing: 1px;">Saved Dimensions</h4>
-                <ul id="measurements-list-items" style="list-style: none; display: flex; flex-direction: column; gap: 8px; max-height: 150px; overflow-y: auto; padding-right: 4px;"></ul>
-              </div>
             </div>
           </section>
 
@@ -212,30 +223,71 @@
               <input type="text" id="system-tag-input" class="excel-search-input" placeholder="Example: 140ST-900-001" autocomplete="off" list="system-tag-suggestions" />
               <datalist id="system-tag-suggestions"></datalist>
             </div>
-            <div class="excel-field">
+            <div class="excel-field excel-only-field" hidden>
               <label for="excel-id-column">Optional Navigation Column</label>
               <select id="excel-id-column" class="excel-select">
                 <option value="">(Select tag column)</option>
               </select>
             </div>
-            <div class="excel-field">
+            <div class="excel-field excel-only-field" hidden>
               <input type="text" id="excel-search" class="excel-search-input" placeholder="Search rows..." />
             </div>
             <div id="tag-assignment-status" class="tag-assignment-status">
               Type a system tag and select one or more IFC elements.
             </div>
-            <div class="tag-assignment-actions">
-              <button id="btn-add-tray-selection" class="btn btn-secondary" disabled>Add Selected Element</button>
-              <button id="btn-clear-tray-selection" class="btn btn-secondary" disabled>Clear Selection</button>
-              <button id="btn-assign-tag" class="btn btn-primary" disabled>Assign System Tag</button>
-              <button id="btn-highlight-system" class="btn btn-secondary" disabled>Highlight System</button>
-              <button id="btn-unassign-tag" class="btn btn-secondary" disabled>Unassign</button>
-              <button id="btn-validate-tags" class="btn btn-secondary" disabled>Validate Tags</button>
-              <button id="btn-export-tags" class="btn btn-secondary" disabled>Export Mapping</button>
-              <button id="btn-export-tagged-ifc" class="btn btn-secondary" disabled>Export Tagged IFC</button>
+            <div class="tray-system-summary-row">
+              <div id="tray-selection-summary" class="tag-assignment-summary">0 elements selected</div>
+              <div id="tag-assignment-summary" class="tag-assignment-summary">0 assignments</div>
             </div>
-            <div id="tray-selection-summary" class="tag-assignment-summary">0 elements selected</div>
-            <div id="tag-assignment-summary" class="tag-assignment-summary">0 assignments</div>
+            <section class="tray-system-manager" aria-label="Tray System Manager">
+              <div class="tray-system-manager-heading">
+                <div>
+                  <h3>Tray System Manager</h3>
+                  <p id="tray-system-manager-summary">No tray systems loaded.</p>
+                </div>
+                <button id="btn-refresh-tray-systems" class="btn btn-secondary" type="button">Refresh</button>
+              </div>
+              <div id="tray-system-list" class="tray-system-list">
+                <div class="tray-system-empty">Assign or load tray-system tags to manage them here.</div>
+              </div>
+              <div class="tray-system-components-panel">
+                <div class="tray-system-components-heading">
+                  <span>Components</span>
+                  <span id="tray-system-sequence-status">Select a system</span>
+                </div>
+                <div id="tray-system-component-list" class="tray-system-component-list">
+                  <div class="tray-system-empty">Select a tray system to inspect its components.</div>
+                </div>
+              </div>
+              <div class="tray-system-manager-actions">
+                <button id="btn-manager-highlight" class="btn btn-secondary" disabled>Highlight</button>
+                <button id="btn-manager-isolate" class="btn btn-secondary" disabled>Isolate</button>
+                <button id="btn-manager-add-selection" class="btn btn-secondary" disabled>Add Selection</button>
+                <button id="btn-manager-remove-selection" class="btn btn-secondary" disabled>Remove Selection</button>
+                <button id="btn-manager-regenerate-sequence" class="btn btn-secondary" disabled>Regenerate Sequence</button>
+                <button id="btn-manager-rename" class="btn btn-secondary" disabled>Rename Selected System</button>
+              </div>
+            </section>
+            <div class="tag-assignment-actions">
+              <div class="tag-action-group tag-action-group-primary">
+                <button id="btn-assign-tag" class="btn btn-primary" disabled>Assign System Tag</button>
+              </div>
+              <div class="tag-action-group">
+                <span class="tag-action-heading">System tools</span>
+                <button id="btn-highlight-system" class="btn btn-secondary" disabled>Highlight System</button>
+              </div>
+              <div class="tag-action-group">
+                <span class="tag-action-heading">Export</span>
+                <button id="btn-export-tags" class="btn btn-secondary" disabled>Export Mapping</button>
+                <button id="btn-export-tagged-ifc" class="btn btn-secondary" disabled>Export Tagged IFC</button>
+              </div>
+              <details class="tag-action-group tag-advanced-actions">
+                <summary>Advanced</summary>
+                <button id="btn-add-tray-selection" class="btn btn-secondary" disabled>Add Current Element</button>
+                <button id="btn-unassign-tag" class="btn btn-secondary" disabled>Unassign Selected Element</button>
+                <button id="btn-validate-tags" class="btn btn-secondary" disabled>Validate Tags</button>
+              </details>
+            </div>
             <section id="tag-validation-report" class="tag-validation-report" hidden aria-live="polite">
               <div class="tag-validation-heading">
                 <strong>Tag validation</strong>
@@ -250,6 +302,7 @@
           <div class="excel-table-container">
             <div class="excel-placeholder">Upload an Excel file to display data table here.</div>
             <table id="excel-data-table" class="excel-table" style="display: none;">
+              <colgroup id="excel-table-colgroup"></colgroup>
               <thead>
                 <tr id="excel-table-header"></tr>
               </thead>

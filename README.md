@@ -17,6 +17,18 @@ the development server can also be deep-linked for repeatable review:
 http://127.0.0.1:5173/?ifc=/model.ifc
 ```
 
+## View navigation
+
+- Hold the middle mouse button (mouse wheel) and drag to pan the view.
+- Select an IFC element, then drag with the left mouse button to orbit around it.
+- Scroll the mouse wheel to zoom.
+- Select an IFC element, then right-click and choose **Focus on Item** to center it.
+- Open **Settings** to change the temporary selection highlight color.
+- Right-click selected elements and choose **Appearance Color** to recolor their
+  viewer appearance only. This does not write color back into the IFC.
+
+Panning moves only the camera view; it does not change IFC model coordinates.
+
 ## Routing workflow
 
 1. Load an IFC containing cable-tray geometry.
@@ -57,7 +69,8 @@ IDs are unique within the project.
 
 **Export Mapping** creates `IFC_Tag_Mapping.xlsx` with the system/component
 identifiers and best-effort `Width`, `Height`, and `Length` values read from each
-element's IFC attributes or property sets.
+element's IFC attributes or property sets. The export also includes
+`SourceState`, showing whether a row is pending or modifies a saved IFC tag.
 
 When that workbook is uploaded again, `ComponentId` is selected automatically:
 clicking a row highlights its single IFC element. Selecting `SystemTag` as the
@@ -66,6 +79,28 @@ navigation column instead makes each row highlight the complete tray system.
 To inspect a complete tray system without Excel, type or choose its system tag and
 select **Highlight System** (or press Enter). Every loaded component assigned to
 that system is highlighted.
+
+The **Tray System Manager** lists every system tag found in the loaded IFC data
+and pending assignments. Selecting a system lets you highlight or isolate the
+whole system, add the current viewer selection, remove pending elements, rename
+the system, inspect the component list, and regenerate sequential component IDs.
+The manager labels systems as:
+
+- **Saved**: read from an uploaded tagged IFC;
+- **Pending**: assigned during the current viewer session;
+- **Modified**: originally read from a tagged IFC, then changed in the current session;
+- **Mixed**: a combination of saved IFC tags and pending edits.
+
+The component list under the selected system shows each `ComponentId`, sequence
+number, local IFC element ID, and source. Clicking a component row highlights
+that single IFC element. **Regenerate Sequence** rewrites the selected system's
+component IDs as `SystemTag-C001`, `SystemTag-C002`, and so on, using the current
+sorted component order.
+
+Current limitation: removing a tag that only exists inside an uploaded tagged IFC
+is not implemented yet. Removing from the manager currently deletes pending
+session assignments; saved IFC tags can be overridden by assigning or renaming,
+then exported into a new tagged IFC.
 
 Select **Validate Tags** before export to compare effective IFC tags with the
 selected Excel tag column. Duplicate component IDs, duplicate Excel system tags,
