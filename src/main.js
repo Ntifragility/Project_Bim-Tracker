@@ -71,6 +71,8 @@ const traySystemManagerSummary = document.getElementById('tray-system-manager-su
 const traySystemList = document.getElementById('tray-system-list');
 const traySystemComponentList = document.getElementById('tray-system-component-list');
 const traySystemSequenceStatus = document.getElementById('tray-system-sequence-status');
+const traySystemDeletionsPanel = document.getElementById('tray-system-deletions-panel');
+const traySystemDeletionList = document.getElementById('tray-system-deletion-list');
 const btnAssignTag = document.getElementById('btn-assign-tag');
 const btnHighlightSystem = document.getElementById('btn-highlight-system');
 const btnAddTraySelection = document.getElementById('btn-add-tray-selection');
@@ -465,6 +467,7 @@ async function initApp() {
 
   function getAssignmentSourceLabel(element) {
     if (!element) return 'Unknown';
+    if (element.delete === true) return 'Deleted';
     if (element.source === 'pending' && element.wasSaved) return 'Modified';
     if (element.source === 'pending') return 'Pending';
     return 'Saved';
@@ -476,6 +479,7 @@ async function initApp() {
     const members = [];
 
     for (const [key, assignment] of tagAssignments) {
+      if (assignment.delete === true) continue;
       if (assignment.systemTag.toLowerCase() === normalizedTag) {
         const existing = getExistingTrayAssignment(assignment);
         members.push({
@@ -587,6 +591,7 @@ async function initApp() {
       if (missing) parts.push(`${missing} missing`);
       if (duplicates) parts.push(`${duplicates} duplicate`);
       if (gaps) parts.push(`${gaps} gap${gaps === 1 ? '' : 's'}`);
+      return { tone: 'warning', message: parts.join(' | ') };
       return { tone: 'warning', message: parts.join(' · ') };
     }
     return { tone: 'success', message: 'Sequence OK' };
@@ -665,6 +670,57 @@ async function initApp() {
     }
   }
 
+  function getPendingTrayDeletions() {
+    return Array.from(tagAssignments.values())
+      .filter((assignment) => assignment.delete === true)
+      .sort((a, b) =>
+        String(a.systemTag || '').localeCompare(String(b.systemTag || '')) ||
+        Number(a.localId) - Number(b.localId)
+      );
+  }
+
+  function restorePendingTrayDeletion(assignment) {
+    if (!assignment) return;
+    tagAssignments.delete(getAssignmentKey(assignment.modelId, assignment.localId));
+    const model = findLoadedModelEntry(assignment.modelId)?.model || activeModel;
+    syncProjectTagPropertyGroup(model, assignment.localId);
+    renderExcelTable();
+    refreshValidationReportIfOpen();
+    updateTagAssignmentUi(`Restored saved IFC tag for element #${assignment.localId}.`, 'success');
+  }
+
+  function renderPendingTrayDeletions() {
+    if (!traySystemDeletionsPanel || !traySystemDeletionList) return;
+    const deletions = getPendingTrayDeletions();
+    traySystemDeletionsPanel.hidden = deletions.length === 0;
+    traySystemDeletionList.innerHTML = '';
+    if (!deletions.length) return;
+
+    for (const deletion of deletions) {
+      const item = document.createElement('div');
+      item.className = 'tray-system-deletion-item';
+
+      const details = document.createElement('span');
+      details.className = 'tray-system-deletion-details';
+      details.textContent = `${deletion.systemTag || '(no system)'} | #${deletion.localId} | ${deletion.componentId || 'no component'}`;
+
+      const showButton = document.createElement('button');
+      showButton.type = 'button';
+      showButton.className = 'tray-system-deletion-action';
+      showButton.textContent = 'Show';
+      showButton.addEventListener('click', () => highlightSingleTrayComponent(deletion));
+
+      const restoreButton = document.createElement('button');
+      restoreButton.type = 'button';
+      restoreButton.className = 'tray-system-deletion-action tray-system-deletion-restore';
+      restoreButton.textContent = 'Restore';
+      restoreButton.addEventListener('click', () => restorePendingTrayDeletion(deletion));
+
+      item.append(details, showButton, restoreButton);
+      traySystemDeletionList.appendChild(item);
+    }
+  }
+
   function renderTraySystemManager() {
     if (!traySystemList) return;
     const systems = getTraySystemSummaries();
@@ -672,9 +728,12 @@ async function initApp() {
     if (!selectedStillExists) selectedTraySystemTag = '';
 
     if (traySystemManagerSummary) {
+      const pendingDeletions = Array.from(tagAssignments.values()).filter((assignment) => assignment.delete === true).length;
       traySystemManagerSummary.textContent = systems.length
-        ? `${systems.length} system${systems.length === 1 ? '' : 's'} loaded.`
-        : 'No tray systems loaded.';
+        ? `${systems.length} system${systems.length === 1 ? '' : 's'} loaded${pendingDeletions ? ` · ${pendingDeletions} pending deletion${pendingDeletions === 1 ? '' : 's'}` : ''}.`
+        : pendingDeletions
+          ? `${pendingDeletions} pending deletion${pendingDeletions === 1 ? '' : 's'}.`
+          : 'No tray systems loaded.';
     }
     traySystemList.innerHTML = '';
 
@@ -711,6 +770,7 @@ async function initApp() {
 
     const selectedSystem = systems.find((system) => system.tag.toLowerCase() === selectedTraySystemTag.toLowerCase()) || null;
     renderTraySystemComponents(selectedSystem);
+    renderPendingTrayDeletions();
 
     const hasSelectedSystem = Boolean(selectedSystem);
     const selectedElementCount = countModelIdMapItems(getSelectedModelIdMap());
@@ -767,6 +827,10 @@ async function initApp() {
       if (loadedModels.some((entry) =>
         entry.model.modelId === assignment.modelId || entry.model.uuid === assignment.modelId
       )) {
+        if (assignment.delete === true) {
+          elements.delete(key);
+          continue;
+        }
         elements.set(key, { ...assignment, source: 'pending' });
       }
     }
@@ -846,7 +910,7 @@ async function initApp() {
     tagAssignmentStatus.textContent = message || `${rowLabel}; ${elementLabel}.`;
     if (tone) tagAssignmentStatus.dataset.tone = tone;
     else delete tagAssignmentStatus.dataset.tone;
-    tagAssignmentSummary.textContent = `${tagAssignments.size} assignment${tagAssignments.size === 1 ? '' : 's'}`;
+    tagAssignmentSummary.textContent = `${tagAssignments.size} pending change${tagAssignments.size === 1 ? '' : 's'}`;
     traySelectionSummary.textContent = traySelection.size
       ? `${traySelection.size} element${traySelection.size === 1 ? '' : 's'} selected · click empty space to clear`
       : selectedIfcElement ? '1 current element' : '0 elements selected';
@@ -863,7 +927,9 @@ async function initApp() {
     renderTraySystemManager();
 
     if (selectedIfcElement) {
-      const displayedTag = assignment?.systemTag || getExistingProjectTag() || selectedIfcElement.ifcTag || '-';
+      const displayedTag = assignment?.delete === true
+        ? '-'
+        : assignment?.systemTag || getExistingProjectTag() || selectedIfcElement.ifcTag || '-';
       propTag.textContent = displayedTag;
       propTag.title = displayedTag;
     }
@@ -1216,6 +1282,14 @@ async function initApp() {
     const existing = loadedModels.find((entry) =>
       entry.model.modelId === element.modelId || entry.model.uuid === element.modelId
     )?.existingProjectTags?.get(element.localId);
+    if (assignment?.delete === true) {
+      propPsetsContainer.querySelector('[data-pset-name="CCP_TRAY_SYSTEM"]')?.remove();
+      if (selectedIfcElement?.modelId === element.modelId && Number(selectedIfcElement.localId) === element.localId) {
+        propTag.textContent = '-';
+        propTag.title = '-';
+      }
+      return;
+    }
     const systemTag = assignment?.systemTag || existing?.systemTag || '';
     const componentId = assignment?.componentId || existing?.componentId || '';
     const sequenceNumber = assignment?.sequenceNumber || existing?.sequenceNumber || '';
@@ -1793,6 +1867,7 @@ async function initApp() {
 
       loadedModels.push(modelEntry);
       renderExcelTable();
+      renderTraySystemManager();
       refreshValidationReportIfOpen();
 
       // Fit camera to model
@@ -2748,7 +2823,7 @@ async function initApp() {
     }
 
     let removed = 0;
-    let savedSkipped = 0;
+    let markedDeleted = 0;
     for (const element of selectedElements) {
       const key = getAssignmentKey(element.modelId, element.localId);
       const pending = tagAssignments.get(key);
@@ -2757,19 +2832,28 @@ async function initApp() {
         syncProjectTagPropertyGroup(findLoadedModelEntry(element.modelId)?.model || activeModel, element.localId);
         removed += 1;
       } else if (getExistingProjectTag(element).toLowerCase() === selectedTraySystemTag.toLowerCase()) {
-        savedSkipped += 1;
+        const existing = getExistingTrayAssignment(element);
+        tagAssignments.set(key, {
+          ...element,
+          systemTag: existing?.systemTag || selectedTraySystemTag,
+          componentId: existing?.componentId || '',
+          sequenceNumber: existing?.sequenceNumber || '',
+          delete: true,
+          wasSaved: true,
+          excelRowIndex: selectedExcelRowIndex,
+        });
+        syncProjectTagPropertyGroup(findLoadedModelEntry(element.modelId)?.model || activeModel, element.localId);
+        markedDeleted += 1;
       }
     }
 
     renderExcelTable();
     refreshValidationReportIfOpen();
     updateTagAssignmentUi(
-      removed
-        ? `Removed ${removed} pending element${removed === 1 ? '' : 's'} from "${selectedTraySystemTag}"${savedSkipped ? `; ${savedSkipped} saved IFC tag${savedSkipped === 1 ? '' : 's'} not deleted` : ''}.`
-        : savedSkipped
-          ? `Warning: ${savedSkipped} selected element${savedSkipped === 1 ? '' : 's'} came from saved IFC tags; deletion is not implemented yet.`
-          : `No selected pending elements belonged to "${selectedTraySystemTag}".`,
-      removed ? 'success' : 'warning',
+      removed || markedDeleted
+        ? `Removed ${removed + markedDeleted} element${removed + markedDeleted === 1 ? '' : 's'} from "${selectedTraySystemTag}"${markedDeleted ? `; ${markedDeleted} saved IFC tag${markedDeleted === 1 ? '' : 's'} marked for export deletion` : ''}.`
+        : `No selected pending elements belonged to "${selectedTraySystemTag}".`,
+      removed || markedDeleted ? 'success' : 'warning',
     );
   });
 
@@ -2933,6 +3017,9 @@ async function initApp() {
 
     let exportedModels = 0;
     let exportedTags = 0;
+    let createdTags = 0;
+    let updatedTags = 0;
+    let deletedTags = 0;
     let skippedTags = 0;
     for (const modelEntry of loadedModels) {
       const assignments = Array.from(tagAssignments.values()).filter((assignment) =>
@@ -2957,6 +3044,9 @@ async function initApp() {
         URL.revokeObjectURL(url);
         exportedModels += 1;
         exportedTags += result.applied.length;
+        createdTags += result.applied.filter((item) => item.action === 'created').length;
+        updatedTags += result.applied.filter((item) => item.action === 'updated').length;
+        deletedTags += result.applied.filter((item) => item.action === 'deleted').length;
         skippedTags += result.skipped.length;
       } catch (error) {
         console.error(`[IFC Tag Export] ${modelEntry.name}:`, error);
@@ -2968,8 +3058,13 @@ async function initApp() {
       updateTagAssignmentUi('Warning: no tagged IFC could be generated from the loaded source models.', 'warning');
       return;
     }
+    const actionSummary = [
+      createdTags ? `${createdTags} created` : '',
+      updatedTags ? `${updatedTags} updated` : '',
+      deletedTags ? `${deletedTags} deleted` : '',
+    ].filter(Boolean).join(', ');
     updateTagAssignmentUi(
-      `Successfully exported ${exportedTags} tag${exportedTags === 1 ? '' : 's'} into ${exportedModels} new IFC file${exportedModels === 1 ? '' : 's'}${skippedTags ? `; ${skippedTags} skipped` : ''}.`,
+      `Successfully exported ${exportedTags} change${exportedTags === 1 ? '' : 's'} into ${exportedModels} new IFC file${exportedModels === 1 ? '' : 's'}${actionSummary ? ` (${actionSummary})` : ''}${skippedTags ? `; ${skippedTags} skipped` : ''}.`,
       skippedTags ? 'warning' : 'success',
     );
   });

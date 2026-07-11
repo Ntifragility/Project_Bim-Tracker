@@ -1468,6 +1468,65 @@ body {
   white-space: nowrap;
 }
 
+.tray-system-deletions-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.06);
+}
+
+.tray-system-deletions-panel[hidden] {
+  display: none !important;
+}
+
+.tray-system-deletion-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 120px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.tray-system-deletion-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 8px;
+  border: 1px solid rgba(245, 158, 11, 0.18);
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.tray-system-deletion-details {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font: 600 0.68rem var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tray-system-deletion-action {
+  padding: 5px 7px;
+  color: #fcd34d;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 6px;
+  cursor: pointer;
+  font: 650 0.65rem var(--font-sans);
+}
+
+.tray-system-deletion-action:hover,
+.tray-system-deletion-action:focus-visible {
+  background: rgba(245, 158, 11, 0.2);
+  outline: none;
+}
+
 .tray-system-manager-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;

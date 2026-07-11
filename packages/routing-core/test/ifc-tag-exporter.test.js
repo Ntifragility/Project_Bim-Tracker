@@ -105,3 +105,17 @@ test('updates tray assignment properties without duplicating property sets', () 
   assert.equal(assignment.componentId, 'SYS-B-C004');
   assert.equal((second.text.match(/'CCP_TRAY_SYSTEM'/g) || []).length, 1);
 });
+
+test('deletes a saved tray assignment by clearing its property values', () => {
+  const first = addTraySystemAssignmentsToIfc(fixture, [{
+    localId: 10,
+    systemTag: 'SYS-A',
+    componentId: 'SYS-A-C001',
+    sequenceNumber: '001',
+  }]);
+  const removed = addTraySystemAssignmentsToIfc(first.bytes, [{ localId: 10, delete: true }]);
+  assert.equal(removed.applied[0].action, 'deleted');
+  assert.equal(extractTraySystemAssignmentsFromIfc(removed.bytes).has(10), false);
+  assert.match(removed.text, /IFCPROPERTYSINGLEVALUE\('SystemTag',\$,IFCLABEL\(''\),\$\)/);
+  assert.equal((removed.text.match(/'CCP_TRAY_SYSTEM'/g) || []).length, 1);
+});

@@ -177,11 +177,24 @@ export function addTraySystemAssignmentsToIfc(sourceBytes, assignments) {
 
   for (const assignment of assignments) {
     const localId = Number(assignment.localId);
+    const removeAssignment = assignment.delete === true || assignment.action === 'delete';
     const systemTag = String(assignment.systemTag ?? '').trim();
     const componentId = String(assignment.componentId ?? '').trim();
     const sequenceNumber = String(assignment.sequenceNumber ?? '').trim();
     if (!Number.isInteger(localId) || !entityIds.has(localId)) {
       skipped.push({ assignment, reason: 'element-not-found-in-source-ifc' });
+      continue;
+    }
+    if (removeAssignment) {
+      const current = existing.get(localId);
+      if (!current?.systemTagPropertyId && !current?.componentIdPropertyId && !current?.sequencePropertyId) {
+        skipped.push({ assignment, reason: 'tray-assignment-not-found-in-source-ifc' });
+        continue;
+      }
+      if (current.systemTagPropertyId) source = replacePropertyValue(source, current.systemTagPropertyId, '');
+      if (current.componentIdPropertyId) source = replacePropertyValue(source, current.componentIdPropertyId, '');
+      if (current.sequencePropertyId) source = replacePropertyValue(source, current.sequencePropertyId, '');
+      applied.push({ localId, systemTag: '', componentId: '', sequenceNumber: '', action: 'deleted' });
       continue;
     }
     if (!systemTag || !componentId || !sequenceNumber) {

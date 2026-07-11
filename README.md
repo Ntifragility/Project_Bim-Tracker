@@ -97,10 +97,13 @@ that single IFC element. **Regenerate Sequence** rewrites the selected system's
 component IDs as `SystemTag-C001`, `SystemTag-C002`, and so on, using the current
 sorted component order.
 
-Current limitation: removing a tag that only exists inside an uploaded tagged IFC
-is not implemented yet. Removing from the manager currently deletes pending
-session assignments; saved IFC tags can be overridden by assigning or renaming,
-then exported into a new tagged IFC.
+Removing from the manager deletes pending session assignments immediately. If the
+selected component came from an uploaded tagged IFC, the removal is stored as a
+pending deletion and **Export Tagged IFC** clears the saved `SystemTag`,
+`ComponentId`, and `SequenceNumber` values in the new exported IFC. The original
+source IFC is still left unchanged. The manager summary reports pending deletions,
+and the pending-deletions list lets you show one in the viewer or restore it
+before export if it was removed by mistake.
 
 Select **Validate Tags** before export to compare effective IFC tags with the
 selected Excel tag column. Duplicate component IDs, duplicate Excel system tags,
