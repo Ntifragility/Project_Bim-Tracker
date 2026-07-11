@@ -1312,6 +1312,18 @@ body {
   font-size: 0.72rem;
 }
 
+.tray-system-manager-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 7px;
+}
+
+.tray-system-manager-controls .excel-search-input,
+.tray-system-manager-controls .excel-select {
+  min-height: 33px;
+  font-size: 0.72rem;
+}
+
 .tray-system-list {
   display: flex;
   flex-direction: column;

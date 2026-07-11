@@ -68,6 +68,8 @@ const excelTableBody = document.getElementById('excel-table-body');
 const tagAssignmentStatus = document.getElementById('tag-assignment-status');
 const tagAssignmentSummary = document.getElementById('tag-assignment-summary');
 const traySystemManagerSummary = document.getElementById('tray-system-manager-summary');
+const traySystemFilter = document.getElementById('tray-system-filter');
+const traySystemSort = document.getElementById('tray-system-sort');
 const traySystemList = document.getElementById('tray-system-list');
 const traySystemComponentList = document.getElementById('tray-system-component-list');
 const traySystemSequenceStatus = document.getElementById('tray-system-sequence-status');
@@ -101,6 +103,8 @@ const MIN_EXCEL_COLUMN_WIDTH = 92;
 const DEFAULT_EXCEL_COLUMN_WIDTH = 150;
 const ASSIGNMENT_COLUMN_KEY = '__assignment__';
 let selectedTraySystemTag = '';
+let traySystemFilterText = '';
+let traySystemSortMode = 'tag';
 
 // Loaded Models DOM Elements
 const loadedModelsContainer = document.getElementById('loaded-models-container');
@@ -721,16 +725,43 @@ async function initApp() {
     }
   }
 
+  function getVisibleTraySystems(systems = []) {
+    const normalizedFilter = traySystemFilterText.trim().toLowerCase();
+    const filtered = normalizedFilter
+      ? systems.filter((system) =>
+          system.tag.toLowerCase().includes(normalizedFilter) ||
+          system.models.some((modelName) => modelName.toLowerCase().includes(normalizedFilter)) ||
+          system.status.toLowerCase().includes(normalizedFilter)
+        )
+      : [...systems];
+
+    return filtered.sort((a, b) => {
+      if (traySystemSortMode === 'count-desc') {
+        if (b.count !== a.count) return b.count - a.count;
+        return a.tag.localeCompare(b.tag);
+      }
+      if (traySystemSortMode === 'status') {
+        const statusCompare = a.status.localeCompare(b.status);
+        return statusCompare || a.tag.localeCompare(b.tag);
+      }
+      return a.tag.localeCompare(b.tag);
+    });
+  }
+
   function renderTraySystemManager() {
     if (!traySystemList) return;
     const systems = getTraySystemSummaries();
+    const visibleSystems = getVisibleTraySystems(systems);
     const selectedStillExists = systems.some((system) => system.tag.toLowerCase() === selectedTraySystemTag.toLowerCase());
     if (!selectedStillExists) selectedTraySystemTag = '';
 
     if (traySystemManagerSummary) {
       const pendingDeletions = Array.from(tagAssignments.values()).filter((assignment) => assignment.delete === true).length;
+      const filterSuffix = visibleSystems.length !== systems.length
+        ? ` | ${visibleSystems.length}/${systems.length} shown`
+        : '';
       traySystemManagerSummary.textContent = systems.length
-        ? `${systems.length} system${systems.length === 1 ? '' : 's'} loaded${pendingDeletions ? ` · ${pendingDeletions} pending deletion${pendingDeletions === 1 ? '' : 's'}` : ''}.`
+        ? `${systems.length} system${systems.length === 1 ? '' : 's'} loaded${filterSuffix}${pendingDeletions ? ` · ${pendingDeletions} pending deletion${pendingDeletions === 1 ? '' : 's'}` : ''}.`
         : pendingDeletions
           ? `${pendingDeletions} pending deletion${pendingDeletions === 1 ? '' : 's'}.`
           : 'No tray systems loaded.';
@@ -742,8 +773,13 @@ async function initApp() {
       empty.className = 'tray-system-empty';
       empty.textContent = 'Assign or load tray-system tags to manage them here.';
       traySystemList.appendChild(empty);
+    } else if (!visibleSystems.length) {
+      const empty = document.createElement('div');
+      empty.className = 'tray-system-empty';
+      empty.textContent = 'No tray systems match the current search.';
+      traySystemList.appendChild(empty);
     } else {
-      for (const system of systems) {
+      for (const system of visibleSystems) {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'tray-system-item';
@@ -2736,6 +2772,16 @@ async function initApp() {
 
   excelSearch.addEventListener('input', () => {
     renderExcelTable();
+  });
+
+  traySystemFilter?.addEventListener('input', () => {
+    traySystemFilterText = traySystemFilter.value;
+    renderTraySystemManager();
+  });
+
+  traySystemSort?.addEventListener('change', () => {
+    traySystemSortMode = traySystemSort.value || 'tag';
+    renderTraySystemManager();
   });
 
   systemTagInput.addEventListener('input', () => {

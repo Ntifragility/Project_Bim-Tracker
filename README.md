@@ -84,6 +84,8 @@ The **Tray System Manager** lists every system tag found in the loaded IFC data
 and pending assignments. Selecting a system lets you highlight or isolate the
 whole system, add the current viewer selection, remove pending elements, rename
 the system, inspect the component list, and regenerate sequential component IDs.
+Use the manager search box and sort selector to quickly narrow large system
+lists by tag, status, or source model.
 The manager labels systems as:
 
 - **Saved**: read from an uploaded tagged IFC;

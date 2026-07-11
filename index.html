@@ -247,6 +247,14 @@
                 </div>
                 <button id="btn-refresh-tray-systems" class="btn btn-secondary" type="button">Refresh</button>
               </div>
+              <div class="tray-system-manager-controls">
+                <input type="text" id="tray-system-filter" class="excel-search-input" placeholder="Search systems..." />
+                <select id="tray-system-sort" class="excel-select" aria-label="Sort tray systems">
+                  <option value="tag">Sort by tag</option>
+                  <option value="count-desc">Most components first</option>
+                  <option value="status">Sort by status</option>
+                </select>
+              </div>
               <div id="tray-system-list" class="tray-system-list">
                 <div class="tray-system-empty">Assign or load tray-system tags to manage them here.</div>
               </div>
