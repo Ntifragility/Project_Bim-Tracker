@@ -88,6 +88,7 @@ const btnManagerHighlight = document.getElementById('btn-manager-highlight');
 const btnManagerIsolate = document.getElementById('btn-manager-isolate');
 const btnManagerAddSelection = document.getElementById('btn-manager-add-selection');
 const btnManagerRemoveSelection = document.getElementById('btn-manager-remove-selection');
+const btnManagerCheckContinuity = document.getElementById('btn-manager-check-continuity');
 const btnManagerRegenerateSequence = document.getElementById('btn-manager-regenerate-sequence');
 const btnManagerRename = document.getElementById('btn-manager-rename');
 const tagValidationReport = document.getElementById('tag-validation-report');
@@ -653,6 +654,55 @@ async function initApp() {
     }
   }
 
+  function checkSelectedTraySystemContinuity() {
+    if (!selectedTraySystemTag) return;
+    const graph = routingController.getGraph?.();
+    const diagnostics = routingController.getDiagnostics?.();
+    if (!graph || !diagnostics) {
+      updateTagAssignmentUi('Warning: build the routing graph before checking tray-system continuity.', 'warning');
+      return;
+    }
+
+    const members = findSystemMembers(selectedTraySystemTag);
+    if (!members.length) {
+      updateTagAssignmentUi(`Warning: tray system "${selectedTraySystemTag}" has no loaded components.`, 'warning');
+      return;
+    }
+
+    const memberEdgeIds = members.map((member) => `${member.modelId}:${member.localId}`);
+    const missingEdges = memberEdgeIds.filter((edgeId) => !graph.edges.has(edgeId));
+    const touchedComponentIndexes = new Set();
+    diagnostics.components.forEach((component, index) => {
+      if (memberEdgeIds.some((edgeId) => component.edgeIds.has(edgeId))) {
+        touchedComponentIndexes.add(index);
+      }
+    });
+
+    if (!touchedComponentIndexes.size) {
+      updateTagAssignmentUi(
+        `Warning: tray system "${selectedTraySystemTag}" has no components represented in the routing graph.`,
+        'warning',
+      );
+      return;
+    }
+
+    const missingSuffix = missingEdges.length
+      ? ` ${missingEdges.length} component${missingEdges.length === 1 ? '' : 's'} are not represented in the graph.`
+      : '';
+    if (touchedComponentIndexes.size === 1) {
+      updateTagAssignmentUi(
+        `Tray system "${selectedTraySystemTag}" is graph-continuous across ${memberEdgeIds.length - missingEdges.length}/${members.length} component${members.length === 1 ? '' : 's'}.${missingSuffix}`,
+        missingEdges.length ? 'warning' : 'success',
+      );
+      return;
+    }
+
+    updateTagAssignmentUi(
+      `Warning: tray system "${selectedTraySystemTag}" is split across ${touchedComponentIndexes.size} disconnected graph components.${missingSuffix}`,
+      'warning',
+    );
+  }
+
   function renderTraySystemComponents(system) {
     if (!traySystemComponentList || !traySystemSequenceStatus) return;
     traySystemComponentList.innerHTML = '';
@@ -900,6 +950,7 @@ async function initApp() {
     if (btnManagerIsolate) btnManagerIsolate.disabled = !hasSelectedSystem;
     if (btnManagerAddSelection) btnManagerAddSelection.disabled = !hasSelectedSystem || selectedElementCount === 0;
     if (btnManagerRemoveSelection) btnManagerRemoveSelection.disabled = !hasSelectedSystem || selectedElementCount === 0;
+    if (btnManagerCheckContinuity) btnManagerCheckContinuity.disabled = !hasSelectedSystem;
     if (btnManagerRegenerateSequence) btnManagerRegenerateSequence.disabled = !hasSelectedSystem;
     if (btnManagerRename) {
       btnManagerRename.disabled = !hasSelectedSystem ||
@@ -2910,6 +2961,10 @@ async function initApp() {
 
   btnRestoreAllDeletions?.addEventListener('click', () => {
     restoreAllPendingTrayDeletions();
+  });
+
+  btnManagerCheckContinuity?.addEventListener('click', () => {
+    checkSelectedTraySystemContinuity();
   });
 
   btnManagerHighlight?.addEventListener('click', async () => {

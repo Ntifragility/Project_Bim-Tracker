@@ -87,6 +87,9 @@ the system, inspect the component list, and regenerate sequential component IDs.
 Use the manager search box and sort selector to quickly narrow large system
 lists by tag, status, or source model. System cards use colored state badges so
 saved, pending, modified, mixed, and pending-deletion changes are easier to scan.
+After building the routing graph, **Check Continuity** reports whether the
+selected tray system belongs to one connected graph component or is split across
+disconnected graph components.
 The manager labels systems as:
 
 - **Saved**: read from an uploaded tagged IFC;
