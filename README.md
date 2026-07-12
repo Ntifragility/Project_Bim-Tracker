@@ -85,7 +85,8 @@ and pending assignments. Selecting a system lets you highlight or isolate the
 whole system, add the current viewer selection, remove pending elements, rename
 the system, inspect the component list, and regenerate sequential component IDs.
 Use the manager search box and sort selector to quickly narrow large system
-lists by tag, status, or source model.
+lists by tag, status, or source model. System cards use colored state badges so
+saved, pending, modified, mixed, and pending-deletion changes are easier to scan.
 The manager labels systems as:
 
 - **Saved**: read from an uploaded tagged IFC;

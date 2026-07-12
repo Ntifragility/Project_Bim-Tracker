@@ -530,6 +530,7 @@ async function initApp() {
           modifiedCount: 0,
           pendingCount: 0,
           ifcCount: 0,
+          deletedCount: 0,
         });
       }
       const system = systems.get(normalized);
@@ -540,12 +541,37 @@ async function initApp() {
       else system.ifcCount += 1;
     }
 
+    for (const assignment of tagAssignments.values()) {
+      if (assignment.delete !== true) continue;
+      const tag = String(assignment.systemTag || '').trim();
+      if (!tag) continue;
+      const normalized = tag.toLowerCase();
+      if (!systems.has(normalized)) {
+        systems.set(normalized, {
+          tag,
+          members: [],
+          modelNames: new Set(),
+          modifiedCount: 0,
+          pendingCount: 0,
+          ifcCount: 0,
+          deletedCount: 0,
+        });
+      }
+      const system = systems.get(normalized);
+      system.deletedCount += 1;
+      if (assignment.modelName) system.modelNames.add(assignment.modelName);
+    }
+
     return Array.from(systems.values())
       .map((system) => ({
         ...system,
         count: system.members.length,
         models: Array.from(system.modelNames).sort((a, b) => a.localeCompare(b)),
-        status: system.modifiedCount && !system.pendingCount && !system.ifcCount
+        status: system.deletedCount && !system.modifiedCount && !system.pendingCount && !system.ifcCount
+          ? 'Deleted'
+          : system.deletedCount
+          ? 'Mixed'
+          : system.modifiedCount && !system.pendingCount && !system.ifcCount
           ? 'Modified'
           : (system.pendingCount || system.modifiedCount) && system.ifcCount
           ? 'Mixed'
@@ -748,6 +774,14 @@ async function initApp() {
     });
   }
 
+  function createTraySystemBadge(label, state = label) {
+    const badge = document.createElement('span');
+    badge.className = 'tray-system-badge';
+    badge.dataset.state = String(state || label).toLowerCase();
+    badge.textContent = label;
+    return badge;
+  }
+
   function renderTraySystemManager() {
     if (!traySystemList) return;
     const systems = getTraySystemSummaries();
@@ -762,6 +796,14 @@ async function initApp() {
         : '';
       traySystemManagerSummary.textContent = systems.length
         ? `${systems.length} system${systems.length === 1 ? '' : 's'} loaded${filterSuffix}${pendingDeletions ? ` · ${pendingDeletions} pending deletion${pendingDeletions === 1 ? '' : 's'}` : ''}.`
+        : pendingDeletions
+          ? `${pendingDeletions} pending deletion${pendingDeletions === 1 ? '' : 's'}.`
+          : 'No tray systems loaded.';
+      const deletionSuffix = pendingDeletions
+        ? ` | ${pendingDeletions} pending deletion${pendingDeletions === 1 ? '' : 's'}`
+        : '';
+      traySystemManagerSummary.textContent = systems.length
+        ? `${systems.length} system${systems.length === 1 ? '' : 's'} loaded${filterSuffix}${deletionSuffix}.`
         : pendingDeletions
           ? `${pendingDeletions} pending deletion${pendingDeletions === 1 ? '' : 's'}.`
           : 'No tray systems loaded.';
@@ -795,6 +837,36 @@ async function initApp() {
           </span>
           <span class="tray-system-models">${system.models.join(', ') || 'Loaded model'}</span>
         `;
+        button.textContent = '';
+
+        const tag = document.createElement('span');
+        tag.className = 'tray-system-tag';
+        tag.textContent = system.tag;
+
+        const meta = document.createElement('span');
+        meta.className = 'tray-system-meta';
+
+        const count = document.createElement('span');
+        count.textContent = `${system.count} component${system.count === 1 ? '' : 's'}`;
+        meta.append(count, createTraySystemBadge(system.status));
+
+        const stateCounts = document.createElement('span');
+        stateCounts.className = 'tray-system-state-counts';
+        stateCounts.append(
+          createTraySystemBadge(`${system.ifcCount} saved`, 'saved'),
+          createTraySystemBadge(`${system.pendingCount} pending`, 'pending'),
+          createTraySystemBadge(`${system.modifiedCount} modified`, 'modified'),
+        );
+        if (system.deletedCount) {
+          stateCounts.append(createTraySystemBadge(`${system.deletedCount} deleted`, 'deleted'));
+        }
+
+        const models = document.createElement('span');
+        models.className = 'tray-system-models';
+        models.textContent = system.models.join(', ') || 'Loaded model';
+
+        button.append(tag, meta, stateCounts, models);
+
         button.addEventListener('click', () => {
           selectedTraySystemTag = system.tag;
           systemTagInput.value = system.tag;
