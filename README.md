@@ -89,7 +89,9 @@ lists by tag, status, or source model. System cards use colored state badges so
 saved, pending, modified, mixed, and pending-deletion changes are easier to scan.
 After building the routing graph, **Check Continuity** reports whether the
 selected tray system belongs to one connected graph component or is split across
-disconnected graph components.
+disconnected graph components. The report shows total system components,
+components represented in the graph, missing graph geometry, disconnected group
+count, and the component IDs found in each group.
 The manager labels systems as:
 
 - **Saved**: read from an uploaded tagged IFC;

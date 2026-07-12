@@ -73,6 +73,9 @@ const traySystemSort = document.getElementById('tray-system-sort');
 const traySystemList = document.getElementById('tray-system-list');
 const traySystemComponentList = document.getElementById('tray-system-component-list');
 const traySystemSequenceStatus = document.getElementById('tray-system-sequence-status');
+const traySystemContinuityPanel = document.getElementById('tray-system-continuity-panel');
+const traySystemContinuityStatus = document.getElementById('tray-system-continuity-status');
+const traySystemContinuityBody = document.getElementById('tray-system-continuity-body');
 const traySystemDeletionsPanel = document.getElementById('tray-system-deletions-panel');
 const traySystemDeletionList = document.getElementById('tray-system-deletion-list');
 const btnRestoreAllDeletions = document.getElementById('btn-restore-all-deletions');
@@ -107,6 +110,7 @@ const ASSIGNMENT_COLUMN_KEY = '__assignment__';
 let selectedTraySystemTag = '';
 let traySystemFilterText = '';
 let traySystemSortMode = 'tag';
+let traySystemContinuityReport = null;
 
 // Loaded Models DOM Elements
 const loadedModelsContainer = document.getElementById('loaded-models-container');
@@ -659,26 +663,61 @@ async function initApp() {
     const graph = routingController.getGraph?.();
     const diagnostics = routingController.getDiagnostics?.();
     if (!graph || !diagnostics) {
+      traySystemContinuityReport = null;
+      renderTraySystemContinuityReport();
       updateTagAssignmentUi('Warning: build the routing graph before checking tray-system continuity.', 'warning');
       return;
     }
 
     const members = findSystemMembers(selectedTraySystemTag);
     if (!members.length) {
+      traySystemContinuityReport = null;
+      renderTraySystemContinuityReport();
       updateTagAssignmentUi(`Warning: tray system "${selectedTraySystemTag}" has no loaded components.`, 'warning');
       return;
     }
 
-    const memberEdgeIds = members.map((member) => `${member.modelId}:${member.localId}`);
-    const missingEdges = memberEdgeIds.filter((edgeId) => !graph.edges.has(edgeId));
-    const touchedComponentIndexes = new Set();
+    const memberEntries = members.map((member) => ({
+      member,
+      edgeId: `${member.modelId}:${member.localId}`,
+      componentIndex: null,
+    }));
+    const missingEntries = memberEntries.filter((entry) => !graph.edges.has(entry.edgeId));
+    const groupMap = new Map();
     diagnostics.components.forEach((component, index) => {
-      if (memberEdgeIds.some((edgeId) => component.edgeIds.has(edgeId))) {
-        touchedComponentIndexes.add(index);
+      for (const entry of memberEntries) {
+        if (!component.edgeIds.has(entry.edgeId)) continue;
+        entry.componentIndex = index;
+        if (!groupMap.has(index)) groupMap.set(index, []);
+        groupMap.get(index).push(entry.member);
       }
     });
+    const groups = Array.from(groupMap.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([index, groupMembers]) => ({
+        number: index + 1,
+        components: groupMembers.map(formatContinuityComponent),
+      }));
+    const representedCount = memberEntries.length - missingEntries.length;
+    const missingComponents = missingEntries.map((entry) => formatContinuityComponent(entry.member));
+    const isContinuous = groups.length === 1 && !missingComponents.length;
+    const tone = isContinuous ? 'success' : 'warning';
+    const statusLabel = groups.length === 1
+      ? missingComponents.length ? 'Partial' : 'Continuous'
+      : groups.length > 1 ? 'Split' : 'Not represented';
 
-    if (!touchedComponentIndexes.size) {
+    traySystemContinuityReport = {
+      systemTag: selectedTraySystemTag,
+      statusLabel,
+      tone,
+      totalComponents: members.length,
+      representedComponents: representedCount,
+      missingComponents,
+      groups,
+    };
+    renderTraySystemContinuityReport();
+
+    if (!groups.length) {
       updateTagAssignmentUi(
         `Warning: tray system "${selectedTraySystemTag}" has no components represented in the routing graph.`,
         'warning',
@@ -686,21 +725,90 @@ async function initApp() {
       return;
     }
 
-    const missingSuffix = missingEdges.length
-      ? ` ${missingEdges.length} component${missingEdges.length === 1 ? '' : 's'} are not represented in the graph.`
+    const missingSuffix = missingComponents.length
+      ? ` ${missingComponents.length} component${missingComponents.length === 1 ? '' : 's'} are not represented in the graph.`
       : '';
-    if (touchedComponentIndexes.size === 1) {
+    if (groups.length === 1) {
       updateTagAssignmentUi(
-        `Tray system "${selectedTraySystemTag}" is graph-continuous across ${memberEdgeIds.length - missingEdges.length}/${members.length} component${members.length === 1 ? '' : 's'}.${missingSuffix}`,
-        missingEdges.length ? 'warning' : 'success',
+        `Tray system "${selectedTraySystemTag}" is graph-continuous across ${representedCount}/${members.length} component${members.length === 1 ? '' : 's'}.${missingSuffix}`,
+        missingComponents.length ? 'warning' : 'success',
       );
       return;
     }
 
     updateTagAssignmentUi(
-      `Warning: tray system "${selectedTraySystemTag}" is split across ${touchedComponentIndexes.size} disconnected graph components.${missingSuffix}`,
+      `Warning: tray system "${selectedTraySystemTag}" is split across ${groups.length} disconnected graph components.${missingSuffix}`,
       'warning',
     );
+  }
+
+  function formatContinuityComponent(member) {
+    return member.componentId || `#${member.localId}`;
+  }
+
+  function renderTraySystemContinuityReport() {
+    if (!traySystemContinuityPanel || !traySystemContinuityStatus || !traySystemContinuityBody) return;
+    const report = traySystemContinuityReport;
+    const reportMatchesSelection = report?.systemTag?.toLowerCase() === selectedTraySystemTag.toLowerCase();
+    traySystemContinuityPanel.hidden = !report || !reportMatchesSelection;
+    traySystemContinuityBody.innerHTML = '';
+    delete traySystemContinuityStatus.dataset.tone;
+    if (!report || !reportMatchesSelection) {
+      traySystemContinuityStatus.textContent = 'Not checked';
+      return;
+    }
+
+    traySystemContinuityStatus.textContent = report.statusLabel;
+    traySystemContinuityStatus.dataset.tone = report.tone;
+
+    const stats = document.createElement('div');
+    stats.className = 'tray-system-continuity-stats';
+    const statItems = [
+      ['Total', report.totalComponents],
+      ['In graph', report.representedComponents],
+      ['Missing', report.missingComponents.length],
+      ['Groups', report.groups.length],
+    ];
+    for (const [label, value] of statItems) {
+      const item = document.createElement('span');
+      item.className = 'tray-system-continuity-stat';
+      const valueElement = document.createElement('strong');
+      valueElement.textContent = value;
+      const labelElement = document.createElement('small');
+      labelElement.textContent = label;
+      item.append(valueElement, labelElement);
+      stats.appendChild(item);
+    }
+    traySystemContinuityBody.appendChild(stats);
+
+    if (report.groups.length) {
+      const groups = document.createElement('div');
+      groups.className = 'tray-system-continuity-section';
+      const heading = document.createElement('span');
+      heading.className = 'tray-system-continuity-section-title';
+      heading.textContent = 'Connected graph groups';
+      groups.appendChild(heading);
+      for (const group of report.groups) {
+        const item = document.createElement('div');
+        item.className = 'tray-system-continuity-group';
+        item.textContent = `Group ${group.number}: ${group.components.join(', ')}`;
+        groups.appendChild(item);
+      }
+      traySystemContinuityBody.appendChild(groups);
+    }
+
+    if (report.missingComponents.length) {
+      const missing = document.createElement('div');
+      missing.className = 'tray-system-continuity-section';
+      const heading = document.createElement('span');
+      heading.className = 'tray-system-continuity-section-title';
+      heading.textContent = 'Missing from graph';
+      const body = document.createElement('div');
+      body.className = 'tray-system-continuity-group warning';
+      body.textContent = report.missingComponents.join(', ');
+      missing.append(heading, body);
+      traySystemContinuityBody.appendChild(missing);
+    }
   }
 
   function renderTraySystemComponents(system) {
@@ -942,6 +1050,7 @@ async function initApp() {
 
     const selectedSystem = systems.find((system) => system.tag.toLowerCase() === selectedTraySystemTag.toLowerCase()) || null;
     renderTraySystemComponents(selectedSystem);
+    renderTraySystemContinuityReport();
     renderPendingTrayDeletions();
 
     const hasSelectedSystem = Boolean(selectedSystem);

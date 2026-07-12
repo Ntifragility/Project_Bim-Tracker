@@ -1496,6 +1496,14 @@ body {
   color: #fcd34d;
 }
 
+#tray-system-continuity-status[data-tone="success"] {
+  color: #86efac;
+}
+
+#tray-system-continuity-status[data-tone="warning"] {
+  color: #fcd34d;
+}
+
 .tray-system-component-list {
   display: flex;
   flex-direction: column;
@@ -1541,6 +1549,86 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.tray-system-continuity-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid rgba(99, 102, 241, 0.22);
+  border-radius: 8px;
+  background: rgba(99, 102, 241, 0.06);
+}
+
+.tray-system-continuity-panel[hidden] {
+  display: none !important;
+}
+
+.tray-system-continuity-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tray-system-continuity-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.tray-system-continuity-stat {
+  display: grid;
+  gap: 2px;
+  padding: 7px 6px;
+  background: rgba(0, 0, 0, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 7px;
+  text-align: center;
+}
+
+.tray-system-continuity-stat strong {
+  color: var(--text-primary);
+  font: 750 0.78rem var(--font-mono);
+}
+
+.tray-system-continuity-stat small {
+  color: var(--text-muted);
+  font-size: 0.58rem;
+  font-weight: 750;
+  letter-spacing: 0.35px;
+  text-transform: uppercase;
+}
+
+.tray-system-continuity-section {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.tray-system-continuity-section-title {
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.45px;
+  text-transform: uppercase;
+}
+
+.tray-system-continuity-group {
+  padding: 7px 8px;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 7px;
+  font: 600 0.66rem var(--font-mono);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.tray-system-continuity-group.warning {
+  color: #fcd34d;
+  background: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.2);
 }
 
 .tray-system-deletions-panel {
