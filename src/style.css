@@ -1452,6 +1452,7 @@ body {
 
 .tray-system-components-heading {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
   color: var(--text-muted);
@@ -1459,6 +1460,24 @@ body {
   font-weight: 700;
   letter-spacing: 0.7px;
   text-transform: uppercase;
+}
+
+.tray-system-mini-action {
+  padding: 4px 7px;
+  color: #fcd34d;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 999px;
+  cursor: pointer;
+  font: 750 0.62rem var(--font-sans);
+  letter-spacing: 0.35px;
+  text-transform: uppercase;
+}
+
+.tray-system-mini-action:hover,
+.tray-system-mini-action:focus-visible {
+  background: rgba(245, 158, 11, 0.18);
+  outline: none;
 }
 
 #tray-system-sequence-status {

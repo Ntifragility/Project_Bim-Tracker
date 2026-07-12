@@ -75,6 +75,7 @@ const traySystemComponentList = document.getElementById('tray-system-component-l
 const traySystemSequenceStatus = document.getElementById('tray-system-sequence-status');
 const traySystemDeletionsPanel = document.getElementById('tray-system-deletions-panel');
 const traySystemDeletionList = document.getElementById('tray-system-deletion-list');
+const btnRestoreAllDeletions = document.getElementById('btn-restore-all-deletions');
 const btnAssignTag = document.getElementById('btn-assign-tag');
 const btnHighlightSystem = document.getElementById('btn-highlight-system');
 const btnAddTraySelection = document.getElementById('btn-add-tray-selection');
@@ -717,6 +718,19 @@ async function initApp() {
     renderExcelTable();
     refreshValidationReportIfOpen();
     updateTagAssignmentUi(`Restored saved IFC tag for element #${assignment.localId}.`, 'success');
+  }
+
+  function restoreAllPendingTrayDeletions() {
+    const deletions = getPendingTrayDeletions();
+    if (!deletions.length) return;
+    for (const deletion of deletions) {
+      tagAssignments.delete(getAssignmentKey(deletion.modelId, deletion.localId));
+      const model = findLoadedModelEntry(deletion.modelId)?.model || activeModel;
+      syncProjectTagPropertyGroup(model, deletion.localId);
+    }
+    renderExcelTable();
+    refreshValidationReportIfOpen();
+    updateTagAssignmentUi(`Restored ${deletions.length} pending deletion${deletions.length === 1 ? '' : 's'}.`, 'success');
   }
 
   function renderPendingTrayDeletions() {
@@ -2892,6 +2906,10 @@ async function initApp() {
   btnRefreshTraySystems?.addEventListener('click', () => {
     renderTraySystemManager();
     updateTagAssignmentUi('Tray System Manager refreshed.');
+  });
+
+  btnRestoreAllDeletions?.addEventListener('click', () => {
+    restoreAllPendingTrayDeletions();
   });
 
   btnManagerHighlight?.addEventListener('click', async () => {

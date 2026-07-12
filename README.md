@@ -106,7 +106,8 @@ pending deletion and **Export Tagged IFC** clears the saved `SystemTag`,
 `ComponentId`, and `SequenceNumber` values in the new exported IFC. The original
 source IFC is still left unchanged. The manager summary reports pending deletions,
 and the pending-deletions list lets you show one in the viewer or restore it
-before export if it was removed by mistake.
+before export if it was removed by mistake. Use **Restore all** to cancel every
+pending deletion in one step.
 
 Select **Validate Tags** before export to compare effective IFC tags with the
 selected Excel tag column. Duplicate component IDs, duplicate Excel system tags,
