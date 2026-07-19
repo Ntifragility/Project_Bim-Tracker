@@ -1571,6 +1571,12 @@ body {
   gap: 8px;
 }
 
+.tray-system-continuity-heading-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
 .tray-system-continuity-stats {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1615,6 +1621,9 @@ body {
 }
 
 .tray-system-continuity-group {
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
   padding: 7px 8px;
   color: var(--text-secondary);
   background: rgba(255, 255, 255, 0.035);
@@ -1623,6 +1632,16 @@ body {
   font: 600 0.66rem var(--font-mono);
   line-height: 1.35;
   overflow-wrap: anywhere;
+}
+
+.tray-system-continuity-color {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  margin-top: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 999px;
+  box-shadow: 0 0 10px currentColor;
 }
 
 .tray-system-continuity-group.warning {

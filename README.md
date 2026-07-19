@@ -91,7 +91,8 @@ After building the routing graph, **Check Continuity** reports whether the
 selected tray system belongs to one connected graph component or is split across
 disconnected graph components. The report shows total system components,
 components represented in the graph, missing graph geometry, disconnected group
-count, and the component IDs found in each group.
+count, and the component IDs found in each group. The viewer colors each
+connected group with a temporary overlay so split systems can be located visually.
 The manager labels systems as:
 
 - **Saved**: read from an uploaded tagged IFC;

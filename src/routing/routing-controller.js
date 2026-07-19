@@ -25,7 +25,7 @@ function disposeGroup(group) {
   group.clear();
 }
 
-export function initRoutingController({ world, getLoadedModels }) {
+export function initRoutingController({ world, getLoadedModels, onClear }) {
   const overlay = new THREE.Group();
   overlay.name = 'routing-diagnostic-overlay';
   world.scene.three.add(overlay);
@@ -99,6 +99,7 @@ export function initRoutingController({ world, getLoadedModels }) {
       diagnostics = diagnoseGraph(graph);
       startEdgeId = null;
       endEdgeId = null;
+      onClear?.();
       renderGraph();
       summary.textContent = `${diagnostics.segmentCount} segments · ${diagnostics.nodeCount} nodes · ${diagnostics.componentCount} components · ${diagnostics.danglingNodes.length} open ends · ${diagnostics.lowConfidenceEdges.length} low confidence`;
       setStatus(
@@ -177,6 +178,7 @@ export function initRoutingController({ world, getLoadedModels }) {
     diagnostics = null;
     startEdgeId = null;
     endEdgeId = null;
+    onClear?.();
     summary.textContent = 'No graph built';
     setStatus('Routing overlay cleared.');
     updateRouteButtons();

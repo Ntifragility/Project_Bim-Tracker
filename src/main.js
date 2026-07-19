@@ -23,6 +23,7 @@ let isolationActive = false;
 let selectedAppearanceColor = '#f54242';
 let selectionHighlightColor = localStorage.getItem('bim-selection-highlight-color') || '#6366f1';
 const appearanceColorMaps = new Map();
+const continuityHighlightStyleNames = new Set();
 const tagAssignments = new Map();
 const traySelection = new Map();
 let autoRotateActive = false;
@@ -76,6 +77,7 @@ const traySystemSequenceStatus = document.getElementById('tray-system-sequence-s
 const traySystemContinuityPanel = document.getElementById('tray-system-continuity-panel');
 const traySystemContinuityStatus = document.getElementById('tray-system-continuity-status');
 const traySystemContinuityBody = document.getElementById('tray-system-continuity-body');
+const btnClearContinuityColors = document.getElementById('btn-clear-continuity-colors');
 const traySystemDeletionsPanel = document.getElementById('tray-system-deletions-panel');
 const traySystemDeletionList = document.getElementById('tray-system-deletion-list');
 const btnRestoreAllDeletions = document.getElementById('btn-restore-all-deletions');
@@ -111,6 +113,7 @@ let selectedTraySystemTag = '';
 let traySystemFilterText = '';
 let traySystemSortMode = 'tag';
 let traySystemContinuityReport = null;
+const CONTINUITY_GROUP_COLORS = ['#22c55e', '#f59e0b', '#3b82f6', '#ec4899', '#14b8a6', '#a855f7', '#ef4444'];
 
 // Loaded Models DOM Elements
 const loadedModelsContainer = document.getElementById('loaded-models-container');
@@ -305,7 +308,15 @@ async function initApp() {
   highlighter.setup({ world });
   setSelectionHighlightStyle(selectionHighlightColor);
   const hider = components.get(OBC.Hider);
-  const routingController = initRoutingController({ world, getLoadedModels: () => loadedModels });
+  const routingController = initRoutingController({
+    world,
+    getLoadedModels: () => loadedModels,
+    onClear: () => {
+      traySystemContinuityReport = null;
+      renderTraySystemContinuityReport();
+      clearContinuityGroupHighlights();
+    },
+  });
 
   function getAssignmentKey(modelId, localId) {
     return `${modelId}:${Number(localId)}`;
@@ -440,6 +451,43 @@ async function initApp() {
     } catch (error) {
       console.warn('[Appearance Color] Could not color selected elements:', error);
       updateTagAssignmentUi('Warning: selected elements could not be colored.', 'warning');
+    } finally {
+      highlighter.isProgrammaticSelect = false;
+    }
+  }
+
+  async function clearContinuityGroupHighlights() {
+    for (const styleName of continuityHighlightStyleNames) {
+      await highlighter.clear(styleName);
+    }
+    continuityHighlightStyleNames.clear();
+  }
+
+  async function applyContinuityGroupHighlights(groups = []) {
+    await clearContinuityGroupHighlights();
+    highlighter.isProgrammaticSelect = true;
+    try {
+      for (let index = 0; index < groups.length; index += 1) {
+        const group = groups[index];
+        const color = CONTINUITY_GROUP_COLORS[index % CONTINUITY_GROUP_COLORS.length];
+        const styleName = `continuity-group-${index + 1}`;
+        const fragmentMap = {};
+        for (const member of group.members || []) {
+          if (!fragmentMap[member.modelId]) fragmentMap[member.modelId] = new Set();
+          fragmentMap[member.modelId].add(Number(member.localId));
+        }
+        if (countModelIdMapItems(fragmentMap) === 0) continue;
+        highlighter.styles.set(styleName, {
+          color: new THREE.Color(color),
+          opacity: 0.85,
+          transparent: true,
+        });
+        continuityHighlightStyleNames.add(styleName);
+        await highlighter.highlightByID(styleName, fragmentMap, false, false);
+      }
+    } catch (error) {
+      console.warn('[Tray Systems] Continuity group highlight failed:', error);
+      updateTagAssignmentUi('Warning: continuity groups could not be colored in the viewer.', 'warning');
     } finally {
       highlighter.isProgrammaticSelect = false;
     }
@@ -658,7 +706,7 @@ async function initApp() {
     }
   }
 
-  function checkSelectedTraySystemContinuity() {
+  async function checkSelectedTraySystemContinuity() {
     if (!selectedTraySystemTag) return;
     const graph = routingController.getGraph?.();
     const diagnostics = routingController.getDiagnostics?.();
@@ -696,6 +744,8 @@ async function initApp() {
       .sort((a, b) => a[0] - b[0])
       .map(([index, groupMembers]) => ({
         number: index + 1,
+        color: CONTINUITY_GROUP_COLORS[index % CONTINUITY_GROUP_COLORS.length],
+        members: groupMembers,
         components: groupMembers.map(formatContinuityComponent),
       }));
     const representedCount = memberEntries.length - missingEntries.length;
@@ -716,6 +766,7 @@ async function initApp() {
       groups,
     };
     renderTraySystemContinuityReport();
+    await applyContinuityGroupHighlights(groups);
 
     if (!groups.length) {
       updateTagAssignmentUi(
@@ -791,7 +842,12 @@ async function initApp() {
       for (const group of report.groups) {
         const item = document.createElement('div');
         item.className = 'tray-system-continuity-group';
-        item.textContent = `Group ${group.number}: ${group.components.join(', ')}`;
+        const chip = document.createElement('span');
+        chip.className = 'tray-system-continuity-color';
+        chip.style.background = group.color;
+        const text = document.createElement('span');
+        text.textContent = `Group ${group.number}: ${group.components.join(', ')}`;
+        item.append(chip, text);
         groups.appendChild(item);
       }
       traySystemContinuityBody.appendChild(groups);
@@ -3072,8 +3128,13 @@ async function initApp() {
     restoreAllPendingTrayDeletions();
   });
 
-  btnManagerCheckContinuity?.addEventListener('click', () => {
-    checkSelectedTraySystemContinuity();
+  btnManagerCheckContinuity?.addEventListener('click', async () => {
+    await checkSelectedTraySystemContinuity();
+  });
+
+  btnClearContinuityColors?.addEventListener('click', async () => {
+    await clearContinuityGroupHighlights();
+    updateTagAssignmentUi('Continuity group colors cleared.');
   });
 
   btnManagerHighlight?.addEventListener('click', async () => {
