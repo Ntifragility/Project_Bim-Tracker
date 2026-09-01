@@ -646,6 +646,161 @@ body {
   padding-top: 10px;
 }
 
+.ifc-edit-panel {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: 10px;
+  background: rgba(99, 102, 241, 0.06);
+}
+
+.ifc-edit-heading,
+.ifc-edit-actions,
+.ifc-edit-color-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ifc-edit-heading {
+  justify-content: space-between;
+}
+
+.ifc-edit-heading span,
+.ifc-edit-help,
+.ifc-edit-status {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.ifc-edit-panel label {
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+}
+
+.ifc-edit-panel input[type="text"],
+.ifc-edit-panel input[type="number"] {
+  min-width: 0;
+  padding: 7px 8px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+}
+
+.ifc-edit-color-row input[type="color"] {
+  width: 38px;
+  height: 30px;
+  padding: 2px;
+  border: 0;
+  background: transparent;
+}
+
+.ifc-edit-color-row input[type="number"] {
+  width: 58px;
+}
+
+.ifc-edit-actions .btn {
+  flex: 1;
+}
+
+.metadata-editor,
+.existing-property-editor {
+  display: grid;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.existing-property-editor summary {
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.78rem;
+}
+
+.metadata-table-heading,
+.metadata-row {
+  display: grid;
+  grid-template-columns: minmax(86px, 1.1fr) minmax(76px, 0.8fr) minmax(90px, 1.3fr) 24px;
+  gap: 5px;
+  align-items: center;
+}
+
+.metadata-table-heading {
+  color: var(--text-muted);
+  font-size: 0.65rem;
+}
+
+.metadata-rows {
+  display: grid;
+  gap: 6px;
+}
+
+.metadata-row input,
+.metadata-row select {
+  width: 100%;
+  min-width: 0;
+  padding: 6px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  font-size: 0.7rem;
+}
+
+.metadata-row-remove {
+  color: #fca5a5;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.metadata-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.metadata-actions #btn-stage-metadata {
+  grid-column: 1 / -1;
+}
+
+.ifc-edit-pending-list {
+  display: grid;
+  gap: 5px;
+  max-height: 150px;
+  overflow: auto;
+}
+
+.ifc-edit-pending-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  background: rgba(0, 0, 0, 0.14);
+  border-radius: 6px;
+}
+
+.ifc-edit-pending-item button {
+  color: #fca5a5;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.pset-group:not(.quantity-group) .prop-row[data-editable-property] {
+  cursor: pointer;
+}
+
+.pset-group:not(.quantity-group) .prop-row[data-editable-property]:hover {
+  background: rgba(99, 102, 241, 0.12);
+}
+
 .prop-psets-container:empty {
   display: none;
 }
