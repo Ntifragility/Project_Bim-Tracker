@@ -6,6 +6,7 @@ import * as XLSX from 'xlsx';
 import { initExcelBridge } from './viewer-socket.js';
 import { initRoutingController } from './routing/routing-controller.js';
 import { addTraySystemAssignmentsToIfc, extractTraySystemAssignmentsFromIfc, taggedIfcFileName } from './ifc/ifc-tag-exporter.js';
+import { applySafeIfcEdits, editedIfcFileName } from './ifc/ifc-safe-editor.js';
 import { validateTagIntegrity } from './ifc/tag-validator.js';
 import { allocateElementTags, getSystemTag, normalizeTagScheme } from './tagging/tag-scheme.js';
 import { classifyTaggableElement } from './tagging/element-classifier.js';
@@ -27,6 +28,9 @@ let selectionHighlightColor = localStorage.getItem('bim-selection-highlight-colo
 const appearanceColorMaps = new Map();
 const continuityHighlightStyleNames = new Set();
 const tagAssignments = new Map();
+const pendingIfcPropertyEdits = new Map();
+const pendingIfcColorEdits = new Map();
+let lastMetadataTemplate = null;
 const traySelection = new Map();
 let autoRotateActive = false;
 
@@ -163,6 +167,23 @@ const propTag = document.getElementById('prop-tag');
 const propExpressId = document.getElementById('prop-expressid');
 const propModel = document.getElementById('prop-model');
 const propPsetsContainer = document.getElementById('prop-psets-container');
+const ifcEditPset = document.getElementById('ifc-edit-pset');
+const ifcEditProperty = document.getElementById('ifc-edit-property');
+const ifcEditValue = document.getElementById('ifc-edit-value');
+const ifcEditColor = document.getElementById('ifc-edit-color');
+const ifcEditTransparency = document.getElementById('ifc-edit-transparency');
+const ifcEditStatus = document.getElementById('ifc-edit-status');
+const ifcEditCount = document.getElementById('ifc-edit-count');
+const ifcEditPendingList = document.getElementById('ifc-edit-pending-list');
+const btnStagePropertyEdit = document.getElementById('btn-stage-property-edit');
+const btnStageColorEdit = document.getElementById('btn-stage-color-edit');
+const btnClearIfcEdits = document.getElementById('btn-clear-ifc-edits');
+const btnExportEditedIfc = document.getElementById('btn-export-edited-ifc');
+const metadataPset = document.getElementById('metadata-pset');
+const metadataRows = document.getElementById('metadata-rows');
+const btnAddMetadataRow = document.getElementById('btn-add-metadata-row');
+const btnCopyPreviousMetadata = document.getElementById('btn-copy-previous-metadata');
+const btnStageMetadata = document.getElementById('btn-stage-metadata');
 
 // Utility: Show loading overlay
 function showLoader(title, status, progressVal) {
@@ -644,6 +665,130 @@ async function initApp() {
     return `appearance-${color.replace('#', '').toLowerCase()}`;
   }
 
+  function ifcEditElementKey(modelId, localId) {
+    return `${modelId}:${Number(localId)}`;
+  }
+
+  const METADATA_TYPES = [
+    ['IFCLABEL', 'Label'],
+    ['IFCTEXT', 'Text'],
+    ['IFCIDENTIFIER', 'Identifier'],
+    ['IFCINTEGER', 'Integer'],
+    ['IFCREAL', 'Decimal'],
+    ['IFCBOOLEAN', 'Boolean'],
+    ['IFCDATE', 'Date'],
+    ['IFCDATETIME', 'Date & Time'],
+  ];
+
+  function createMetadataRow(initial = {}) {
+    const row = document.createElement('div');
+    row.className = 'metadata-row';
+    const property = document.createElement('input');
+    property.type = 'text';
+    property.className = 'metadata-property';
+    property.placeholder = 'WBS';
+    property.value = initial.property || '';
+    property.setAttribute('aria-label', 'Metadata property name');
+    const type = document.createElement('select');
+    type.className = 'metadata-type';
+    type.setAttribute('aria-label', 'Metadata IFC data type');
+    for (const [value, label] of METADATA_TYPES) {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      option.selected = value === (initial.valueType || 'IFCLABEL');
+      type.appendChild(option);
+    }
+    const value = document.createElement('input');
+    value.type = 'text';
+    value.className = 'metadata-value';
+    value.placeholder = 'Value';
+    value.value = initial.value ?? '';
+    value.setAttribute('aria-label', 'Metadata value');
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'metadata-row-remove';
+    remove.textContent = '×';
+    remove.title = 'Remove metadata row';
+    remove.setAttribute('aria-label', 'Remove metadata row');
+    remove.addEventListener('click', () => {
+      row.remove();
+      if (!metadataRows.children.length) createMetadataRow();
+    });
+    row.append(property, type, value, remove);
+    metadataRows.appendChild(row);
+    return row;
+  }
+
+  function readMetadataRows() {
+    return Array.from(metadataRows.querySelectorAll('.metadata-row')).map((row) => ({
+      property: row.querySelector('.metadata-property').value.trim(),
+      valueType: row.querySelector('.metadata-type').value,
+      value: row.querySelector('.metadata-value').value,
+    })).filter((item) => item.property || item.value);
+  }
+
+  function replaceMetadataRows(rows) {
+    metadataRows.innerHTML = '';
+    for (const row of rows) createMetadataRow(row);
+    if (!metadataRows.children.length) createMetadataRow();
+  }
+
+  function renderPendingIfcEdits(message = '') {
+    const propertyEdits = Array.from(pendingIfcPropertyEdits.values());
+    const colorEdits = Array.from(pendingIfcColorEdits.values());
+    const total = propertyEdits.length + colorEdits.length;
+    ifcEditCount.textContent = `${total} pending`;
+    btnClearIfcEdits.disabled = total === 0;
+    btnExportEditedIfc.disabled = total === 0;
+    ifcEditStatus.textContent = message || (total
+      ? 'Changes are staged only. Export creates a new IFC.'
+      : 'Select an element to begin.');
+    ifcEditPendingList.innerHTML = '';
+
+    const appendItem = (edit, key, collection, label) => {
+      const row = document.createElement('div');
+      row.className = 'ifc-edit-pending-item';
+      const text = document.createElement('span');
+      text.textContent = `#${edit.localId} · ${label}`;
+      text.title = text.textContent;
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.textContent = 'Remove';
+      remove.addEventListener('click', () => {
+        collection.delete(key);
+        renderPendingIfcEdits('Pending edit removed.');
+      });
+      row.append(text, remove);
+      ifcEditPendingList.appendChild(row);
+    };
+    for (const [key, edit] of pendingIfcPropertyEdits) {
+      appendItem(edit, key, pendingIfcPropertyEdits, `${edit.propertySet}.${edit.property} → ${edit.value}`);
+    }
+    for (const [key, edit] of pendingIfcColorEdits) {
+      appendItem(edit, key, pendingIfcColorEdits, `${edit.color.toUpperCase()} · ${Math.round(edit.transparency * 100)}% transparent`);
+    }
+  }
+
+  function stageColorForSelection(color, transparency = 0) {
+    const selection = getSelectedModelIdMap();
+    let staged = 0;
+    for (const [modelId, ids] of Object.entries(selection)) {
+      for (const localId of ids) {
+        const key = ifcEditElementKey(modelId, localId);
+        pendingIfcColorEdits.set(key, {
+          modelId,
+          localId: Number(localId),
+          color,
+          transparency,
+        });
+        staged += 1;
+      }
+    }
+    if (staged) renderPendingIfcEdits(`Staged persistent color for ${staged} element${staged === 1 ? '' : 's'}.`);
+    return staged;
+  }
+
   function normalizeHexColor(value) {
     const raw = String(value || '').trim();
     const withHash = raw.startsWith('#') ? raw : `#${raw}`;
@@ -709,6 +854,9 @@ async function initApp() {
       addModelIdMapItems(appearanceColorMaps.get(selectedAppearanceColor), selection);
       await reapplyAppearanceColors();
       currentSelectionMap = cloneModelIdMap(selection);
+      const transparency = Math.min(100, Math.max(0, Number(ifcEditTransparency?.value) || 0)) / 100;
+      if (ifcEditColor) ifcEditColor.value = selectedAppearanceColor;
+      stageColorForSelection(selectedAppearanceColor, transparency);
     } catch (error) {
       console.warn('[Appearance Color] Could not color selected elements:', error);
       updateTagAssignmentUi('Warning: selected elements could not be colored.', 'warning');
@@ -1854,6 +2002,26 @@ async function initApp() {
     for (const [key, value] of Object.entries(entries)) {
       const row = document.createElement('div');
       row.className = 'prop-row';
+      if (!isQuantity && normalizedName !== 'IFC ATTRIBUTES') {
+        row.dataset.editableProperty = 'true';
+        row.tabIndex = 0;
+        row.title = 'Select this property for safe editing';
+        const selectForEditing = () => {
+          ifcEditPset.value = name;
+          ifcEditProperty.value = key;
+          ifcEditValue.value = value === null || value === undefined ? '' : String(value);
+          ifcEditValue.focus();
+          ifcEditValue.select();
+          ifcEditStatus.textContent = `Editing ${name}.${key} on element #${selectedIfcElement?.localId || '-'}.`;
+        };
+        row.addEventListener('click', selectForEditing);
+        row.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            selectForEditing();
+          }
+        });
+      }
       const label = document.createElement('span');
       label.className = 'prop-label';
       label.textContent = key;
@@ -2784,6 +2952,135 @@ async function initApp() {
     contextSelectionColor.value = selectedAppearanceColor;
     contextColorHex.value = selectedAppearanceColor.toUpperCase();
     await applyAppearanceColorToCurrentSelection();
+  });
+
+  replaceMetadataRows([
+    { property: 'WBS', valueType: 'IFCIDENTIFIER', value: '' },
+    { property: 'SOP', valueType: 'IFCIDENTIFIER', value: '' },
+  ]);
+
+  btnAddMetadataRow.addEventListener('click', () => {
+    createMetadataRow();
+    metadataRows.querySelector('.metadata-row:last-child .metadata-property')?.focus();
+  });
+
+  btnCopyPreviousMetadata.addEventListener('click', () => {
+    if (!lastMetadataTemplate) return;
+    metadataPset.value = lastMetadataTemplate.propertySet;
+    replaceMetadataRows(lastMetadataTemplate.rows);
+    renderPendingIfcEdits(`Copied the previous metadata template for element #${selectedIfcElement?.localId || '-'}.`);
+  });
+
+  btnStageMetadata.addEventListener('click', () => {
+    if (!selectedIfcElement) {
+      renderPendingIfcEdits('Select one IFC element before staging metadata.');
+      return;
+    }
+    const propertySet = metadataPset.value.trim();
+    if (!/^(?:BIM_TRACKER_EDIT|COSAPI_[A-Z0-9_]+)$/i.test(propertySet)) {
+      renderPendingIfcEdits('Use BIM_TRACKER_EDIT or a COSAPI_ prefixed property-set name.');
+      return;
+    }
+    const rows = readMetadataRows();
+    if (!rows.length) {
+      renderPendingIfcEdits('Add at least one metadata property and value.');
+      return;
+    }
+    const invalid = rows.find((row) => !row.property || row.value === '');
+    if (invalid) {
+      renderPendingIfcEdits('Every metadata row requires both a property name and value.');
+      return;
+    }
+    const modelId = selectedIfcElement.modelId;
+    const localId = Number(selectedIfcElement.localId);
+    for (const row of rows) {
+      const key = `${ifcEditElementKey(modelId, localId)}:${propertySet.toLowerCase()}:${row.property.toLowerCase()}`;
+      pendingIfcPropertyEdits.set(key, {
+        modelId,
+        localId,
+        propertySet,
+        property: row.property,
+        value: row.value,
+        valueType: row.valueType,
+      });
+    }
+    lastMetadataTemplate = {
+      propertySet,
+      rows: rows.map((row) => ({ ...row })),
+    };
+    btnCopyPreviousMetadata.disabled = false;
+    renderPendingIfcEdits(`Staged ${rows.length} metadata value${rows.length === 1 ? '' : 's'} for element #${localId}. Select the next element to continue.`);
+  });
+
+  btnStagePropertyEdit.addEventListener('click', () => {
+    if (!selectedIfcElement) {
+      renderPendingIfcEdits('Select one IFC element before staging a property change.');
+      return;
+    }
+    const propertySet = ifcEditPset.value.trim();
+    const property = ifcEditProperty.value.trim();
+    const value = ifcEditValue.value;
+    if (!propertySet || !property) {
+      renderPendingIfcEdits('Property set and property name are required.');
+      return;
+    }
+    const modelId = selectedIfcElement.modelId;
+    const localId = Number(selectedIfcElement.localId);
+    const key = `${ifcEditElementKey(modelId, localId)}:${propertySet.toLowerCase()}:${property.toLowerCase()}`;
+    pendingIfcPropertyEdits.set(key, { modelId, localId, propertySet, property, value });
+    renderPendingIfcEdits(`Staged ${propertySet}.${property} for element #${localId}.`);
+  });
+
+  btnStageColorEdit.addEventListener('click', async () => {
+    const color = normalizeHexColor(ifcEditColor.value);
+    if (!color) {
+      renderPendingIfcEdits('Choose a valid RGB color.');
+      return;
+    }
+    selectedAppearanceColor = color;
+    contextSelectionColor.value = color;
+    contextColorHex.value = color.toUpperCase();
+    await applyAppearanceColorToCurrentSelection();
+  });
+
+  btnClearIfcEdits.addEventListener('click', () => {
+    pendingIfcPropertyEdits.clear();
+    pendingIfcColorEdits.clear();
+    renderPendingIfcEdits('All pending IFC edits cleared.');
+  });
+
+  btnExportEditedIfc.addEventListener('click', () => {
+    let exportedModels = 0;
+    let appliedChanges = 0;
+    let skippedChanges = 0;
+    for (const modelEntry of loadedModels) {
+      const modelIds = new Set([modelEntry.uuid, modelEntry.model?.uuid, modelEntry.model?.modelId].filter(Boolean));
+      const propertyEdits = Array.from(pendingIfcPropertyEdits.values()).filter((edit) => modelIds.has(edit.modelId));
+      const colorEdits = Array.from(pendingIfcColorEdits.values()).filter((edit) => modelIds.has(edit.modelId));
+      if (!propertyEdits.length && !colorEdits.length) continue;
+      try {
+        const result = applySafeIfcEdits(modelEntry.sourceIfcBytes, { propertyEdits, colorEdits });
+        const blob = new Blob([result.bytes], { type: 'application/x-step' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = editedIfcFileName(modelEntry.name);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+        exportedModels += 1;
+        appliedChanges += result.applied.length;
+        skippedChanges += result.skipped.length;
+        if (result.skipped.length) console.warn(`[Safe IFC Editor] ${modelEntry.name} skipped edits:`, result.skipped);
+      } catch (error) {
+        console.error(`[Safe IFC Editor] ${modelEntry.name}:`, error);
+        skippedChanges += propertyEdits.length + colorEdits.length;
+      }
+    }
+    renderPendingIfcEdits(exportedModels
+      ? `Exported ${appliedChanges} change${appliedChanges === 1 ? '' : 's'} in ${exportedModels} new IFC file${exportedModels === 1 ? '' : 's'}${skippedChanges ? `; ${skippedChanges} skipped (see console)` : ''}.`
+      : 'No edited IFC could be generated. Review the browser console for details.');
   });
 
   contextIsolateItem.addEventListener('click', async () => {

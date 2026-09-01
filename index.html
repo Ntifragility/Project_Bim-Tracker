@@ -192,6 +192,61 @@
                 </div>
                 <!-- Dynamic Property Sets -->
                 <div id="prop-psets-container" class="prop-psets-container"></div>
+                <section class="ifc-edit-panel" aria-labelledby="ifc-edit-title">
+                  <div class="ifc-edit-heading">
+                    <strong id="ifc-edit-title">Safe IFC Editor</strong>
+                    <span id="ifc-edit-count">0 pending</span>
+                  </div>
+                  <section class="metadata-editor" aria-labelledby="metadata-editor-title">
+                    <strong id="metadata-editor-title">Manual Metadata</strong>
+                    <p class="ifc-edit-help">Add WBS, SOP, or other non-geometric metadata to the selected element.</p>
+                    <label for="metadata-pset">Custom property set</label>
+                    <input id="metadata-pset" type="text" value="COSAPI_CONSTRUCTION" list="metadata-pset-suggestions" />
+                    <datalist id="metadata-pset-suggestions">
+                      <option value="COSAPI_CONSTRUCTION"></option>
+                      <option value="COSAPI_PLANNING"></option>
+                      <option value="COSAPI_QA"></option>
+                      <option value="BIM_TRACKER_EDIT"></option>
+                    </datalist>
+                    <div class="metadata-table-heading">
+                      <span>Property</span>
+                      <span>Type</span>
+                      <span>Value</span>
+                      <span></span>
+                    </div>
+                    <div id="metadata-rows" class="metadata-rows"></div>
+                    <div class="metadata-actions">
+                      <button id="btn-add-metadata-row" class="btn btn-secondary" type="button">+ Add Property</button>
+                      <button id="btn-copy-previous-metadata" class="btn btn-secondary" type="button" disabled>Copy Previous</button>
+                      <button id="btn-stage-metadata" class="btn btn-primary" type="button">Stage Metadata</button>
+                    </div>
+                  </section>
+                  <details class="existing-property-editor">
+                    <summary>Edit an existing property</summary>
+                    <p class="ifc-edit-help">Select an existing non-quantity property above to load it here.</p>
+                  <label for="ifc-edit-pset">Property set</label>
+                  <input id="ifc-edit-pset" type="text" value="BIM_TRACKER_EDIT" />
+                  <label for="ifc-edit-property">Property</label>
+                  <input id="ifc-edit-property" type="text" placeholder="ReviewStatus" />
+                  <label for="ifc-edit-value">New value</label>
+                  <input id="ifc-edit-value" type="text" placeholder="Approved" />
+                  <button id="btn-stage-property-edit" class="btn btn-secondary" type="button">Stage Property Change</button>
+                  </details>
+                  <div class="ifc-edit-color-row">
+                    <label for="ifc-edit-color">Saved color</label>
+                    <input id="ifc-edit-color" type="color" value="#f54242" />
+                    <label for="ifc-edit-transparency">Transparency</label>
+                    <input id="ifc-edit-transparency" type="number" min="0" max="100" step="5" value="0" />
+                    <span>%</span>
+                  </div>
+                  <button id="btn-stage-color-edit" class="btn btn-secondary" type="button">Stage Selected Color</button>
+                  <div id="ifc-edit-status" class="ifc-edit-status">Select an element to begin.</div>
+                  <div id="ifc-edit-pending-list" class="ifc-edit-pending-list"></div>
+                  <div class="ifc-edit-actions">
+                    <button id="btn-clear-ifc-edits" class="btn btn-secondary" type="button" disabled>Clear Pending</button>
+                    <button id="btn-export-edited-ifc" class="btn btn-primary" type="button" disabled>Export Edited IFC</button>
+                  </div>
+                </section>
               </div>
             </div>
           </section>

@@ -29,6 +29,32 @@ http://127.0.0.1:5173/?ifc=/model.ifc
 
 Panning moves only the camera view; it does not change IFC model coordinates.
 
+## Safe IFC property and color editing
+
+Select an IFC element and expand one of its non-quantity property sets. Select a
+property row to load it into **Safe IFC Editor**, enter the new value, and stage
+the change. Existing `IfcPropertySingleValue` values are updated using their
+original IFC data type.
+
+Use **Manual Metadata** to add several values such as WBS and SOP to one element
+at a time. New properties are restricted to `BIM_TRACKER_EDIT` or organization
+property sets beginning with `COSAPI_`, such as `COSAPI_CONSTRUCTION`,
+`COSAPI_PLANNING`, or `COSAPI_QA`. Supported safe types are label, text,
+identifier, integer, decimal, Boolean, date, and date-time. After staging one
+element, select the next element and use **Copy Previous** to reuse the previous
+property set, property names, types, and values.
+
+The right-click **Appearance Color** command now also stages the selected RGB
+color for persistent export. Transparency can be set in Safe IFC Editor. Select
+**Export Edited IFC** to download a new `<model-name>_edited.ifc` containing the
+staged property and `IfcStyledItem` appearance changes. The source IFC is never
+overwritten. Quantities, GUIDs, geometry, entity classes, relationships, and
+type-level data remain read-only.
+
+IFC appearance support varies by importer. Validate the exported RGB and
+transparency in Navisworks with a small test set before using the colors as a
+production deliverable.
+
 ## Routing workflow
 
 1. Load an IFC containing cable-tray geometry.
