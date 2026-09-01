@@ -314,6 +314,9 @@ async function initApp() {
     console.warn("FragmentsManager worker setup failed, falling back to main-thread processing:", e);
     fragments.init();
   }
+  // Low-quality LOD lines are visible but intentionally carry no element ID,
+  // so the picker cannot select them. Prefer full selectable geometry.
+  fragments.core.settings.graphicsQuality = 1;
 
   // 6. Set up IfcLoader and Configure WASM path
   const ifcLoader = components.get(OBC.IfcLoader);
@@ -321,6 +324,13 @@ async function initApp() {
   ifcLoader.settings.wasm = {
     path: "https://unpkg.com/web-ifc@0.0.77/",
     absolute: true
+  };
+  // Rebase the first IFC near the viewer origin for numerical stability.
+  // The `coordinate: true` load option below retains the source coordination
+  // data and positions later federated models relative to that first model.
+  ifcLoader.settings.webIfc = {
+    ...ifcLoader.settings.webIfc,
+    COORDINATE_TO_ORIGIN: true,
   };
   await ifcLoader.setup();
   console.log("IfcLoader WASM set up successfully.");
@@ -333,6 +343,8 @@ async function initApp() {
   // 7. Set up Highlighter
   const highlighter = components.get(OBF.Highlighter);
   highlighter.setup({ world });
+  // Allow normal hand jitter without interpreting an intended click as orbiting.
+  highlighter.mouseMoveThreshold = 10;
   setSelectionHighlightStyle(selectionHighlightColor);
   const hider = components.get(OBC.Hider);
   const routingController = initRoutingController({
@@ -1647,50 +1659,31 @@ async function initApp() {
       return;
     }
 
-    try {
-      const bboxer = components.get(OBC.BoundingBoxer);
-      bboxer.list.clear();
-      
-      let added = false;
-      for (const model of targets) {
-        const modelObject = model.object || model;
-        if (modelObject) {
-          bboxer.add(modelObject);
-          added = true;
-        }
-      }
-
-      if (added) {
-        const box = bboxer.get();
-        if (box && !box.isEmpty()) {
-          const sphere = new THREE.Sphere();
-          box.getBoundingSphere(sphere);
-          world.camera.controls.fitToSphere(sphere, true);
-        }
-      }
-      bboxer.list.clear();
-    } catch (e) {
-      console.warn("BoundingBoxer failed, computing bounding sphere manually:", e);
-      let combinedBox = new THREE.Box3();
-      let hasBox = false;
-      for (const model of targets) {
-        const modelObject = model.object || model;
-        if (modelObject) {
-          const box = new THREE.Box3().setFromObject(modelObject);
-          if (!hasBox) {
-            combinedBox.copy(box);
-            hasBox = true;
-          } else {
-            combinedBox.union(box);
-          }
-        }
-      }
-      if (hasBox && !combinedBox.isEmpty()) {
-        const sphere = new THREE.Sphere();
-        combinedBox.getBoundingSphere(sphere);
-        world.camera.controls.fitToSphere(sphere, true);
-      }
+    const combinedBox = new THREE.Box3();
+    let hasBox = false;
+    for (const model of targets) {
+      // FragmentsModel.box contains the complete IFC bounds even when its
+      // distant tiles have not yet been rendered by the current camera view.
+      const storedBox = model?.box;
+      const box = storedBox && !storedBox.isEmpty()
+        // FragmentsModel.box is already returned in world coordinates.
+        ? storedBox
+        : new THREE.Box3().setFromObject(model?.object || model);
+      if (!box || box.isEmpty()) continue;
+      if (!hasBox) combinedBox.copy(box);
+      else combinedBox.union(box);
+      hasBox = true;
     }
+
+    if (!hasBox) {
+      console.warn('[Camera Focus] No valid model bounds were available.');
+      return;
+    }
+
+    const sphere = new THREE.Sphere();
+    combinedBox.getBoundingSphere(sphere);
+    if (!Number.isFinite(sphere.radius) || sphere.radius <= 0) sphere.radius = 1;
+    world.camera.controls.fitToSphere(sphere, true);
   }
 
   // Helper: Fit camera to a single model
@@ -2325,7 +2318,8 @@ async function initApp() {
       // Zoom button
       const zoomBtn = document.createElement('button');
       zoomBtn.className = 'model-btn zoom';
-      zoomBtn.title = 'Zoom to model';
+      zoomBtn.title = 'Focus on model';
+      zoomBtn.setAttribute('aria-label', `Focus on ${modelEntry.name}`);
       zoomBtn.textContent = '🔍';
       zoomBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -2431,7 +2425,7 @@ async function initApp() {
       let model;
       // Load model using IfcLoader
       try {
-        model = await ifcLoader.load(buffer, false, name, {
+        model = await ifcLoader.load(buffer, true, name, {
           instanceCallback: (importer) => {
             importer.addAllAttributes();
             importer.addAllRelations();
@@ -2445,7 +2439,7 @@ async function initApp() {
         });
       } catch (loadErr) {
         console.warn("Loading with options failed, attempting simple load:", loadErr);
-        model = await ifcLoader.load(buffer);
+        model = await ifcLoader.load(buffer, true, name);
       }
 
       if (!model) {
