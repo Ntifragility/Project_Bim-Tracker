@@ -75,15 +75,24 @@ test('creates a non-destructive tagged IFC filename', () => {
 test('writes and re-reads tray system and sequential component properties', () => {
   const result = addTraySystemAssignmentsToIfc(fixture, [{
     localId: 10,
-    systemTag: '140ST-900-001',
-    componentId: '140ST-900-001-C001',
-    sequenceNumber: '001',
+    systemTag: 'PT1',
+    elementTag: 'PT1.01.01',
+    componentId: 'PT1.01.01',
+    elementKind: 'tray',
+    typeCode: '01',
+    sequenceNumber: '01',
+    schemeVersion: '2',
   }]);
   const assignment = extractTraySystemAssignmentsFromIfc(result.bytes).get(10);
-  assert.equal(assignment.systemTag, '140ST-900-001');
-  assert.equal(assignment.componentId, '140ST-900-001-C001');
-  assert.equal(assignment.sequenceNumber, '001');
+  assert.equal(assignment.systemTag, 'PT1');
+  assert.equal(assignment.elementTag, 'PT1.01.01');
+  assert.equal(assignment.componentId, 'PT1.01.01');
+  assert.equal(assignment.elementKind, 'tray');
+  assert.equal(assignment.typeCode, '01');
+  assert.equal(assignment.sequenceNumber, '01');
+  assert.equal(assignment.schemeVersion, '2');
   assert.match(result.text, /'CCP_TRAY_SYSTEM'/);
+  assert.match(result.text, /#10=IFCBUILDINGELEMENTPART\('1aaaaaaaaaaaaaaaaaaaaa',\$,'Tray',\$,\$,\$,\$,'PT1\.01\.01',\$\)/);
   assert.doesNotMatch(result.text, /'CCP_COMPONENT'/);
 });
 
@@ -104,6 +113,7 @@ test('updates tray assignment properties without duplicating property sets', () 
   assert.equal(assignment.systemTag, 'SYS-B');
   assert.equal(assignment.componentId, 'SYS-B-C004');
   assert.equal((second.text.match(/'CCP_TRAY_SYSTEM'/g) || []).length, 1);
+  assert.match(second.text, /#10=IFCBUILDINGELEMENTPART\('1aaaaaaaaaaaaaaaaaaaaa',\$,'Tray',\$,\$,\$,\$,'SYS-B-C004',\$\)/);
 });
 
 test('deletes a saved tray assignment by clearing its property values', () => {
@@ -117,5 +127,6 @@ test('deletes a saved tray assignment by clearing its property values', () => {
   assert.equal(removed.applied[0].action, 'deleted');
   assert.equal(extractTraySystemAssignmentsFromIfc(removed.bytes).has(10), false);
   assert.match(removed.text, /IFCPROPERTYSINGLEVALUE\('SystemTag',\$,IFCLABEL\(''\),\$\)/);
+  assert.match(removed.text, /#10=IFCBUILDINGELEMENTPART\('1aaaaaaaaaaaaaaaaaaaaa',\$,'Tray',\$,\$,\$,\$,'',\$\)/);
   assert.equal((removed.text.match(/'CCP_TRAY_SYSTEM'/g) || []).length, 1);
 });

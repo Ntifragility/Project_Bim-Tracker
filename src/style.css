@@ -1064,6 +1064,238 @@ body {
   min-height: 0;
 }
 
+.tagging-mode-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--glass-border);
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.tagging-mode-tab {
+  min-height: 34px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: 700 0.72rem/1 var(--font-sans);
+  letter-spacing: 0.5px;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.tagging-mode-tab:hover {
+  color: var(--text-primary);
+}
+
+.tagging-mode-tab.active {
+  background: rgba(99, 102, 241, 0.2);
+  color: #c7d2fe;
+  box-shadow: inset 0 0 0 1px rgba(129, 140, 248, 0.32);
+}
+
+.batch-tagging-workbench,
+#tag-management-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.batch-tagging-workbench[hidden],
+#tag-management-pane[hidden] {
+  display: none;
+}
+
+.batch-heading,
+.batch-preview-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.batch-heading h3 {
+  margin: 2px 0 0;
+  color: var(--text-primary);
+  font-size: 1rem;
+}
+
+.batch-kicker,
+.batch-field > span,
+.batch-pattern-preview > span {
+  color: var(--text-muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+.batch-count {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  border-radius: 999px;
+  background: rgba(99, 102, 241, 0.12);
+  color: #c7d2fe;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+}
+
+.batch-help {
+  margin: -5px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.batch-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+}
+
+.batch-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.batch-field-wide {
+  grid-column: 1 / -1;
+}
+
+.batch-pattern-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 10px;
+  border: 1px dashed rgba(129, 140, 248, 0.45);
+  border-radius: 8px;
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.batch-pattern-preview strong {
+  color: #e0e7ff;
+  font-family: var(--font-mono);
+  font-size: 0.92rem;
+  letter-spacing: 0.4px;
+}
+
+.batch-primary-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.batch-primary-actions .btn {
+  min-height: 38px;
+  padding: 7px 9px;
+  font-size: 0.74rem;
+}
+
+.batch-conflict-control {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: #fcd34d;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.batch-conflict-control[hidden] {
+  display: none;
+}
+
+.batch-preview-panel {
+  padding: 10px;
+  border: 1px solid var(--glass-border);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.batch-preview-panel[hidden] {
+  display: none;
+}
+
+.batch-preview-heading {
+  color: var(--text-primary);
+  font-size: 0.74rem;
+}
+
+.batch-preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 205px;
+  margin: 10px 0 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.batch-preview-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.batch-preview-item[data-conflict="true"] {
+  border-color: rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.07);
+}
+
+.batch-preview-copy {
+  min-width: 0;
+}
+
+.batch-preview-tag {
+  display: block;
+  overflow: hidden;
+  color: #c7d2fe;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch-preview-meta {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.66rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch-order-actions {
+  display: flex;
+  gap: 3px;
+}
+
+.batch-order-button {
+  width: 27px;
+  height: 27px;
+  border: 1px solid var(--glass-border);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.batch-order-button:disabled {
+  cursor: default;
+  opacity: 0.28;
+}
+
 .excel-field {
   display: flex;
   flex-direction: column;

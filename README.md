@@ -51,26 +51,54 @@ code-compliance or constructability approval.
 
 ## Tagged IFC export
 
-Select multiple IFC elements in the viewer (or add them individually to the
-selection basket), type the system tag, and select **Assign System Tag**. Excel is
-optional. The viewer generates sequential component IDs in selection order.
+Open **Tray Systems**, keep **Assign Tags** selected, and select one or more IFC
+elements in the viewer. Define the prefix, system/run, element kind, type codes,
+starting sequence, and digit count. **Preview selected** shows the exact tags and
+their order before anything changes. Reorder elements with the arrow controls,
+review any existing-tag conflicts, and select **Apply tags**. The last batch can
+be undone immediately. Excel is optional.
+
+For example, prefix `PT`, system/run `1`, tray code `01`, and fitting code `02`
+produce independent sequences:
+
+```text
+Cable trays:    PT1.01.01, PT1.01.02, PT1.01.03
+Cable fittings: PT1.02.01, PT1.02.02, PT1.02.03
+```
+
+**Auto classify** recognizes standard IFC cable-carrier classes and conservative
+name patterns. Ambiguous generic elements must be assigned explicitly as Cable
+Tray or Cable Fitting instead of being guessed.
+
 **Export Tagged IFC** downloads a new `<model-name>_tagged.ifc` and leaves the
 original unchanged. Each assigned element receives:
 
 ```text
 CCP_TRAY_SYSTEM
-├── SystemTag = 140ST-900-001
-├── ComponentId = 140ST-900-001-C001
-└── SequenceNumber = 001
+├── SystemTag = PT1
+├── ElementTag = PT1.01.01
+├── ComponentId = PT1.01.01
+├── ElementKind = tray
+├── TypeCode = 01
+├── SequenceNumber = 01
+└── SchemeVersion = 2
 ```
 
-System tags may repeat across every component in the same tray system. Component
-IDs are unique within the project.
+The exporter also writes the final element tag to the native `IfcElement.Tag`
+attribute for supported cable-tray, fitting, flow, duct, and generic building
+element-part entities. Replacing a pre-existing native tag requires explicit
+confirmation in the batch preview, and the original value is retained as
+`OriginalIfcTag` in the custom property set.
 
-**Export Mapping** creates `IFC_Tag_Mapping.xlsx` with the system/component
-identifiers and best-effort `Width`, `Height`, and `Length` values read from each
-element's IFC attributes or property sets. The export also includes
-`SourceState`, showing whether a row is pending or modifies a saved IFC tag.
+System tags may repeat across every component in the same tray system. Element
+tags and component IDs are unique within the project. Existing legacy
+`SystemTag-C001` assignments remain readable and manageable.
+
+**Export Mapping** creates `IFC_Tag_Mapping.xlsx` with a complete **Tag Register**
+sheet for saved and pending effective assignments, plus a **Summary** sheet. The
+register includes the system/element identifiers, kind, type code, IFC identity,
+classification evidence, original tag, change state, and best-effort `Width`,
+`Height`, and `Length` values read from each element's IFC data.
 
 When that workbook is uploaded again, `ComponentId` is selected automatically:
 clicking a row highlights its single IFC element. Selecting `SystemTag` as the
@@ -127,5 +155,6 @@ npm test
 npm run build
 ```
 
-See [routing architecture](docs/routing-architecture.md) and
+See [tagging architecture](docs/tagging-architecture.md),
+[routing architecture](docs/routing-architecture.md), and
 [Revizto validation evidence](docs/revizto-validation.md).
