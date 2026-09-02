@@ -640,6 +640,7 @@ section.control-group[data-sidebar-panel].active {
 
 .element-props-content {
   width: 100%;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -839,6 +840,9 @@ section.control-group[data-sidebar-panel].active {
 .ifc-edit-panel {
   display: grid;
   gap: 8px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   margin-top: 12px;
   padding: 10px;
   border: 1px solid rgba(99, 102, 241, 0.3);
@@ -856,8 +860,13 @@ section.control-group[data-sidebar-panel].active {
   display: flex;
   align-items: center;
   gap: 8px;
+<<<<<<< HEAD
   width: 100%;
   min-width: 0;
+=======
+  min-width: 0;
+  max-width: 100%;
+>>>>>>> origin/codex/batch-tagging-workbench
 }
 
 .ifc-edit-heading {
@@ -869,6 +878,7 @@ section.control-group[data-sidebar-panel].active {
 .ifc-edit-status {
   color: var(--text-muted);
   font-size: 0.75rem;
+  overflow-wrap: anywhere;
 }
 
 .ifc-edit-panel label {
@@ -902,15 +912,24 @@ section.control-group[data-sidebar-panel].active {
   flex-shrink: 0;
 }
 
+.ifc-edit-color-row {
+  flex-wrap: wrap;
+}
+
 .ifc-edit-actions .btn {
   flex: 1;
   min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .metadata-editor,
 .existing-property-editor {
   display: grid;
   gap: 8px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   padding-bottom: 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   width: 100%;
@@ -984,9 +1003,8 @@ section.control-group[data-sidebar-panel].active {
   min-width: 0;
   padding: 6px 4px;
   font-size: 0.68rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .metadata-actions #btn-stage-metadata {
