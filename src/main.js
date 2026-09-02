@@ -6,7 +6,10 @@ import * as XLSX from 'xlsx';
 import { initExcelBridge } from './viewer-socket.js';
 import { initRoutingController } from './routing/routing-controller.js';
 import { addTraySystemAssignmentsToIfc, extractTraySystemAssignmentsFromIfc, taggedIfcFileName } from './ifc/ifc-tag-exporter.js';
+import { applySafeIfcEdits, editedIfcFileName } from './ifc/ifc-safe-editor.js';
 import { validateTagIntegrity } from './ifc/tag-validator.js';
+import { allocateElementTags, getSystemTag, normalizeTagScheme } from './tagging/tag-scheme.js';
+import { classifyTaggableElement } from './tagging/element-classifier.js';
 
 // Global variables for active model and state
 let activeModel = null;
@@ -25,6 +28,9 @@ let selectionHighlightColor = localStorage.getItem('bim-selection-highlight-colo
 const appearanceColorMaps = new Map();
 const continuityHighlightStyleNames = new Set();
 const tagAssignments = new Map();
+const pendingIfcPropertyEdits = new Map();
+const pendingIfcColorEdits = new Map();
+let lastMetadataTemplate = null;
 const traySelection = new Map();
 let autoRotateActive = false;
 
@@ -105,6 +111,27 @@ const tagReplaceDialog = document.getElementById('tag-replace-dialog');
 const tagReplaceMessage = document.getElementById('tag-replace-message');
 const tagReplaceCancel = document.getElementById('tag-replace-cancel');
 const tagReplaceConfirm = document.getElementById('tag-replace-confirm');
+const taggingTabAssign = document.getElementById('tagging-tab-assign');
+const taggingTabManage = document.getElementById('tagging-tab-manage');
+const batchTaggingPane = document.getElementById('batch-tagging-pane');
+const tagManagementPane = document.getElementById('tag-management-pane');
+const batchPrefix = document.getElementById('batch-prefix');
+const batchSystem = document.getElementById('batch-system');
+const batchElementKind = document.getElementById('batch-element-kind');
+const batchTrayCode = document.getElementById('batch-tray-code');
+const batchFittingCode = document.getElementById('batch-fitting-code');
+const batchStartSequence = document.getElementById('batch-start-sequence');
+const batchSequenceDigits = document.getElementById('batch-sequence-digits');
+const batchPatternExample = document.getElementById('batch-pattern-example');
+const batchSelectionCount = document.getElementById('batch-selection-count');
+const batchStatus = document.getElementById('batch-status');
+const batchPreviewPanel = document.getElementById('batch-preview-panel');
+const batchPreviewList = document.getElementById('batch-preview-list');
+const batchReplaceConflictsRow = document.getElementById('batch-replace-conflicts-row');
+const batchReplaceConflicts = document.getElementById('batch-replace-conflicts');
+const btnPreviewBatchTags = document.getElementById('btn-preview-batch-tags');
+const btnApplyBatchTags = document.getElementById('btn-apply-batch-tags');
+const btnUndoBatchTags = document.getElementById('btn-undo-batch-tags');
 const excelColumnWidths = new Map();
 const MIN_EXCEL_COLUMN_WIDTH = 92;
 const DEFAULT_EXCEL_COLUMN_WIDTH = 150;
@@ -113,6 +140,10 @@ let selectedTraySystemTag = '';
 let traySystemFilterText = '';
 let traySystemSortMode = 'tag';
 let traySystemContinuityReport = null;
+let selectionOrderKeys = [];
+let batchPreviewElements = [];
+let batchPreviewAssignments = [];
+let lastBatchSnapshot = null;
 const CONTINUITY_GROUP_COLORS = ['#22c55e', '#f59e0b', '#3b82f6', '#ec4899', '#14b8a6', '#a855f7', '#ef4444'];
 
 // Loaded Models DOM Elements
@@ -136,6 +167,23 @@ const propTag = document.getElementById('prop-tag');
 const propExpressId = document.getElementById('prop-expressid');
 const propModel = document.getElementById('prop-model');
 const propPsetsContainer = document.getElementById('prop-psets-container');
+const ifcEditPset = document.getElementById('ifc-edit-pset');
+const ifcEditProperty = document.getElementById('ifc-edit-property');
+const ifcEditValue = document.getElementById('ifc-edit-value');
+const ifcEditColor = document.getElementById('ifc-edit-color');
+const ifcEditTransparency = document.getElementById('ifc-edit-transparency');
+const ifcEditStatus = document.getElementById('ifc-edit-status');
+const ifcEditCount = document.getElementById('ifc-edit-count');
+const ifcEditPendingList = document.getElementById('ifc-edit-pending-list');
+const btnStagePropertyEdit = document.getElementById('btn-stage-property-edit');
+const btnStageColorEdit = document.getElementById('btn-stage-color-edit');
+const btnClearIfcEdits = document.getElementById('btn-clear-ifc-edits');
+const btnExportEditedIfc = document.getElementById('btn-export-edited-ifc');
+const metadataPset = document.getElementById('metadata-pset');
+const metadataRows = document.getElementById('metadata-rows');
+const btnAddMetadataRow = document.getElementById('btn-add-metadata-row');
+const btnCopyPreviousMetadata = document.getElementById('btn-copy-previous-metadata');
+const btnStageMetadata = document.getElementById('btn-stage-metadata');
 
 // Utility: Show loading overlay
 function showLoader(title, status, progressVal) {
@@ -287,6 +335,9 @@ async function initApp() {
     console.warn("FragmentsManager worker setup failed, falling back to main-thread processing:", e);
     fragments.init();
   }
+  // Low-quality LOD lines are visible but intentionally carry no element ID,
+  // so the picker cannot select them. Prefer full selectable geometry.
+  fragments.core.settings.graphicsQuality = 1;
 
   // 6. Set up IfcLoader and Configure WASM path
   const ifcLoader = components.get(OBC.IfcLoader);
@@ -294,6 +345,13 @@ async function initApp() {
   ifcLoader.settings.wasm = {
     path: "https://unpkg.com/web-ifc@0.0.77/",
     absolute: true
+  };
+  // Rebase the first IFC near the viewer origin for numerical stability.
+  // The `coordinate: true` load option below retains the source coordination
+  // data and positions later federated models relative to that first model.
+  ifcLoader.settings.webIfc = {
+    ...ifcLoader.settings.webIfc,
+    COORDINATE_TO_ORIGIN: true,
   };
   await ifcLoader.setup();
   console.log("IfcLoader WASM set up successfully.");
@@ -306,6 +364,8 @@ async function initApp() {
   // 7. Set up Highlighter
   const highlighter = components.get(OBF.Highlighter);
   highlighter.setup({ world });
+  // Allow normal hand jitter without interpreting an intended click as orbiting.
+  highlighter.mouseMoveThreshold = 10;
   setSelectionHighlightStyle(selectionHighlightColor);
   const hider = components.get(OBC.Hider);
   const routingController = initRoutingController({
@@ -320,6 +380,228 @@ async function initApp() {
 
   function getAssignmentKey(modelId, localId) {
     return `${modelId}:${Number(localId)}`;
+  }
+
+  function getBatchScheme() {
+    return normalizeTagScheme({
+      prefix: batchPrefix?.value,
+      system: batchSystem?.value,
+      separator: '.',
+      sequenceDigits: batchSequenceDigits?.value,
+      startSequence: batchStartSequence?.value,
+      typeCodes: {
+        tray: batchTrayCode?.value,
+        fitting: batchFittingCode?.value,
+      },
+    });
+  }
+
+  function setBatchStatus(message, tone = '') {
+    if (!batchStatus) return;
+    batchStatus.textContent = message;
+    if (tone) batchStatus.dataset.tone = tone;
+    else delete batchStatus.dataset.tone;
+  }
+
+  function updateBatchPatternExample() {
+    if (!batchPatternExample) return;
+    const scheme = getBatchScheme();
+    const requestedKind = batchElementKind?.value === 'fitting' ? 'fitting' : 'tray';
+    const sequence = String(scheme.startSequence).padStart(scheme.sequenceDigits, '0');
+    batchPatternExample.textContent = [
+      getSystemTag(scheme),
+      scheme.typeCodes[requestedKind],
+      sequence,
+    ].join(scheme.separator);
+  }
+
+  function setTaggingMode(mode) {
+    const assignActive = mode !== 'manage';
+    batchTaggingPane.hidden = !assignActive;
+    tagManagementPane.hidden = assignActive;
+    taggingTabAssign.classList.toggle('active', assignActive);
+    taggingTabManage.classList.toggle('active', !assignActive);
+    taggingTabAssign.setAttribute('aria-selected', String(assignActive));
+    taggingTabManage.setAttribute('aria-selected', String(!assignActive));
+  }
+
+  function selectedKeysFromMap(modelIdMap = getSelectedModelIdMap()) {
+    const keys = [];
+    for (const [modelId, ids] of Object.entries(modelIdMap || {})) {
+      const values = ids instanceof Set ? Array.from(ids) : Array.isArray(ids) ? ids : [];
+      for (const localId of values) keys.push(getAssignmentKey(modelId, localId));
+    }
+    return keys;
+  }
+
+  function reconcileSelectionOrder(modelIdMap = getSelectedModelIdMap()) {
+    const selectedKeys = selectedKeysFromMap(modelIdMap);
+    const selectedSet = new Set(selectedKeys);
+    selectionOrderKeys = [
+      ...selectionOrderKeys.filter((key) => selectedSet.has(key)),
+      ...selectedKeys.filter((key) => !selectionOrderKeys.includes(key)),
+    ];
+    if (batchSelectionCount) {
+      const count = selectedKeys.length;
+      batchSelectionCount.textContent = `${count} selected`;
+    }
+    if (btnPreviewBatchTags) btnPreviewBatchTags.disabled = selectedKeys.length === 0;
+  }
+
+  async function getOrderedCurrentSelectionElements() {
+    const selection = getSelectedModelIdMap();
+    reconcileSelectionOrder(selection);
+    const selectedSet = new Set(selectedKeysFromMap(selection));
+    const elements = [];
+    for (const key of selectionOrderKeys) {
+      if (!selectedSet.has(key)) continue;
+      const separatorIndex = key.lastIndexOf(':');
+      const modelId = key.slice(0, separatorIndex);
+      const localId = Number(key.slice(separatorIndex + 1));
+      const modelEntry = findLoadedModelEntry(modelId);
+      if (!modelEntry || !Number.isInteger(localId)) continue;
+      elements.push(await readElementIdentity(modelEntry.model, localId, modelEntry.name));
+    }
+    return elements;
+  }
+
+  function getEffectiveAssignmentForElement(element) {
+    const key = getAssignmentKey(element.modelId, element.localId);
+    return getEffectiveTaggedElements().find((item) => getAssignmentKey(item.modelId, item.localId) === key) || null;
+  }
+
+  function clearBatchPreview(message = '') {
+    batchPreviewElements = [];
+    batchPreviewAssignments = [];
+    batchPreviewList.innerHTML = '';
+    batchPreviewPanel.hidden = true;
+    batchReplaceConflictsRow.hidden = true;
+    batchReplaceConflicts.checked = false;
+    btnApplyBatchTags.disabled = true;
+    if (message) setBatchStatus(message);
+  }
+
+  function invalidateBatchUndo() {
+    lastBatchSnapshot = null;
+    if (btnUndoBatchTags) btnUndoBatchTags.disabled = true;
+  }
+
+  function renderBatchPreview() {
+    batchPreviewList.innerHTML = '';
+    const hasConflicts = batchPreviewAssignments.some((item) => item.conflict);
+    batchReplaceConflictsRow.hidden = !hasConflicts;
+    for (let index = 0; index < batchPreviewAssignments.length; index += 1) {
+      const assignment = batchPreviewAssignments[index];
+      const item = document.createElement('li');
+      item.className = 'batch-preview-item';
+      item.dataset.conflict = String(Boolean(assignment.conflict));
+
+      const copy = document.createElement('div');
+      copy.className = 'batch-preview-copy';
+      const tag = document.createElement('strong');
+      tag.className = 'batch-preview-tag';
+      tag.textContent = assignment.elementTag;
+      const meta = document.createElement('span');
+      meta.className = 'batch-preview-meta';
+      const kindLabel = assignment.elementKind === 'fitting' ? 'Cable fitting' : 'Cable tray';
+      const conflictLabel = assignment.conflict ? ` · replaces ${assignment.previousTag}` : '';
+      meta.textContent = `${kindLabel} · ${assignment.name || assignment.type || `Element #${assignment.localId}`}${conflictLabel}`;
+      copy.append(tag, meta);
+
+      const actions = document.createElement('div');
+      actions.className = 'batch-order-actions';
+      for (const [label, offset] of [['↑', -1], ['↓', 1]]) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'batch-order-button';
+        button.textContent = label;
+        button.title = offset < 0 ? 'Move earlier' : 'Move later';
+        button.setAttribute('aria-label', `${button.title}: ${assignment.elementTag}`);
+        button.disabled = offset < 0 ? index === 0 : index === batchPreviewAssignments.length - 1;
+        button.addEventListener('click', async () => {
+          const target = index + offset;
+          [batchPreviewElements[index], batchPreviewElements[target]] = [batchPreviewElements[target], batchPreviewElements[index]];
+          await generateBatchPreview(batchPreviewElements);
+        });
+        actions.appendChild(button);
+      }
+      item.append(copy, actions);
+      batchPreviewList.appendChild(item);
+    }
+    batchPreviewPanel.hidden = false;
+    btnApplyBatchTags.disabled = hasConflicts && !batchReplaceConflicts.checked;
+  }
+
+  async function generateBatchPreview(elements) {
+    const requestedKind = batchElementKind.value;
+    const classified = elements.map((element) => {
+      if (requestedKind !== 'auto') {
+        return { ...element, resolvedKind: requestedKind, classificationMethod: 'manual', classificationConfidence: 1 };
+      }
+      const result = classifyTaggableElement(element);
+      return {
+        ...element,
+        resolvedKind: result.kind,
+        classificationMethod: result.evidence,
+        classificationConfidence: result.confidence,
+      };
+    });
+    const unresolved = classified.filter((element) => !element.resolvedKind);
+    if (unresolved.length) {
+      clearBatchPreview();
+      setBatchStatus(
+        `${unresolved.length} selected element${unresolved.length === 1 ? '' : 's'} could not be classified. Choose Cable Tray or Cable Fitting explicitly.`,
+        'warning',
+      );
+      return false;
+    }
+
+    const existingAssignments = getEffectiveTaggedElements();
+    const generatedByKey = new Map();
+    for (const kind of ['tray', 'fitting']) {
+      const kindElements = classified.filter((element) => element.resolvedKind === kind);
+      if (!kindElements.length) continue;
+      const result = allocateElementTags({
+        elements: kindElements,
+        elementKind: kind,
+        scheme: getBatchScheme(),
+        existingAssignments,
+      });
+      if (!result.valid) {
+        clearBatchPreview();
+        setBatchStatus(result.errors.join(' '), 'warning');
+        return false;
+      }
+      for (const assignment of result.assignments) {
+        generatedByKey.set(getAssignmentKey(assignment.modelId, assignment.localId), assignment);
+      }
+    }
+
+    batchPreviewAssignments = classified.map((element) => {
+      const key = getAssignmentKey(element.modelId, element.localId);
+      const generated = generatedByKey.get(key);
+      const previousAssignment = getEffectiveAssignmentForElement(element);
+      const previousTag = previousAssignment?.componentId || element.ifcTag || '';
+      const conflict = Boolean(previousTag && previousTag.toLowerCase() !== generated.componentId.toLowerCase());
+      return {
+        ...generated,
+        classificationMethod: element.classificationMethod,
+        classificationConfidence: element.classificationConfidence,
+        originalIfcTag: element.ifcTag || '',
+        previousAssignment,
+        previousTag,
+        conflict,
+      };
+    });
+    renderBatchPreview();
+    const conflictCount = batchPreviewAssignments.filter((item) => item.conflict).length;
+    setBatchStatus(
+      conflictCount
+        ? `Preview ready with ${conflictCount} existing assignment conflict${conflictCount === 1 ? '' : 's'}.`
+        : `${batchPreviewAssignments.length} tag${batchPreviewAssignments.length === 1 ? '' : 's'} ready to apply in the displayed order.`,
+      conflictCount ? 'warning' : 'success',
+    );
+    return true;
   }
 
   function cloneModelIdMap(modelIdMap = {}) {
@@ -381,6 +663,130 @@ async function initApp() {
 
   function appearanceStyleName(color) {
     return `appearance-${color.replace('#', '').toLowerCase()}`;
+  }
+
+  function ifcEditElementKey(modelId, localId) {
+    return `${modelId}:${Number(localId)}`;
+  }
+
+  const METADATA_TYPES = [
+    ['IFCLABEL', 'Label'],
+    ['IFCTEXT', 'Text'],
+    ['IFCIDENTIFIER', 'Identifier'],
+    ['IFCINTEGER', 'Integer'],
+    ['IFCREAL', 'Decimal'],
+    ['IFCBOOLEAN', 'Boolean'],
+    ['IFCDATE', 'Date'],
+    ['IFCDATETIME', 'Date & Time'],
+  ];
+
+  function createMetadataRow(initial = {}) {
+    const row = document.createElement('div');
+    row.className = 'metadata-row';
+    const property = document.createElement('input');
+    property.type = 'text';
+    property.className = 'metadata-property';
+    property.placeholder = 'WBS';
+    property.value = initial.property || '';
+    property.setAttribute('aria-label', 'Metadata property name');
+    const type = document.createElement('select');
+    type.className = 'metadata-type';
+    type.setAttribute('aria-label', 'Metadata IFC data type');
+    for (const [value, label] of METADATA_TYPES) {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      option.selected = value === (initial.valueType || 'IFCLABEL');
+      type.appendChild(option);
+    }
+    const value = document.createElement('input');
+    value.type = 'text';
+    value.className = 'metadata-value';
+    value.placeholder = 'Value';
+    value.value = initial.value ?? '';
+    value.setAttribute('aria-label', 'Metadata value');
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'metadata-row-remove';
+    remove.textContent = '×';
+    remove.title = 'Remove metadata row';
+    remove.setAttribute('aria-label', 'Remove metadata row');
+    remove.addEventListener('click', () => {
+      row.remove();
+      if (!metadataRows.children.length) createMetadataRow();
+    });
+    row.append(property, type, value, remove);
+    metadataRows.appendChild(row);
+    return row;
+  }
+
+  function readMetadataRows() {
+    return Array.from(metadataRows.querySelectorAll('.metadata-row')).map((row) => ({
+      property: row.querySelector('.metadata-property').value.trim(),
+      valueType: row.querySelector('.metadata-type').value,
+      value: row.querySelector('.metadata-value').value,
+    })).filter((item) => item.property || item.value);
+  }
+
+  function replaceMetadataRows(rows) {
+    metadataRows.innerHTML = '';
+    for (const row of rows) createMetadataRow(row);
+    if (!metadataRows.children.length) createMetadataRow();
+  }
+
+  function renderPendingIfcEdits(message = '') {
+    const propertyEdits = Array.from(pendingIfcPropertyEdits.values());
+    const colorEdits = Array.from(pendingIfcColorEdits.values());
+    const total = propertyEdits.length + colorEdits.length;
+    ifcEditCount.textContent = `${total} pending`;
+    btnClearIfcEdits.disabled = total === 0;
+    btnExportEditedIfc.disabled = total === 0;
+    ifcEditStatus.textContent = message || (total
+      ? 'Changes are staged only. Export creates a new IFC.'
+      : 'Select an element to begin.');
+    ifcEditPendingList.innerHTML = '';
+
+    const appendItem = (edit, key, collection, label) => {
+      const row = document.createElement('div');
+      row.className = 'ifc-edit-pending-item';
+      const text = document.createElement('span');
+      text.textContent = `#${edit.localId} · ${label}`;
+      text.title = text.textContent;
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.textContent = 'Remove';
+      remove.addEventListener('click', () => {
+        collection.delete(key);
+        renderPendingIfcEdits('Pending edit removed.');
+      });
+      row.append(text, remove);
+      ifcEditPendingList.appendChild(row);
+    };
+    for (const [key, edit] of pendingIfcPropertyEdits) {
+      appendItem(edit, key, pendingIfcPropertyEdits, `${edit.propertySet}.${edit.property} → ${edit.value}`);
+    }
+    for (const [key, edit] of pendingIfcColorEdits) {
+      appendItem(edit, key, pendingIfcColorEdits, `${edit.color.toUpperCase()} · ${Math.round(edit.transparency * 100)}% transparent`);
+    }
+  }
+
+  function stageColorForSelection(color, transparency = 0) {
+    const selection = getSelectedModelIdMap();
+    let staged = 0;
+    for (const [modelId, ids] of Object.entries(selection)) {
+      for (const localId of ids) {
+        const key = ifcEditElementKey(modelId, localId);
+        pendingIfcColorEdits.set(key, {
+          modelId,
+          localId: Number(localId),
+          color,
+          transparency,
+        });
+        staged += 1;
+      }
+    }
+    if (staged) renderPendingIfcEdits(`Staged persistent color for ${staged} element${staged === 1 ? '' : 's'}.`);
+    return staged;
   }
 
   function normalizeHexColor(value) {
@@ -448,6 +854,9 @@ async function initApp() {
       addModelIdMapItems(appearanceColorMaps.get(selectedAppearanceColor), selection);
       await reapplyAppearanceColors();
       currentSelectionMap = cloneModelIdMap(selection);
+      const transparency = Math.min(100, Math.max(0, Number(ifcEditTransparency?.value) || 0)) / 100;
+      if (ifcEditColor) ifcEditColor.value = selectedAppearanceColor;
+      stageColorForSelection(selectedAppearanceColor, transparency);
     } catch (error) {
       console.warn('[Appearance Color] Could not color selected elements:', error);
       updateTagAssignmentUi('Warning: selected elements could not be colored.', 'warning');
@@ -560,8 +969,12 @@ async function initApp() {
             localId: Number(localId),
             globalId: '',
             systemTag: projectTag.systemTag,
+            elementTag: projectTag.elementTag || projectTag.componentId,
             componentId: projectTag.componentId,
+            elementKind: projectTag.elementKind || '',
+            typeCode: projectTag.typeCode || '',
             sequenceNumber: projectTag.sequenceNumber,
+            schemeVersion: projectTag.schemeVersion || '',
             source: 'ifc',
           });
         }
@@ -926,6 +1339,7 @@ async function initApp() {
 
   function restorePendingTrayDeletion(assignment) {
     if (!assignment) return;
+    invalidateBatchUndo();
     tagAssignments.delete(getAssignmentKey(assignment.modelId, assignment.localId));
     const model = findLoadedModelEntry(assignment.modelId)?.model || activeModel;
     syncProjectTagPropertyGroup(model, assignment.localId);
@@ -937,6 +1351,7 @@ async function initApp() {
   function restoreAllPendingTrayDeletions() {
     const deletions = getPendingTrayDeletions();
     if (!deletions.length) return;
+    invalidateBatchUndo();
     for (const deletion of deletions) {
       tagAssignments.delete(getAssignmentKey(deletion.modelId, deletion.localId));
       const model = findLoadedModelEntry(deletion.modelId)?.model || activeModel;
@@ -1129,7 +1544,7 @@ async function initApp() {
   }
 
   function isComponentIdColumn(name = selectedExcelIdColumn) {
-    return ['componentid', 'componenttag', 'pieceid'].includes(normalizeColumnName(name));
+    return ['elementtag', 'componentid', 'componenttag', 'pieceid'].includes(normalizeColumnName(name));
   }
 
   function isSystemTagColumn(name = selectedExcelIdColumn) {
@@ -1155,8 +1570,12 @@ async function initApp() {
           modelName: modelEntry.name,
           localId: Number(localId),
           systemTag: projectTag.systemTag,
+          elementTag: projectTag.elementTag || projectTag.componentId,
           componentId: projectTag.componentId,
+          elementKind: projectTag.elementKind || '',
+          typeCode: projectTag.typeCode || '',
           sequenceNumber: projectTag.sequenceNumber,
+          schemeVersion: projectTag.schemeVersion || '',
           source: 'ifc',
         });
       }
@@ -1239,7 +1658,8 @@ async function initApp() {
     updateExcelNavigationUi();
     const selectedTag = getEnteredSystemTag();
     const assignment = getAssignmentForElement();
-    const selectedElementCount = traySelection.size || (selectedIfcElement ? 1 : 0);
+    const viewerSelectionCount = countModelIdMapItems(getSelectedModelIdMap());
+    const selectedElementCount = traySelection.size || viewerSelectionCount;
     const elementLabel = selectedIfcElement
       ? `${selectedIfcElement.name || selectedIfcElement.type || 'IFC element'} (#${selectedIfcElement.localId})`
       : 'no IFC element selected';
@@ -1249,25 +1669,29 @@ async function initApp() {
     if (tone) tagAssignmentStatus.dataset.tone = tone;
     else delete tagAssignmentStatus.dataset.tone;
     tagAssignmentSummary.textContent = `${tagAssignments.size} pending change${tagAssignments.size === 1 ? '' : 's'}`;
-    traySelectionSummary.textContent = traySelection.size
-      ? `${traySelection.size} element${traySelection.size === 1 ? '' : 's'} selected · click empty space to clear`
-      : selectedIfcElement ? '1 current element' : '0 elements selected';
+    traySelectionSummary.textContent = selectedElementCount
+      ? `${selectedElementCount} element${selectedElementCount === 1 ? '' : 's'} selected · click empty space to clear`
+      : '0 elements selected';
     btnAssignTag.textContent = selectedTag && selectedElementCount
       ? `Assign ${selectedTag} to ${selectedElementCount} element${selectedElementCount === 1 ? '' : 's'}`
       : 'Assign System Tag';
     btnAddTraySelection.disabled = !selectedIfcElement;
-    btnAssignTag.disabled = !selectedTag || (traySelection.size === 0 && !selectedIfcElement);
+    btnAssignTag.disabled = !selectedTag || selectedElementCount === 0;
     btnHighlightSystem.disabled = !selectedTag || findSystemMembers(selectedTag).length === 0;
     btnUnassignTag.disabled = !assignment;
     btnValidateTags.disabled = loadedModels.length === 0 || getEffectiveTaggedElements().length === 0;
-    btnExportTags.disabled = tagAssignments.size === 0;
+    btnExportTags.disabled = getEffectiveTaggedElements().length === 0;
     btnExportTaggedIfc.disabled = tagAssignments.size === 0;
+    reconcileSelectionOrder();
     renderTraySystemManager();
 
     if (selectedIfcElement) {
+      const existingAssignment = getExistingTrayAssignment(selectedIfcElement);
       const displayedTag = assignment?.delete === true
         ? '-'
-        : assignment?.systemTag || getExistingProjectTag() || selectedIfcElement.ifcTag || '-';
+        : assignment?.elementTag || assignment?.componentId ||
+          existingAssignment?.elementTag || existingAssignment?.componentId ||
+          selectedIfcElement.ifcTag || assignment?.systemTag || existingAssignment?.systemTag || '-';
       propTag.textContent = displayedTag;
       propTag.title = displayedTag;
     }
@@ -1297,6 +1721,8 @@ async function initApp() {
     if (highlighter.isProgrammaticSelect) return;
 
     currentSelectionMap = cloneModelIdMap(fragmentMap);
+    if (batchPreviewAssignments.length) clearBatchPreview('Selection changed. Preview the current selection again.');
+    reconcileSelectionOrder(currentSelectionMap);
     let selectedModelId = null;
     let selectedExpressId = null;
     const viewportSelection = [];
@@ -1356,6 +1782,9 @@ async function initApp() {
     activeModel = null;
     selectedIfcElement = null;
     currentSelectionMap = {};
+    selectionOrderKeys = [];
+    reconcileSelectionOrder({});
+    clearBatchPreview('Select one or more IFC elements to begin.');
     traySelection.clear();
     routingController.setSelectedElement(null, null);
     updateTagAssignmentUi();
@@ -1378,50 +1807,31 @@ async function initApp() {
       return;
     }
 
-    try {
-      const bboxer = components.get(OBC.BoundingBoxer);
-      bboxer.list.clear();
-      
-      let added = false;
-      for (const model of targets) {
-        const modelObject = model.object || model;
-        if (modelObject) {
-          bboxer.add(modelObject);
-          added = true;
-        }
-      }
-
-      if (added) {
-        const box = bboxer.get();
-        if (box && !box.isEmpty()) {
-          const sphere = new THREE.Sphere();
-          box.getBoundingSphere(sphere);
-          world.camera.controls.fitToSphere(sphere, true);
-        }
-      }
-      bboxer.list.clear();
-    } catch (e) {
-      console.warn("BoundingBoxer failed, computing bounding sphere manually:", e);
-      let combinedBox = new THREE.Box3();
-      let hasBox = false;
-      for (const model of targets) {
-        const modelObject = model.object || model;
-        if (modelObject) {
-          const box = new THREE.Box3().setFromObject(modelObject);
-          if (!hasBox) {
-            combinedBox.copy(box);
-            hasBox = true;
-          } else {
-            combinedBox.union(box);
-          }
-        }
-      }
-      if (hasBox && !combinedBox.isEmpty()) {
-        const sphere = new THREE.Sphere();
-        combinedBox.getBoundingSphere(sphere);
-        world.camera.controls.fitToSphere(sphere, true);
-      }
+    const combinedBox = new THREE.Box3();
+    let hasBox = false;
+    for (const model of targets) {
+      // FragmentsModel.box contains the complete IFC bounds even when its
+      // distant tiles have not yet been rendered by the current camera view.
+      const storedBox = model?.box;
+      const box = storedBox && !storedBox.isEmpty()
+        // FragmentsModel.box is already returned in world coordinates.
+        ? storedBox
+        : new THREE.Box3().setFromObject(model?.object || model);
+      if (!box || box.isEmpty()) continue;
+      if (!hasBox) combinedBox.copy(box);
+      else combinedBox.union(box);
+      hasBox = true;
     }
+
+    if (!hasBox) {
+      console.warn('[Camera Focus] No valid model bounds were available.');
+      return;
+    }
+
+    const sphere = new THREE.Sphere();
+    combinedBox.getBoundingSphere(sphere);
+    if (!Number.isFinite(sphere.radius) || sphere.radius <= 0) sphere.radius = 1;
+    world.camera.controls.fitToSphere(sphere, true);
   }
 
   // Helper: Fit camera to a single model
@@ -1458,6 +1868,7 @@ async function initApp() {
     }
 
     // Remove from loadedModels
+    invalidateBatchUndo();
     for (const [key, assignment] of tagAssignments) {
       if (assignment.modelId === model.modelId || assignment.modelId === model.uuid) tagAssignments.delete(key);
     }
@@ -1591,6 +2002,26 @@ async function initApp() {
     for (const [key, value] of Object.entries(entries)) {
       const row = document.createElement('div');
       row.className = 'prop-row';
+      if (!isQuantity && normalizedName !== 'IFC ATTRIBUTES') {
+        row.dataset.editableProperty = 'true';
+        row.tabIndex = 0;
+        row.title = 'Select this property for safe editing';
+        const selectForEditing = () => {
+          ifcEditPset.value = name;
+          ifcEditProperty.value = key;
+          ifcEditValue.value = value === null || value === undefined ? '' : String(value);
+          ifcEditValue.focus();
+          ifcEditValue.select();
+          ifcEditStatus.textContent = `Editing ${name}.${key} on element #${selectedIfcElement?.localId || '-'}.`;
+        };
+        row.addEventListener('click', selectForEditing);
+        row.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            selectForEditing();
+          }
+        });
+      }
       const label = document.createElement('span');
       label.className = 'prop-label';
       label.textContent = key;
@@ -1631,6 +2062,9 @@ async function initApp() {
     const systemTag = assignment?.systemTag || existing?.systemTag || '';
     const componentId = assignment?.componentId || existing?.componentId || '';
     const sequenceNumber = assignment?.sequenceNumber || existing?.sequenceNumber || '';
+    const elementTag = assignment?.elementTag || existing?.elementTag || componentId;
+    const elementKind = assignment?.elementKind || existing?.elementKind || '';
+    const typeCode = assignment?.typeCode || existing?.typeCode || '';
 
     if (!systemTag) {
       propPsetsContainer.querySelector('[data-pset-name="CCP_TRAY_SYSTEM"]')?.remove();
@@ -1638,7 +2072,10 @@ async function initApp() {
     }
     renderPsetGroup('CCP_TRAY_SYSTEM', {
       SystemTag: systemTag,
+      ElementTag: elementTag,
       ComponentId: componentId,
+      ElementKind: elementKind,
+      TypeCode: typeCode,
       SequenceNumber: sequenceNumber,
     });
   }
@@ -2049,7 +2486,8 @@ async function initApp() {
       // Zoom button
       const zoomBtn = document.createElement('button');
       zoomBtn.className = 'model-btn zoom';
-      zoomBtn.title = 'Zoom to model';
+      zoomBtn.title = 'Focus on model';
+      zoomBtn.setAttribute('aria-label', `Focus on ${modelEntry.name}`);
       zoomBtn.textContent = '🔍';
       zoomBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -2155,7 +2593,7 @@ async function initApp() {
       let model;
       // Load model using IfcLoader
       try {
-        model = await ifcLoader.load(buffer, false, name, {
+        model = await ifcLoader.load(buffer, true, name, {
           instanceCallback: (importer) => {
             importer.addAllAttributes();
             importer.addAllRelations();
@@ -2169,7 +2607,7 @@ async function initApp() {
         });
       } catch (loadErr) {
         console.warn("Loading with options failed, attempting simple load:", loadErr);
-        model = await ifcLoader.load(buffer);
+        model = await ifcLoader.load(buffer, true, name);
       }
 
       if (!model) {
@@ -2516,6 +2954,135 @@ async function initApp() {
     await applyAppearanceColorToCurrentSelection();
   });
 
+  replaceMetadataRows([
+    { property: 'WBS', valueType: 'IFCIDENTIFIER', value: '' },
+    { property: 'SOP', valueType: 'IFCIDENTIFIER', value: '' },
+  ]);
+
+  btnAddMetadataRow.addEventListener('click', () => {
+    createMetadataRow();
+    metadataRows.querySelector('.metadata-row:last-child .metadata-property')?.focus();
+  });
+
+  btnCopyPreviousMetadata.addEventListener('click', () => {
+    if (!lastMetadataTemplate) return;
+    metadataPset.value = lastMetadataTemplate.propertySet;
+    replaceMetadataRows(lastMetadataTemplate.rows);
+    renderPendingIfcEdits(`Copied the previous metadata template for element #${selectedIfcElement?.localId || '-'}.`);
+  });
+
+  btnStageMetadata.addEventListener('click', () => {
+    if (!selectedIfcElement) {
+      renderPendingIfcEdits('Select one IFC element before staging metadata.');
+      return;
+    }
+    const propertySet = metadataPset.value.trim();
+    if (!/^(?:BIM_TRACKER_EDIT|COSAPI_[A-Z0-9_]+)$/i.test(propertySet)) {
+      renderPendingIfcEdits('Use BIM_TRACKER_EDIT or a COSAPI_ prefixed property-set name.');
+      return;
+    }
+    const rows = readMetadataRows();
+    if (!rows.length) {
+      renderPendingIfcEdits('Add at least one metadata property and value.');
+      return;
+    }
+    const invalid = rows.find((row) => !row.property || row.value === '');
+    if (invalid) {
+      renderPendingIfcEdits('Every metadata row requires both a property name and value.');
+      return;
+    }
+    const modelId = selectedIfcElement.modelId;
+    const localId = Number(selectedIfcElement.localId);
+    for (const row of rows) {
+      const key = `${ifcEditElementKey(modelId, localId)}:${propertySet.toLowerCase()}:${row.property.toLowerCase()}`;
+      pendingIfcPropertyEdits.set(key, {
+        modelId,
+        localId,
+        propertySet,
+        property: row.property,
+        value: row.value,
+        valueType: row.valueType,
+      });
+    }
+    lastMetadataTemplate = {
+      propertySet,
+      rows: rows.map((row) => ({ ...row })),
+    };
+    btnCopyPreviousMetadata.disabled = false;
+    renderPendingIfcEdits(`Staged ${rows.length} metadata value${rows.length === 1 ? '' : 's'} for element #${localId}. Select the next element to continue.`);
+  });
+
+  btnStagePropertyEdit.addEventListener('click', () => {
+    if (!selectedIfcElement) {
+      renderPendingIfcEdits('Select one IFC element before staging a property change.');
+      return;
+    }
+    const propertySet = ifcEditPset.value.trim();
+    const property = ifcEditProperty.value.trim();
+    const value = ifcEditValue.value;
+    if (!propertySet || !property) {
+      renderPendingIfcEdits('Property set and property name are required.');
+      return;
+    }
+    const modelId = selectedIfcElement.modelId;
+    const localId = Number(selectedIfcElement.localId);
+    const key = `${ifcEditElementKey(modelId, localId)}:${propertySet.toLowerCase()}:${property.toLowerCase()}`;
+    pendingIfcPropertyEdits.set(key, { modelId, localId, propertySet, property, value });
+    renderPendingIfcEdits(`Staged ${propertySet}.${property} for element #${localId}.`);
+  });
+
+  btnStageColorEdit.addEventListener('click', async () => {
+    const color = normalizeHexColor(ifcEditColor.value);
+    if (!color) {
+      renderPendingIfcEdits('Choose a valid RGB color.');
+      return;
+    }
+    selectedAppearanceColor = color;
+    contextSelectionColor.value = color;
+    contextColorHex.value = color.toUpperCase();
+    await applyAppearanceColorToCurrentSelection();
+  });
+
+  btnClearIfcEdits.addEventListener('click', () => {
+    pendingIfcPropertyEdits.clear();
+    pendingIfcColorEdits.clear();
+    renderPendingIfcEdits('All pending IFC edits cleared.');
+  });
+
+  btnExportEditedIfc.addEventListener('click', () => {
+    let exportedModels = 0;
+    let appliedChanges = 0;
+    let skippedChanges = 0;
+    for (const modelEntry of loadedModels) {
+      const modelIds = new Set([modelEntry.uuid, modelEntry.model?.uuid, modelEntry.model?.modelId].filter(Boolean));
+      const propertyEdits = Array.from(pendingIfcPropertyEdits.values()).filter((edit) => modelIds.has(edit.modelId));
+      const colorEdits = Array.from(pendingIfcColorEdits.values()).filter((edit) => modelIds.has(edit.modelId));
+      if (!propertyEdits.length && !colorEdits.length) continue;
+      try {
+        const result = applySafeIfcEdits(modelEntry.sourceIfcBytes, { propertyEdits, colorEdits });
+        const blob = new Blob([result.bytes], { type: 'application/x-step' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = editedIfcFileName(modelEntry.name);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+        exportedModels += 1;
+        appliedChanges += result.applied.length;
+        skippedChanges += result.skipped.length;
+        if (result.skipped.length) console.warn(`[Safe IFC Editor] ${modelEntry.name} skipped edits:`, result.skipped);
+      } catch (error) {
+        console.error(`[Safe IFC Editor] ${modelEntry.name}:`, error);
+        skippedChanges += propertyEdits.length + colorEdits.length;
+      }
+    }
+    renderPendingIfcEdits(exportedModels
+      ? `Exported ${appliedChanges} change${appliedChanges === 1 ? '' : 's'} in ${exportedModels} new IFC file${exportedModels === 1 ? '' : 's'}${skippedChanges ? `; ${skippedChanges} skipped (see console)` : ''}.`
+      : 'No edited IFC could be generated. Review the browser console for details.');
+  });
+
   contextIsolateItem.addEventListener('click', async () => {
     const selection = getSelectedModelIdMap();
     const selectionCount = countModelIdMapItems(selection);
@@ -2712,6 +3279,7 @@ async function initApp() {
         return false;
       }
     }
+    invalidateBatchUndo();
 
     const usedSequences = getEffectiveTaggedElements()
       .filter((element) => element.systemTag?.toLowerCase() === normalizedSystemTag.toLowerCase())
@@ -2758,18 +3326,36 @@ async function initApp() {
       updateTagAssignmentUi(`Warning: no loaded components belong to tray system "${selectedTraySystemTag}".`, 'warning');
       return false;
     }
+    invalidateBatchUndo();
 
     let sequenceIndex = 1;
+    const sequenceByType = new Map();
     for (const member of members) {
       const modelEntry = findLoadedModelEntry(member.modelId);
       if (!modelEntry) continue;
       const identity = await readElementIdentity(modelEntry.model, member.localId, modelEntry.name);
-      const sequenceNumber = String(sequenceIndex++).padStart(3, '0');
+      const usesPatternV2 = Boolean(member.typeCode);
+      const typeSequence = usesPatternV2 ? (sequenceByType.get(member.typeCode) || 1) : sequenceIndex++;
+      if (usesPatternV2) sequenceByType.set(member.typeCode, typeSequence + 1);
+      const sequenceDigits = usesPatternV2
+        ? Math.max(2, String(member.sequenceNumber || '').length)
+        : 3;
+      const sequenceNumber = String(typeSequence).padStart(sequenceDigits, '0');
+      const componentId = usesPatternV2
+        ? `${selectedTraySystemTag}.${member.typeCode}.${sequenceNumber}`
+        : `${selectedTraySystemTag}-C${sequenceNumber}`;
       tagAssignments.set(getAssignmentKey(member.modelId, member.localId), {
         ...identity,
         systemTag: selectedTraySystemTag,
-        componentId: `${selectedTraySystemTag}-C${sequenceNumber}`,
+        elementTag: componentId,
+        componentId,
+        elementKind: member.elementKind || '',
+        typeCode: member.typeCode || '',
         sequenceNumber,
+        schemeVersion: member.schemeVersion || (usesPatternV2 ? '2' : ''),
+        originalIfcTag: member.originalIfcTag || identity.ifcTag || '',
+        classificationMethod: member.classificationMethod || '',
+        classificationConfidence: member.classificationConfidence ?? '',
         excelRowIndex: member.excelRowIndex ?? selectedExcelRowIndex,
       });
       if (selectedIfcElement?.modelId === member.modelId && Number(selectedIfcElement.localId) === Number(member.localId)) {
@@ -2780,7 +3366,7 @@ async function initApp() {
     renderExcelTable();
     refreshValidationReportIfOpen();
     updateTagAssignmentUi(
-      `Regenerated ${members.length} component ID${members.length === 1 ? '' : 's'} for tray system "${selectedTraySystemTag}".`,
+      `Regenerated ${members.length} element tag${members.length === 1 ? '' : 's'} for tray system "${selectedTraySystemTag}".`,
       'success',
     );
     return true;
@@ -3076,6 +3662,101 @@ async function initApp() {
     renderExcelTable();
   });
 
+  taggingTabAssign?.addEventListener('click', () => setTaggingMode('assign'));
+  taggingTabManage?.addEventListener('click', () => setTaggingMode('manage'));
+
+  for (const field of [
+    batchPrefix,
+    batchSystem,
+    batchElementKind,
+    batchTrayCode,
+    batchFittingCode,
+    batchStartSequence,
+    batchSequenceDigits,
+  ]) {
+    const onBatchPatternChange = () => {
+      updateBatchPatternExample();
+      if (batchPreviewAssignments.length) clearBatchPreview('Pattern changed. Preview the selected elements again.');
+    };
+    field?.addEventListener('input', onBatchPatternChange);
+    field?.addEventListener('change', onBatchPatternChange);
+  }
+
+  btnPreviewBatchTags?.addEventListener('click', async () => {
+    const elements = await getOrderedCurrentSelectionElements();
+    if (!elements.length) {
+      clearBatchPreview('Select one or more IFC elements to begin.');
+      return;
+    }
+    batchPreviewElements = elements;
+    await generateBatchPreview(batchPreviewElements);
+  });
+
+  batchReplaceConflicts?.addEventListener('change', () => {
+    const hasConflicts = batchPreviewAssignments.some((item) => item.conflict);
+    btnApplyBatchTags.disabled = !batchPreviewAssignments.length || (hasConflicts && !batchReplaceConflicts.checked);
+  });
+
+  btnApplyBatchTags?.addEventListener('click', () => {
+    if (!batchPreviewAssignments.length) return;
+    const conflicts = batchPreviewAssignments.filter((item) => item.conflict);
+    if (conflicts.length && !batchReplaceConflicts.checked) {
+      setBatchStatus('Confirm replacement of the existing assignments before applying this batch.', 'warning');
+      return;
+    }
+
+    lastBatchSnapshot = batchPreviewAssignments.map((assignment) => {
+      const key = getAssignmentKey(assignment.modelId, assignment.localId);
+      return {
+        key,
+        previous: tagAssignments.has(key) ? { ...tagAssignments.get(key) } : null,
+      };
+    });
+    for (const assignment of batchPreviewAssignments) {
+      const { previousAssignment, previousTag, conflict, ...committed } = assignment;
+      tagAssignments.set(getAssignmentKey(committed.modelId, committed.localId), {
+        ...committed,
+        excelRowIndex: selectedExcelRowIndex,
+      });
+    }
+
+    const systemTag = batchPreviewAssignments[0].systemTag;
+    selectedTraySystemTag = systemTag;
+    systemTagInput.value = systemTag;
+    btnUndoBatchTags.disabled = false;
+    renderExcelTable();
+    refreshValidationReportIfOpen();
+    if (selectedIfcElement) syncProjectTagPropertyGroup(activeModel, selectedIfcElement.localId);
+    updateTagAssignmentUi(
+      `Applied ${batchPreviewAssignments.length} element tag${batchPreviewAssignments.length === 1 ? '' : 's'} to system “${systemTag}”.`,
+      'success',
+    );
+    setBatchStatus(
+      `Applied ${batchPreviewAssignments.length} tag${batchPreviewAssignments.length === 1 ? '' : 's'}. You can undo this batch until another batch is applied.`,
+      'success',
+    );
+  });
+
+  btnUndoBatchTags?.addEventListener('click', () => {
+    if (!lastBatchSnapshot?.length) return;
+    for (const snapshot of lastBatchSnapshot) {
+      if (snapshot.previous) tagAssignments.set(snapshot.key, snapshot.previous);
+      else tagAssignments.delete(snapshot.key);
+    }
+    const restoredCount = lastBatchSnapshot.length;
+    lastBatchSnapshot = null;
+    btnUndoBatchTags.disabled = true;
+    renderExcelTable();
+    refreshValidationReportIfOpen();
+    if (selectedIfcElement) syncProjectTagPropertyGroup(activeModel, selectedIfcElement.localId);
+    updateTagAssignmentUi(`Undid the last batch of ${restoredCount} tag${restoredCount === 1 ? '' : 's'}.`, 'success');
+    setBatchStatus(`Last batch undone. ${restoredCount} element${restoredCount === 1 ? '' : 's'} restored.`, 'success');
+  });
+
+  setTaggingMode('assign');
+  updateBatchPatternExample();
+  reconcileSelectionOrder({});
+
   traySystemFilter?.addEventListener('input', () => {
     traySystemFilterText = traySystemFilter.value;
     renderTraySystemManager();
@@ -3182,6 +3863,7 @@ async function initApp() {
       updateTagAssignmentUi('Warning: select one or more IFC elements before removing from a tray system.', 'warning');
       return;
     }
+    invalidateBatchUndo();
 
     let removed = 0;
     let markedDeleted = 0;
@@ -3226,6 +3908,7 @@ async function initApp() {
     const oldTag = selectedTraySystemTag;
     const newTag = getEnteredSystemTag();
     if (!oldTag || !newTag || oldTag.toLowerCase() === newTag.toLowerCase()) return;
+    invalidateBatchUndo();
 
     const members = findSystemMembers(oldTag);
     if (!members.length) {
@@ -3238,11 +3921,21 @@ async function initApp() {
       if (!modelEntry) continue;
       const identity = await readElementIdentity(modelEntry.model, member.localId, modelEntry.name);
       const sequenceNumber = member.sequenceNumber || '001';
+      const componentId = member.typeCode
+        ? `${newTag}.${member.typeCode}.${sequenceNumber}`
+        : `${newTag}-C${sequenceNumber}`;
       tagAssignments.set(getAssignmentKey(member.modelId, member.localId), {
         ...identity,
         systemTag: newTag,
-        componentId: `${newTag}-C${sequenceNumber}`,
+        elementTag: componentId,
+        componentId,
+        elementKind: member.elementKind || '',
+        typeCode: member.typeCode || '',
         sequenceNumber,
+        schemeVersion: member.schemeVersion || (member.typeCode ? '2' : ''),
+        originalIfcTag: member.originalIfcTag || identity.ifcTag || '',
+        classificationMethod: member.classificationMethod || '',
+        classificationConfidence: member.classificationConfidence ?? '',
         excelRowIndex: member.excelRowIndex ?? selectedExcelRowIndex,
       });
       if (selectedIfcElement?.modelId === member.modelId && Number(selectedIfcElement.localId) === Number(member.localId)) {
@@ -3260,62 +3953,14 @@ async function initApp() {
     const systemTag = getEnteredSystemTag();
     const selectedElements = traySelection.size
       ? Array.from(traySelection.values())
-      : selectedIfcElement ? [{ ...selectedIfcElement }] : [];
+      : await getCurrentSelectionElements();
     await assignElementsToSystem(systemTag, selectedElements);
-    return;
-    if (!systemTag || !selectedElements.length) return;
-
-    const conflict = selectedElements.find((element) => {
-      const assignment = getAssignmentForElement(element);
-      const currentSystem = assignment?.systemTag || getExistingProjectTag(element);
-      return currentSystem && currentSystem.toLowerCase() !== systemTag.toLowerCase();
-    });
-    if (conflict) {
-      const currentSystem = getAssignmentForElement(conflict)?.systemTag || getExistingProjectTag(conflict);
-      const confirmed = await requestTagReplacement(conflict.localId, currentSystem, systemTag);
-      if (!confirmed) {
-        updateTagAssignmentUi('Tray-system assignment cancelled.', 'warning');
-        return;
-      }
-    }
-
-    const usedSequences = getEffectiveTaggedElements()
-      .filter((element) => element.systemTag?.toLowerCase() === systemTag.toLowerCase())
-      .map((element) => Number.parseInt(element.sequenceNumber, 10))
-      .filter(Number.isFinite);
-    let nextSequence = usedSequences.length ? Math.max(...usedSequences) + 1 : 1;
-
-    for (const element of selectedElements) {
-      const key = getAssignmentKey(element.modelId, element.localId);
-      const existingAssignment = getAssignmentForElement(element);
-      const sourceAssignment = loadedModels.find((entry) =>
-        entry.model.modelId === element.modelId || entry.model.uuid === element.modelId
-      )?.existingProjectTags?.get(Number(element.localId));
-      const keepSequence = (existingAssignment?.systemTag || sourceAssignment?.systemTag)?.toLowerCase() === systemTag.toLowerCase();
-      const sequenceNumber = keepSequence
-        ? existingAssignment?.sequenceNumber || sourceAssignment?.sequenceNumber
-        : String(nextSequence++).padStart(3, '0');
-      tagAssignments.set(key, {
-        ...element,
-        systemTag,
-        componentId: `${systemTag}-C${sequenceNumber}`,
-        sequenceNumber,
-        excelRowIndex: selectedExcelRowIndex,
-      });
-    }
-    traySelection.clear();
-    renderExcelTable();
-    updateTagAssignmentUi(
-      `Successfully assigned tray system “${systemTag}” to ${selectedElements.length} element${selectedElements.length === 1 ? '' : 's'}.`,
-      'success',
-    );
-    if (selectedIfcElement) syncProjectTagPropertyGroup(activeModel, selectedIfcElement.localId);
-    refreshValidationReportIfOpen();
   });
 
   btnUnassignTag.addEventListener('click', () => {
     const assignment = getAssignmentForElement();
     if (!assignment) return;
+    invalidateBatchUndo();
     tagAssignments.delete(getAssignmentKey(assignment.modelId, assignment.localId));
     selectedExcelRowIndex = assignment.excelRowIndex;
     renderExcelTable();
@@ -3335,31 +3980,52 @@ async function initApp() {
   });
 
   btnExportTags.addEventListener('click', async () => {
-    if (tagAssignments.size === 0) return;
+    if (getEffectiveTaggedElements().length === 0) return;
     updateTagAssignmentUi('Reading tray dimensions for the mapping export...');
     btnExportTags.disabled = true;
-    const assignments = Array.from(tagAssignments.values())
+    const assignments = getEffectiveTaggedElements()
       .sort((a, b) => a.systemTag.localeCompare(b.systemTag) || Number(a.sequenceNumber) - Number(b.sequenceNumber));
-    const rows = await Promise.all(assignments.map(async (assignment) => ({
+    const rows = await Promise.all(assignments.map(async (assignment) => {
+      const modelEntry = findLoadedModelEntry(assignment.modelId);
+      const identity = modelEntry
+        ? await readElementIdentity(modelEntry.model, assignment.localId, modelEntry.name)
+        : assignment;
+      return {
         Model: assignment.modelName,
-        IFC_GlobalId: assignment.globalId,
+        IFC_GlobalId: assignment.globalId || identity.globalId || '',
         Local_ID: assignment.localId,
         SystemTag: assignment.systemTag,
+        ElementTag: assignment.elementTag || assignment.componentId,
         ComponentId: assignment.componentId,
+        ElementKind: assignment.elementKind || '',
+        TypeCode: assignment.typeCode || '',
         SequenceNumber: assignment.sequenceNumber,
         SourceState: getAssignmentSourceLabel({
           ...assignment,
-          source: 'pending',
+          source: assignment.source,
           wasSaved: Boolean(getExistingTrayAssignment(assignment)),
         }),
-        Element_Name: assignment.name,
-        IFC_Type: assignment.type,
+        Element_Name: assignment.name || identity.name || '',
+        IFC_Type: assignment.type || identity.type || '',
         ...await readElementDimensions(assignment),
-        Excel_Row: assignment.excelRowIndex === null ? '' : assignment.excelRowIndex + 2,
-      })));
+        Original_IFC_Tag: assignment.originalIfcTag || identity.ifcTag || '',
+        Classification_Method: assignment.classificationMethod || '',
+        Classification_Confidence: assignment.classificationConfidence ?? '',
+        Excel_Row: Number.isInteger(assignment.excelRowIndex) ? assignment.excelRowIndex + 2 : '',
+      };
+    }));
     const worksheet = XLSX.utils.json_to_sheet(rows);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Tag Mapping');
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Tag Register');
+    const summaryRows = getTraySystemSummaries().map((system) => ({
+      SystemTag: system.tag,
+      Components: system.count,
+      CableTrays: system.members.filter((member) => member.elementKind === 'tray').length,
+      CableFittings: system.members.filter((member) => member.elementKind === 'fitting').length,
+      Models: system.models.join(', '),
+      Status: system.status,
+    }));
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(summaryRows), 'Summary');
     XLSX.writeFile(workbook, 'IFC_Tag_Mapping.xlsx');
     updateTagAssignmentUi(`Exported ${rows.length} tag assignment${rows.length === 1 ? '' : 's'}.`);
   });

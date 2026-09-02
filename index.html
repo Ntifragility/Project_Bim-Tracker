@@ -192,6 +192,61 @@
                 </div>
                 <!-- Dynamic Property Sets -->
                 <div id="prop-psets-container" class="prop-psets-container"></div>
+                <section class="ifc-edit-panel" aria-labelledby="ifc-edit-title">
+                  <div class="ifc-edit-heading">
+                    <strong id="ifc-edit-title">Safe IFC Editor</strong>
+                    <span id="ifc-edit-count">0 pending</span>
+                  </div>
+                  <section class="metadata-editor" aria-labelledby="metadata-editor-title">
+                    <strong id="metadata-editor-title">Manual Metadata</strong>
+                    <p class="ifc-edit-help">Add WBS, SOP, or other non-geometric metadata to the selected element.</p>
+                    <label for="metadata-pset">Custom property set</label>
+                    <input id="metadata-pset" type="text" value="COSAPI_CONSTRUCTION" list="metadata-pset-suggestions" />
+                    <datalist id="metadata-pset-suggestions">
+                      <option value="COSAPI_CONSTRUCTION"></option>
+                      <option value="COSAPI_PLANNING"></option>
+                      <option value="COSAPI_QA"></option>
+                      <option value="BIM_TRACKER_EDIT"></option>
+                    </datalist>
+                    <div class="metadata-table-heading">
+                      <span>Property</span>
+                      <span>Type</span>
+                      <span>Value</span>
+                      <span></span>
+                    </div>
+                    <div id="metadata-rows" class="metadata-rows"></div>
+                    <div class="metadata-actions">
+                      <button id="btn-add-metadata-row" class="btn btn-secondary" type="button">+ Add Property</button>
+                      <button id="btn-copy-previous-metadata" class="btn btn-secondary" type="button" disabled>Copy Previous</button>
+                      <button id="btn-stage-metadata" class="btn btn-primary" type="button">Stage Metadata</button>
+                    </div>
+                  </section>
+                  <details class="existing-property-editor">
+                    <summary>Edit an existing property</summary>
+                    <p class="ifc-edit-help">Select an existing non-quantity property above to load it here.</p>
+                  <label for="ifc-edit-pset">Property set</label>
+                  <input id="ifc-edit-pset" type="text" value="BIM_TRACKER_EDIT" />
+                  <label for="ifc-edit-property">Property</label>
+                  <input id="ifc-edit-property" type="text" placeholder="ReviewStatus" />
+                  <label for="ifc-edit-value">New value</label>
+                  <input id="ifc-edit-value" type="text" placeholder="Approved" />
+                  <button id="btn-stage-property-edit" class="btn btn-secondary" type="button">Stage Property Change</button>
+                  </details>
+                  <div class="ifc-edit-color-row">
+                    <label for="ifc-edit-color">Saved color</label>
+                    <input id="ifc-edit-color" type="color" value="#f54242" />
+                    <label for="ifc-edit-transparency">Transparency</label>
+                    <input id="ifc-edit-transparency" type="number" min="0" max="100" step="5" value="0" />
+                    <span>%</span>
+                  </div>
+                  <button id="btn-stage-color-edit" class="btn btn-secondary" type="button">Stage Selected Color</button>
+                  <div id="ifc-edit-status" class="ifc-edit-status">Select an element to begin.</div>
+                  <div id="ifc-edit-pending-list" class="ifc-edit-pending-list"></div>
+                  <div class="ifc-edit-actions">
+                    <button id="btn-clear-ifc-edits" class="btn btn-secondary" type="button" disabled>Clear Pending</button>
+                    <button id="btn-export-edited-ifc" class="btn btn-primary" type="button" disabled>Export Edited IFC</button>
+                  </div>
+                </section>
               </div>
             </div>
           </section>
@@ -218,6 +273,86 @@
         <div class="excel-panel-content">
           <!-- Selection & Configuration -->
           <div class="excel-config-group">
+            <div class="tagging-mode-tabs" role="tablist" aria-label="Tagging workflow">
+              <button id="tagging-tab-assign" class="tagging-mode-tab active" type="button" role="tab" aria-selected="true" aria-controls="batch-tagging-pane">Assign Tags</button>
+              <button id="tagging-tab-manage" class="tagging-mode-tab" type="button" role="tab" aria-selected="false" aria-controls="tag-management-pane">Manage Tags</button>
+            </div>
+
+            <section id="batch-tagging-pane" class="batch-tagging-workbench" role="tabpanel" aria-labelledby="tagging-tab-assign">
+              <div class="batch-heading">
+                <div>
+                  <span class="batch-kicker">Batch tagging</span>
+                  <h3>Build element tags</h3>
+                </div>
+                <span id="batch-selection-count" class="batch-count">0 selected</span>
+              </div>
+              <p class="batch-help">Select elements in the viewer, choose their kind, and review the numbering before applying it.</p>
+
+              <div class="batch-form-grid">
+                <label class="batch-field batch-field-wide">
+                  <span>Prefix</span>
+                  <input id="batch-prefix" class="excel-search-input" type="text" value="PT" autocomplete="off" />
+                </label>
+                <label class="batch-field">
+                  <span>System / Run</span>
+                  <input id="batch-system" class="excel-search-input" type="text" value="1" autocomplete="off" />
+                </label>
+                <label class="batch-field">
+                  <span>Element kind</span>
+                  <select id="batch-element-kind" class="excel-select">
+                    <option value="tray">Cable Tray</option>
+                    <option value="fitting">Cable Fitting</option>
+                    <option value="auto">Auto classify</option>
+                  </select>
+                </label>
+                <label class="batch-field">
+                  <span>Tray code</span>
+                  <input id="batch-tray-code" class="excel-search-input" type="text" value="01" inputmode="numeric" />
+                </label>
+                <label class="batch-field">
+                  <span>Fitting code</span>
+                  <input id="batch-fitting-code" class="excel-search-input" type="text" value="02" inputmode="numeric" />
+                </label>
+                <label class="batch-field">
+                  <span>Start at</span>
+                  <input id="batch-start-sequence" class="excel-search-input" type="number" value="1" min="1" />
+                </label>
+                <label class="batch-field">
+                  <span>Digits</span>
+                  <select id="batch-sequence-digits" class="excel-select">
+                    <option value="2" selected>2 digits</option>
+                    <option value="3">3 digits</option>
+                    <option value="4">4 digits</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="batch-pattern-preview" aria-live="polite">
+                <span>Pattern</span>
+                <strong id="batch-pattern-example">PT1.01.01</strong>
+              </div>
+
+              <div class="batch-primary-actions">
+                <button id="btn-preview-batch-tags" class="btn btn-secondary" type="button" disabled>Preview selected</button>
+                <button id="btn-apply-batch-tags" class="btn btn-primary" type="button" disabled>Apply tags</button>
+              </div>
+
+              <label id="batch-replace-conflicts-row" class="batch-conflict-control" hidden>
+                <input id="batch-replace-conflicts" type="checkbox" />
+                <span>Replace existing assignments shown as conflicts</span>
+              </label>
+
+              <div id="batch-status" class="tag-assignment-status">Select one or more IFC elements to begin.</div>
+              <div id="batch-preview-panel" class="batch-preview-panel" hidden>
+                <div class="batch-preview-heading">
+                  <strong>Assignment preview</strong>
+                  <button id="btn-undo-batch-tags" class="tray-system-mini-action" type="button" disabled>Undo last batch</button>
+                </div>
+                <ol id="batch-preview-list" class="batch-preview-list"></ol>
+              </div>
+            </section>
+
+            <section id="tag-management-pane" role="tabpanel" aria-labelledby="tagging-tab-manage" hidden>
             <div class="excel-field">
               <label for="system-tag-input">System Tag</label>
               <input type="text" id="system-tag-input" class="excel-search-input" placeholder="Example: 140ST-900-001" autocomplete="off" list="system-tag-suggestions" />
@@ -321,6 +456,7 @@
               </div>
               <div id="tag-validation-counts" class="tag-validation-counts"></div>
               <ul id="tag-validation-issues" class="tag-validation-issues"></ul>
+            </section>
             </section>
           </div>
           
