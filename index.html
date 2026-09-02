@@ -51,9 +51,25 @@
           <p class="subtitle">IFC Model Viewer & Analyzer</p>
         </header>
 
+        <!-- Sidebar Navigation Tabs -->
+        <nav class="sidebar-nav-tabs" role="tablist" aria-label="Sidebar section navigation">
+          <button class="sidebar-tab-btn active" data-tab-target="models" role="tab" aria-selected="true" type="button">
+            <span>🏠</span> Models
+          </button>
+          <button class="sidebar-tab-btn" data-tab-target="controls" role="tab" aria-selected="false" type="button">
+            <span>⚙️</span> Controls
+          </button>
+          <button class="sidebar-tab-btn" data-tab-target="routing" role="tab" aria-selected="false" type="button">
+            <span>🔌</span> Routing
+          </button>
+          <button class="sidebar-tab-btn" data-tab-target="loaded" role="tab" aria-selected="false" type="button">
+            <span>📦</span> Loaded
+          </button>
+        </nav>
+
         <div class="sidebar-content">
           <!-- Model Loader Section -->
-          <section class="control-group">
+          <section class="control-group active" data-sidebar-panel="models">
             <h3>Models</h3>
             <div class="loader-buttons">
               <button id="btn-load-sample" class="btn btn-primary">
@@ -77,7 +93,7 @@
           </section>
 
           <!-- Viewer Settings Section -->
-          <section class="control-group">
+          <section class="control-group" data-sidebar-panel="controls">
             <h3>Controls</h3>
             <div class="control-options">
               <button id="btn-reset-camera" class="btn btn-action">
@@ -125,7 +141,7 @@
           </section>
 
           <!-- Cable Routing Section -->
-          <section class="control-group routing-group">
+          <section class="control-group routing-group" data-sidebar-panel="routing">
             <h3>Cable Routing</h3>
             <div class="routing-controls">
               <label for="routing-tolerance">Connection tolerance (mm)</label>
@@ -149,7 +165,7 @@
           </section>
 
           <!-- Loaded Models Section -->
-          <section class="control-group">
+          <section class="control-group" data-sidebar-panel="loaded">
             <h3>Loaded Models</h3>
             <div id="loaded-models-container" class="loaded-models-list-panel">
               <div class="models-placeholder">No models loaded.</div>
@@ -166,6 +182,22 @@
                 <span>Click an element in the 3D viewer to inspect its properties.</span>
               </div>
               <div class="element-props-content" style="display: none;">
+                <!-- Multi-Selection Navigation Bar -->
+                <div id="multi-select-header" class="multi-select-header" style="display: none;">
+                  <div class="multi-select-badge-row">
+                    <span id="multi-select-badge" class="multi-select-badge">0 Elements Selected</span>
+                  </div>
+                  <div id="multi-select-type-breakdown" class="multi-select-type-breakdown"></div>
+                  <div class="multi-select-switcher">
+                    <button id="btn-multi-combined" class="multi-switcher-btn active" type="button">Combined View</button>
+                    <div class="multi-switcher-nav">
+                      <button id="btn-multi-prev" type="button" class="multi-nav-btn" disabled>◄</button>
+                      <span id="multi-select-index" class="multi-select-index-label">1 of 1</span>
+                      <button id="btn-multi-next" type="button" class="multi-nav-btn">►</button>
+                    </div>
+                  </div>
+                </div>
+
                 <!-- Element Identity -->
                 <div class="element-identity">
                   <div class="element-type-badge" id="prop-type-badge">IfcElement</div>

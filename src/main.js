@@ -185,6 +185,17 @@ const btnAddMetadataRow = document.getElementById('btn-add-metadata-row');
 const btnCopyPreviousMetadata = document.getElementById('btn-copy-previous-metadata');
 const btnStageMetadata = document.getElementById('btn-stage-metadata');
 
+// Multi-Selection Properties DOM Elements & State
+let multiSelectionElements = [];
+let multiSelectionIndex = -1; // -1 = Combined View, 0..N = individual element index
+const multiSelectHeader = document.getElementById('multi-select-header');
+const multiSelectBadge = document.getElementById('multi-select-badge');
+const multiSelectTypeBreakdown = document.getElementById('multi-select-type-breakdown');
+const btnMultiCombined = document.getElementById('btn-multi-combined');
+const btnMultiPrev = document.getElementById('btn-multi-prev');
+const btnMultiNext = document.getElementById('btn-multi-next');
+const multiSelectIndex = document.getElementById('multi-select-index');
+
 // Utility: Show loading overlay
 function showLoader(title, status, progressVal) {
   loadingOverlay.style.display = 'flex';
@@ -377,6 +388,30 @@ async function initApp() {
       clearContinuityGroupHighlights();
     },
   });
+
+  // Set up Sidebar Tabs navigation
+  function setupSidebarTabs() {
+    const tabButtons = document.querySelectorAll('.sidebar-tab-btn');
+    const panels = document.querySelectorAll('section.control-group[data-sidebar-panel]');
+    if (!tabButtons.length || !panels.length) return;
+
+    tabButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        const targetTab = button.dataset.tabTarget;
+        tabButtons.forEach((btn) => {
+          const isActive = btn === button;
+          btn.classList.toggle('active', isActive);
+          btn.setAttribute('aria-selected', String(isActive));
+        });
+
+        panels.forEach((panel) => {
+          const isTarget = panel.dataset.sidebarPanel === targetTab;
+          panel.classList.toggle('active', isTarget);
+        });
+      });
+    });
+  }
+  setupSidebarTabs();
 
   function getAssignmentKey(modelId, localId) {
     return `${modelId}:${Number(localId)}`;
@@ -1739,8 +1774,8 @@ async function initApp() {
       selectedExpressId = viewportSelection[0]?.localId ?? null;
     }
 
-    if (viewportSelection.length > 1) {
-      traySelection.clear();
+    if (viewportSelection.length > 0) {
+      const identities = [];
       for (const selected of viewportSelection) {
         const modelEntry = loadedModels.find((entry) =>
           entry.model?.modelId === selected.modelId ||
@@ -1749,10 +1784,17 @@ async function initApp() {
         );
         if (!modelEntry) continue;
         const identity = await readElementIdentity(modelEntry.model, selected.localId, modelEntry.name);
-        traySelection.set(getAssignmentKey(identity.modelId, identity.localId), identity);
+        identities.push(identity);
       }
+      multiSelectionElements = identities;
+      if (viewportSelection.length > 1) {
+        traySelection.clear();
+        identities.forEach((id) => traySelection.set(getAssignmentKey(id.modelId, id.localId), id));
+      }
+    } else {
+      multiSelectionElements = [];
     }
-    
+
     if (selectedExpressId !== null) {
       const expressIdNum = Number(selectedExpressId);
       
@@ -1765,16 +1807,58 @@ async function initApp() {
       
       if (foundModelEntry) {
         activeModel = foundModelEntry.model;
-        await displayElementProperties(foundModelEntry.model, expressIdNum, foundModelEntry.name);
         selectedIfcElement = await readElementIdentity(foundModelEntry.model, expressIdNum, foundModelEntry.name);
         routingController.setSelectedElement(foundModelEntry.model, expressIdNum);
         await setOrbitTargetToElement(foundModelEntry.model, expressIdNum);
+
+        if (multiSelectionElements.length > 1) {
+          multiSelectionIndex = -1; // Combined View
+          await displayCombinedProperties(multiSelectionElements);
+        } else {
+          multiSelectionIndex = -1;
+          if (multiSelectHeader) multiSelectHeader.style.display = 'none';
+          await displayElementProperties(foundModelEntry.model, expressIdNum, foundModelEntry.name);
+        }
+
         updateTagAssignmentUi();
         refreshLoadedModelsList();
-        
       }
     }
   });
+
+  if (btnMultiCombined) {
+    btnMultiCombined.addEventListener('click', async () => {
+      if (multiSelectionElements.length < 2) return;
+      multiSelectionIndex = -1;
+      await displayCombinedProperties(multiSelectionElements);
+    });
+  }
+
+  if (btnMultiPrev) {
+    btnMultiPrev.addEventListener('click', async () => {
+      if (multiSelectionElements.length < 2 || multiSelectionIndex <= 0) return;
+      multiSelectionIndex -= 1;
+      const targetElem = multiSelectionElements[multiSelectionIndex];
+      const modelEntry = loadedModels.find((e) => e.model?.modelId === targetElem.modelId || e.model?.uuid === targetElem.modelId || e.uuid === targetElem.modelId);
+      if (modelEntry) {
+        renderMultiSelectHeader();
+        await displayElementProperties(modelEntry.model, targetElem.localId, modelEntry.name);
+      }
+    });
+  }
+
+  if (btnMultiNext) {
+    btnMultiNext.addEventListener('click', async () => {
+      if (multiSelectionElements.length < 2 || multiSelectionIndex >= multiSelectionElements.length - 1) return;
+      multiSelectionIndex += 1;
+      const targetElem = multiSelectionElements[multiSelectionIndex];
+      const modelEntry = loadedModels.find((e) => e.model?.modelId === targetElem.modelId || e.model?.uuid === targetElem.modelId || e.uuid === targetElem.modelId);
+      if (modelEntry) {
+        renderMultiSelectHeader();
+        await displayElementProperties(modelEntry.model, targetElem.localId, modelEntry.name);
+      }
+    });
+  }
 
   highlighter.events.select.onClear.add(() => {
     if (highlighter.isProgrammaticSelect) return;
@@ -2405,8 +2489,202 @@ async function initApp() {
     }
   }
 
+  function renderMultiSelectHeader() {
+    if (!multiSelectHeader) return;
+    const count = multiSelectionElements.length;
+    if (count < 2) {
+      multiSelectHeader.style.display = 'none';
+      return;
+    }
+    multiSelectHeader.style.display = 'flex';
+    multiSelectBadge.textContent = `${count} Elements Selected`;
+
+    const typeCounts = new Map();
+    multiSelectionElements.forEach((e) => {
+      const type = e.type || 'IfcElement';
+      typeCounts.set(type, (typeCounts.get(type) || 0) + 1);
+    });
+    const breakdownParts = Array.from(typeCounts.entries()).map(([type, c]) => `${c}× ${type}`);
+    multiSelectTypeBreakdown.textContent = breakdownParts.join(' · ');
+
+    const isCombined = multiSelectionIndex === -1;
+    btnMultiCombined.classList.toggle('active', isCombined);
+
+    if (isCombined) {
+      multiSelectIndex.textContent = `All ${count}`;
+      btnMultiPrev.disabled = true;
+      btnMultiNext.disabled = true;
+    } else {
+      multiSelectIndex.textContent = `${multiSelectionIndex + 1} of ${count}`;
+      btnMultiPrev.disabled = multiSelectionIndex <= 0;
+      btnMultiNext.disabled = multiSelectionIndex >= count - 1;
+    }
+  }
+
+  async function displayCombinedProperties(elements) {
+    if (!elements || elements.length === 0) return;
+
+    elementPropsPanel.classList.remove('empty');
+    elementPropsPanel.classList.add('active');
+    elementPropsPanel.querySelector('.element-props-placeholder').style.display = 'none';
+    elementPropsPanel.querySelector('.element-props-content').style.display = 'flex';
+    propPsetsContainer.innerHTML = '<div class="props-loading"><div class="props-loading-spinner"></div>Aggregating properties across elements…</div>';
+
+    renderMultiSelectHeader();
+
+    const types = new Set(elements.map((e) => e.type).filter(Boolean));
+    const names = new Set(elements.map((e) => e.name).filter(Boolean));
+    const tags = new Set(elements.map((e) => e.ifcTag).filter(Boolean));
+    const models = new Set(elements.map((e) => e.modelName).filter(Boolean));
+
+    const typeText = types.size === 1 ? Array.from(types)[0] : `Multiple Types (${types.size})`;
+    const nameText = names.size === 1 ? Array.from(names)[0] : '<Varies>';
+    const tagText = tags.size === 1 ? (Array.from(tags)[0] || '-') : (tags.size === 0 ? '-' : '<Varies>');
+    const modelText = models.size === 1 ? Array.from(models)[0] : `<Varies> (${models.size} models)`;
+
+    propTypeBadge.textContent = typeText;
+
+    propName.textContent = nameText;
+    propName.title = names.size === 1 ? nameText : Array.from(names).join(', ');
+    if (names.size !== 1) propName.classList.add('prop-value-varies'); else propName.classList.remove('prop-value-varies');
+
+    propGlobalId.textContent = '<Varies>';
+    propGlobalId.title = 'GlobalId is unique per element';
+    propGlobalId.classList.add('prop-value-varies');
+
+    propTag.textContent = tagText;
+    propTag.title = tags.size === 1 ? tagText : Array.from(tags).join(', ');
+    if (tags.size > 1) propTag.classList.add('prop-value-varies'); else propTag.classList.remove('prop-value-varies');
+
+    propExpressId.textContent = '<Varies>';
+    propExpressId.title = 'Express ID is unique per element';
+    propExpressId.classList.add('prop-value-varies');
+
+    propModel.textContent = modelText;
+    propModel.title = models.size === 1 ? modelText : Array.from(models).join(', ');
+    if (models.size !== 1) propModel.classList.add('prop-value-varies'); else propModel.classList.remove('prop-value-varies');
+
+    const cappedElements = elements.slice(0, 50);
+    const elementPsetsList = [];
+
+    for (const elem of cappedElements) {
+      const modelEntry = loadedModels.find((m) =>
+        m.model?.modelId === elem.modelId ||
+        m.model?.uuid === elem.modelId ||
+        m.uuid === elem.modelId
+      );
+      if (!modelEntry || !modelEntry.model || typeof modelEntry.model.getItemsData !== 'function') continue;
+
+      try {
+        const itemData = (await modelEntry.model.getItemsData([elem.localId], {
+          attributesDefault: true,
+          relations: {
+            IsDefinedBy: { attributes: true, relations: true },
+            DefinesOccurrence: { attributes: true, relations: true },
+          },
+        }))?.[0];
+
+        if (itemData) {
+          const psets = collectModernPropertySets(itemData);
+          elementPsetsList.push(psets);
+        }
+      } catch (err) {
+        console.warn(`[Combined Properties] Could not fetch psets for element #${elem.localId}:`, err);
+      }
+    }
+
+    propPsetsContainer.innerHTML = '';
+
+    if (elements.length > 50) {
+      const capNote = document.createElement('div');
+      capNote.style.cssText = 'color: #fcd34d; font-size: 0.72rem; padding: 6px 0; font-style: italic; text-align: center;';
+      capNote.textContent = `Property set comparison capped at first 50 elements (${elements.length} selected).`;
+      propPsetsContainer.appendChild(capNote);
+    }
+
+    if (!elementPsetsList.length) {
+      const note = document.createElement('div');
+      note.style.cssText = 'color: var(--text-muted); font-size: 0.8rem; padding: 8px 0; text-align: center;';
+      note.textContent = 'No property sets found for the selected elements.';
+      propPsetsContainer.appendChild(note);
+      return;
+    }
+
+    const psetMap = new Map();
+
+    elementPsetsList.forEach((psets) => {
+      for (const [psetName, props] of Object.entries(psets)) {
+        if (!psetMap.has(psetName)) psetMap.set(psetName, { elementCount: 0, propMap: new Map() });
+        const psetData = psetMap.get(psetName);
+        psetData.elementCount += 1;
+
+        for (const [propKey, propVal] of Object.entries(props)) {
+          if (!psetData.propMap.has(propKey)) psetData.propMap.set(propKey, []);
+          psetData.propMap.get(propKey).push(propVal);
+        }
+      }
+    });
+
+    const totalSampled = elementPsetsList.length;
+
+    for (const [psetName, psetData] of psetMap) {
+      const details = document.createElement('details');
+      details.className = 'pset-group';
+      details.open = true;
+
+      const summary = document.createElement('summary');
+      const titleSpan = document.createElement('span');
+      titleSpan.textContent = psetName;
+      summary.appendChild(titleSpan);
+
+      if (psetData.elementCount < totalSampled) {
+        const note = document.createElement('span');
+        note.className = 'pset-partial-note';
+        note.textContent = `(${psetData.elementCount}/${totalSampled} elements)`;
+        summary.appendChild(note);
+      }
+
+      details.appendChild(summary);
+
+      const content = document.createElement('div');
+      content.className = 'pset-content';
+
+      for (const [propKey, values] of psetData.propMap) {
+        const row = document.createElement('div');
+        row.className = 'prop-row';
+
+        const labelSpan = document.createElement('span');
+        labelSpan.className = 'prop-label';
+        labelSpan.textContent = propKey;
+
+        const valSpan = document.createElement('span');
+        valSpan.className = 'prop-value';
+
+        const distinctValues = new Set(values.map((v) => String(v ?? '')));
+
+        if (values.length < psetData.elementCount || distinctValues.size > 1) {
+          valSpan.textContent = '<Varies>';
+          valSpan.classList.add('prop-value-varies');
+          valSpan.title = `${distinctValues.size} distinct value(s): ${Array.from(distinctValues).slice(0, 5).join(', ')}`;
+        } else {
+          valSpan.textContent = values[0] ?? '-';
+          valSpan.title = String(values[0] ?? '');
+        }
+
+        row.append(labelSpan, valSpan);
+        content.appendChild(row);
+      }
+
+      details.appendChild(content);
+      propPsetsContainer.appendChild(details);
+    }
+  }
+
   // Clear the element properties panel back to placeholder state
   function clearElementProperties() {
+    multiSelectionElements = [];
+    multiSelectionIndex = -1;
+    if (multiSelectHeader) multiSelectHeader.style.display = 'none';
     elementPropsPanel.classList.add('empty');
     elementPropsPanel.classList.remove('active');
     elementPropsPanel.querySelector('.element-props-placeholder').style.display = 'flex';
@@ -2972,8 +3250,14 @@ async function initApp() {
   });
 
   btnStageMetadata.addEventListener('click', () => {
-    if (!selectedIfcElement) {
-      renderPendingIfcEdits('Select one IFC element before staging metadata.');
+    const targetElements = (multiSelectionElements.length >= 2 && multiSelectionIndex === -1)
+      ? multiSelectionElements
+      : (multiSelectionIndex >= 0 && multiSelectionElements[multiSelectionIndex])
+        ? [multiSelectionElements[multiSelectionIndex]]
+        : selectedIfcElement ? [selectedIfcElement] : [];
+
+    if (!targetElements.length) {
+      renderPendingIfcEdits('Select at least one IFC element before staging metadata.');
       return;
     }
     const propertySet = metadataPset.value.trim();
@@ -2991,30 +3275,46 @@ async function initApp() {
       renderPendingIfcEdits('Every metadata row requires both a property name and value.');
       return;
     }
-    const modelId = selectedIfcElement.modelId;
-    const localId = Number(selectedIfcElement.localId);
-    for (const row of rows) {
-      const key = `${ifcEditElementKey(modelId, localId)}:${propertySet.toLowerCase()}:${row.property.toLowerCase()}`;
-      pendingIfcPropertyEdits.set(key, {
-        modelId,
-        localId,
-        propertySet,
-        property: row.property,
-        value: row.value,
-        valueType: row.valueType,
-      });
+
+    let stagedEditsCount = 0;
+    for (const elem of targetElements) {
+      const modelId = elem.modelId;
+      const localId = Number(elem.localId);
+      for (const row of rows) {
+        const key = `${ifcEditElementKey(modelId, localId)}:${propertySet.toLowerCase()}:${row.property.toLowerCase()}`;
+        pendingIfcPropertyEdits.set(key, {
+          modelId,
+          localId,
+          propertySet,
+          property: row.property,
+          value: row.value,
+          valueType: row.valueType,
+        });
+        stagedEditsCount += 1;
+      }
     }
+
     lastMetadataTemplate = {
       propertySet,
       rows: rows.map((row) => ({ ...row })),
     };
     btnCopyPreviousMetadata.disabled = false;
-    renderPendingIfcEdits(`Staged ${rows.length} metadata value${rows.length === 1 ? '' : 's'} for element #${localId}. Select the next element to continue.`);
+
+    const countLabel = targetElements.length > 1
+      ? `${rows.length} metadata property value(s) across ${targetElements.length} elements (${stagedEditsCount} total edits)`
+      : `${rows.length} metadata value(s) for element #${targetElements[0].localId}`;
+    renderPendingIfcEdits(`Staged ${countLabel}.`);
   });
 
   btnStagePropertyEdit.addEventListener('click', () => {
-    if (!selectedIfcElement) {
-      renderPendingIfcEdits('Select one IFC element before staging a property change.');
+    const targetElements = (multiSelectionElements.length >= 2 && multiSelectionIndex === -1)
+      ? multiSelectionElements
+      : (multiSelectionIndex >= 0 && multiSelectionElements[multiSelectionIndex])
+        ? [multiSelectionElements[multiSelectionIndex]]
+        : selectedIfcElement ? [selectedIfcElement] : [];
+
+    if (!targetElements.length) {
+      renderPendingIfcEdits('Select at least one IFC element before staging a property change.');
       return;
     }
     const propertySet = ifcEditPset.value.trim();
@@ -3024,11 +3324,18 @@ async function initApp() {
       renderPendingIfcEdits('Property set and property name are required.');
       return;
     }
-    const modelId = selectedIfcElement.modelId;
-    const localId = Number(selectedIfcElement.localId);
-    const key = `${ifcEditElementKey(modelId, localId)}:${propertySet.toLowerCase()}:${property.toLowerCase()}`;
-    pendingIfcPropertyEdits.set(key, { modelId, localId, propertySet, property, value });
-    renderPendingIfcEdits(`Staged ${propertySet}.${property} for element #${localId}.`);
+
+    for (const elem of targetElements) {
+      const modelId = elem.modelId;
+      const localId = Number(elem.localId);
+      const key = `${ifcEditElementKey(modelId, localId)}:${propertySet.toLowerCase()}:${property.toLowerCase()}`;
+      pendingIfcPropertyEdits.set(key, { modelId, localId, propertySet, property, value });
+    }
+
+    const countLabel = targetElements.length > 1
+      ? `${propertySet}.${property} across ${targetElements.length} elements`
+      : `${propertySet}.${property} for element #${targetElements[0].localId}`;
+    renderPendingIfcEdits(`Staged ${countLabel}.`);
   });
 
   btnStageColorEdit.addEventListener('click', async () => {
