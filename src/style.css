@@ -573,6 +573,7 @@ body {
 
 .element-props-content {
   width: 100%;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -649,6 +650,9 @@ body {
 .ifc-edit-panel {
   display: grid;
   gap: 8px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   margin-top: 12px;
   padding: 12px;
   border: 1px solid rgba(99, 102, 241, 0.3);
@@ -662,6 +666,8 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .ifc-edit-heading {
@@ -673,6 +679,7 @@ body {
 .ifc-edit-status {
   color: var(--text-muted);
   font-size: 0.75rem;
+  overflow-wrap: anywhere;
 }
 
 .ifc-edit-panel label {
@@ -702,14 +709,24 @@ body {
   width: 58px;
 }
 
+.ifc-edit-color-row {
+  flex-wrap: wrap;
+}
+
 .ifc-edit-actions .btn {
   flex: 1;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .metadata-editor,
 .existing-property-editor {
   display: grid;
   gap: 8px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   padding-bottom: 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
@@ -723,9 +740,11 @@ body {
 .metadata-table-heading,
 .metadata-row {
   display: grid;
-  grid-template-columns: minmax(86px, 1.1fr) minmax(76px, 0.8fr) minmax(90px, 1.3fr) 24px;
+  grid-template-columns: minmax(0, 1fr) minmax(72px, 0.8fr) minmax(0, 1fr) 22px;
   gap: 5px;
   align-items: center;
+  width: 100%;
+  min-width: 0;
 }
 
 .metadata-table-heading {
@@ -736,6 +755,8 @@ body {
 .metadata-rows {
   display: grid;
   gap: 6px;
+  width: 100%;
+  min-width: 0;
 }
 
 .metadata-row input,
@@ -759,8 +780,16 @@ body {
 
 .metadata-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+.metadata-actions .btn {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .metadata-actions #btn-stage-metadata {
