@@ -245,7 +245,7 @@ function formatBytes(bytes) {
 
 // Main App Initialization
 async function initApp() {
-  console.log("Initializing BIM Tracker & Viewer...");
+  console.log("Initializing IFC Viewer...");
 
   // 1. Initialize Components
   const components = new OBC.Components();
@@ -366,7 +366,48 @@ async function initApp() {
   highlighter.setup({ world });
   // Allow normal hand jitter without interpreting an intended click as orbiting.
   highlighter.mouseMoveThreshold = 10;
+  highlighter.zoomToSelection = false;
   setSelectionHighlightStyle(selectionHighlightColor);
+
+  function excludeHiddenModelsFromPicker() {
+    const fragments = components.get(OBC.FragmentsManager);
+    const removed = new Map();
+    if (!fragments || !fragments.list) return () => {};
+    for (const modelEntry of loadedModels) {
+      if (modelEntry.visible) continue;
+      const modelId = modelEntry.model?.modelId || modelEntry.model?.uuid || modelEntry.uuid;
+      if (modelId && fragments.list.has(modelId)) {
+        removed.set(modelId, fragments.list.get(modelId));
+        fragments.list.delete(modelId);
+      }
+    }
+    return function restoreHiddenModels() {
+      for (const [id, model] of removed) {
+        fragments.list.set(id, model);
+      }
+    };
+  }
+
+  // Wrap Raycaster to exclude hidden models from FastModelPicker GPU pass
+  try {
+    const raycasterComponent = OBC.Raycaster || OBF.Raycaster;
+    if (raycasterComponent) {
+      const raycaster = components.get(raycasterComponent).get(world);
+      if (raycaster && typeof raycaster.castRay === 'function') {
+        const originalCastRay = raycaster.castRay.bind(raycaster);
+        raycaster.castRay = async function (...args) {
+          const restore = excludeHiddenModelsFromPicker();
+          try {
+            return await originalCastRay(...args);
+          } finally {
+            restore();
+          }
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('[Raycaster Wrapper] Could not wrap raycaster:', err);
+  }
   const hider = components.get(OBC.Hider);
   const routingController = initRoutingController({
     world,
@@ -1763,6 +1804,12 @@ async function initApp() {
         entry.uuid === selectedModelId
       );
       
+      // Guard: discard picks on hidden models
+      if (foundModelEntry && !foundModelEntry.visible) {
+        console.debug(`[Selection] Discarded pick on hidden model "${foundModelEntry.name}" (element #${expressIdNum}).`);
+        return;
+      }
+
       if (foundModelEntry) {
         activeModel = foundModelEntry.model;
         await displayElementProperties(foundModelEntry.model, expressIdNum, foundModelEntry.name);
