@@ -179,6 +179,7 @@ const btnStagePropertyEdit = document.getElementById('btn-stage-property-edit');
 const btnStageColorEdit = document.getElementById('btn-stage-color-edit');
 const btnClearIfcEdits = document.getElementById('btn-clear-ifc-edits');
 const btnExportEditedIfc = document.getElementById('btn-export-edited-ifc');
+const btnExportAllIfc = document.getElementById('btn-export-all-ifc');
 const metadataPset = document.getElementById('metadata-pset');
 const metadataRows = document.getElementById('metadata-rows');
 const btnAddMetadataRow = document.getElementById('btn-add-metadata-row');
@@ -195,6 +196,18 @@ const btnMultiCombined = document.getElementById('btn-multi-combined');
 const btnMultiPrev = document.getElementById('btn-multi-prev');
 const btnMultiNext = document.getElementById('btn-multi-next');
 const multiSelectIndex = document.getElementById('multi-select-index');
+
+// Tagged Tray Highlighting DOM Elements & State
+const TAGGED_TRAY_HIGHLIGHT_STYLE = 'tagged-tray-highlight';
+let isTaggedHighlightActive = localStorage.getItem('bim-highlight-tagged-active') === 'true';
+const storedTaggedColor = localStorage.getItem('bim-highlight-tagged-color');
+let taggedHighlightColor = (storedTaggedColor && /^#[0-9a-fA-F]{6}$/.test(storedTaggedColor)) ? storedTaggedColor.toLowerCase() : '#10b981';
+
+const toggleHighlightTagged = document.getElementById('toggle-highlight-tagged');
+const toggleHighlightTaggedSidebar = document.getElementById('toggle-highlight-tagged-sidebar');
+const taggedHighlightColorInput = document.getElementById('tagged-highlight-color');
+const taggedHighlightHexInput = document.getElementById('tagged-highlight-hex');
+const taggedHighlightCountBadge = document.getElementById('tagged-highlight-count');
 
 // Utility: Show loading overlay
 function showLoader(title, status, progressVal) {
@@ -256,7 +269,7 @@ function formatBytes(bytes) {
 
 // Main App Initialization
 async function initApp() {
-  console.log("Initializing BIM Tracker & Viewer...");
+  console.log("Initializing IFC Viewer...");
 
   // 1. Initialize Components
   const components = new OBC.Components();
@@ -937,6 +950,100 @@ async function initApp() {
     }
   }
 
+  // ──────────────────────────────────────────────
+  //  TAGGED TRAY SYSTEM AUTOMATIC HIGHLIGHTING
+  // ──────────────────────────────────────────────
+
+  async function refreshTaggedTrayHighlights() {
+    const taggedElements = typeof getEffectiveTaggedElements === 'function' ? getEffectiveTaggedElements() : [];
+    const count = taggedElements.length;
+
+    if (taggedHighlightCountBadge) {
+      taggedHighlightCountBadge.textContent = `${count} tagged`;
+    }
+    if (toggleHighlightTagged) {
+      toggleHighlightTagged.checked = isTaggedHighlightActive;
+    }
+    if (toggleHighlightTaggedSidebar) {
+      toggleHighlightTaggedSidebar.checked = isTaggedHighlightActive;
+    }
+    if (taggedHighlightColorInput) {
+      taggedHighlightColorInput.value = taggedHighlightColor;
+    }
+    if (taggedHighlightHexInput) {
+      taggedHighlightHexInput.value = taggedHighlightColor.toUpperCase();
+    }
+
+    if (!isTaggedHighlightActive) {
+      try {
+        await highlighter.clear(TAGGED_TRAY_HIGHLIGHT_STYLE);
+      } catch (err) {
+        console.warn('[Tagged Tray Highlight] Clear failed:', err);
+      }
+      return;
+    }
+
+    const fragmentMap = {};
+    for (const elem of taggedElements) {
+      if (!elem.modelId) continue;
+      if (!fragmentMap[elem.modelId]) fragmentMap[elem.modelId] = new Set();
+      fragmentMap[elem.modelId].add(Number(elem.localId));
+    }
+
+    highlighter.isProgrammaticSelect = true;
+    try {
+      await highlighter.clear(TAGGED_TRAY_HIGHLIGHT_STYLE);
+      if (countModelIdMapItems(fragmentMap) > 0) {
+        highlighter.styles.set(TAGGED_TRAY_HIGHLIGHT_STYLE, {
+          color: new THREE.Color(taggedHighlightColor),
+          opacity: 0.85,
+          transparent: true,
+        });
+        await highlighter.highlightByID(TAGGED_TRAY_HIGHLIGHT_STYLE, fragmentMap, false, false);
+      }
+    } catch (error) {
+      console.warn('[Tagged Tray Highlight] Highlight failed:', error);
+    } finally {
+      highlighter.isProgrammaticSelect = false;
+    }
+  }
+
+  function setTaggedHighlightActive(active) {
+    isTaggedHighlightActive = Boolean(active);
+    localStorage.setItem('bim-highlight-tagged-active', String(isTaggedHighlightActive));
+    if (toggleHighlightTagged) toggleHighlightTagged.checked = isTaggedHighlightActive;
+    if (toggleHighlightTaggedSidebar) toggleHighlightTaggedSidebar.checked = isTaggedHighlightActive;
+    refreshTaggedTrayHighlights();
+  }
+
+  function setTaggedHighlightColorValue(color) {
+    const normalized = normalizeHexColor(color);
+    if (!normalized) return;
+    taggedHighlightColor = normalized;
+    localStorage.setItem('bim-highlight-tagged-color', taggedHighlightColor);
+    if (taggedHighlightColorInput) taggedHighlightColorInput.value = taggedHighlightColor;
+    if (taggedHighlightHexInput) taggedHighlightHexInput.value = taggedHighlightColor.toUpperCase();
+    if (isTaggedHighlightActive) {
+      refreshTaggedTrayHighlights();
+    }
+  }
+
+  toggleHighlightTagged?.addEventListener('change', (e) => {
+    setTaggedHighlightActive(e.target.checked);
+  });
+
+  toggleHighlightTaggedSidebar?.addEventListener('change', (e) => {
+    setTaggedHighlightActive(e.target.checked);
+  });
+
+  taggedHighlightColorInput?.addEventListener('input', (e) => {
+    setTaggedHighlightColorValue(e.target.value);
+  });
+
+  taggedHighlightHexInput?.addEventListener('change', (e) => {
+    setTaggedHighlightColorValue(e.target.value);
+  });
+
   function getEnteredSystemTag() {
     return systemTagInput.value.trim();
   }
@@ -1572,6 +1679,7 @@ async function initApp() {
         !getEnteredSystemTag() ||
         getEnteredSystemTag().toLowerCase() === selectedTraySystemTag.toLowerCase();
     }
+    refreshTaggedTrayHighlights();
   }
 
   function normalizeColumnName(name) {
@@ -3356,18 +3464,65 @@ async function initApp() {
     renderPendingIfcEdits('All pending IFC edits cleared.');
   });
 
-  btnExportEditedIfc.addEventListener('click', () => {
+  function exportUnifiedIfc() {
+    if (loadedModels.length === 0) {
+      alert("No loaded IFC models to export.");
+      return;
+    }
+
+    const validation = runTagValidation();
+    if (tagAssignments.size > 0 && !validation.valid) {
+      const msg = `Export blocked: resolve ${validation.counts.errors} tag validation error${validation.counts.errors === 1 ? '' : 's'} in the Tagging Workbench first.`;
+      updateTagAssignmentUi(msg, 'warning');
+      alert(msg);
+      return;
+    }
+
     let exportedModels = 0;
-    let appliedChanges = 0;
-    let skippedChanges = 0;
+    let appliedEditsCount = 0;
+    let appliedTagsCount = 0;
+    let skippedCount = 0;
+
     for (const modelEntry of loadedModels) {
       const modelIds = new Set([modelEntry.uuid, modelEntry.model?.uuid, modelEntry.model?.modelId].filter(Boolean));
       const propertyEdits = Array.from(pendingIfcPropertyEdits.values()).filter((edit) => modelIds.has(edit.modelId));
       const colorEdits = Array.from(pendingIfcColorEdits.values()).filter((edit) => modelIds.has(edit.modelId));
-      if (!propertyEdits.length && !colorEdits.length) continue;
+      const assignments = Array.from(tagAssignments.values()).filter((assignment) =>
+        modelIds.has(assignment.modelId) || (modelEntry.model && (assignment.modelId === modelEntry.model.modelId || assignment.modelId === modelEntry.model.uuid))
+      );
+
+      const hasEdits = propertyEdits.length > 0 || colorEdits.length > 0;
+      const hasTags = assignments.length > 0;
+
+      if (!hasEdits && !hasTags) continue;
+
+      if (!modelEntry.sourceIfcBytes) {
+        console.warn(`[Unified IFC Export] No source bytes available for ${modelEntry.name}`);
+        skippedCount += propertyEdits.length + colorEdits.length + assignments.length;
+        continue;
+      }
+
       try {
-        const result = applySafeIfcEdits(modelEntry.sourceIfcBytes, { propertyEdits, colorEdits });
-        const blob = new Blob([result.bytes], { type: 'application/x-step' });
+        let currentBytes = modelEntry.sourceIfcBytes;
+
+        // 1. Apply property & appearance edits
+        if (hasEdits) {
+          const editResult = applySafeIfcEdits(currentBytes, { propertyEdits, colorEdits });
+          currentBytes = editResult.bytes;
+          appliedEditsCount += editResult.applied.length;
+          skippedCount += editResult.skipped.length;
+        }
+
+        // 2. Apply tag assignments
+        if (hasTags) {
+          const tagResult = addTraySystemAssignmentsToIfc(currentBytes, assignments);
+          currentBytes = tagResult.bytes;
+          appliedTagsCount += tagResult.applied.length;
+          skippedCount += tagResult.skipped.length;
+        }
+
+        // 3. Trigger download
+        const blob = new Blob([currentBytes], { type: 'application/x-step' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
@@ -3377,18 +3532,35 @@ async function initApp() {
         link.remove();
         URL.revokeObjectURL(url);
         exportedModels += 1;
-        appliedChanges += result.applied.length;
-        skippedChanges += result.skipped.length;
-        if (result.skipped.length) console.warn(`[Safe IFC Editor] ${modelEntry.name} skipped edits:`, result.skipped);
       } catch (error) {
-        console.error(`[Safe IFC Editor] ${modelEntry.name}:`, error);
-        skippedChanges += propertyEdits.length + colorEdits.length;
+        console.error(`[Unified IFC Export] Error exporting ${modelEntry.name}:`, error);
+        skippedCount += propertyEdits.length + colorEdits.length + assignments.length;
       }
     }
-    renderPendingIfcEdits(exportedModels
-      ? `Exported ${appliedChanges} change${appliedChanges === 1 ? '' : 's'} in ${exportedModels} new IFC file${exportedModels === 1 ? '' : 's'}${skippedChanges ? `; ${skippedChanges} skipped (see console)` : ''}.`
-      : 'No edited IFC could be generated. Review the browser console for details.');
-  });
+
+    if (exportedModels === 0) {
+      const msg = 'No staged property edits, colors, or tag assignments to export.';
+      renderPendingIfcEdits(msg);
+      updateTagAssignmentUi(msg, 'warning');
+      alert(msg);
+      return;
+    }
+
+    const details = [];
+    if (appliedEditsCount > 0) details.push(`${appliedEditsCount} property/color edit(s)`);
+    if (appliedTagsCount > 0) details.push(`${appliedTagsCount} tag assignment(s)`);
+    const summaryMsg = `Successfully exported ${details.join(' and ')} across ${exportedModels} new IFC file(s)${skippedCount ? ` (${skippedCount} skipped)` : ''}.`;
+
+    renderPendingIfcEdits(summaryMsg);
+    updateTagAssignmentUi(summaryMsg, skippedCount ? 'warning' : 'success');
+  }
+
+  if (btnExportAllIfc) {
+    btnExportAllIfc.addEventListener('click', exportUnifiedIfc);
+  }
+  if (btnExportEditedIfc) {
+    btnExportEditedIfc.addEventListener('click', exportUnifiedIfc);
+  }
 
   contextIsolateItem.addEventListener('click', async () => {
     const selection = getSelectedModelIdMap();
@@ -4337,71 +4509,9 @@ async function initApp() {
     updateTagAssignmentUi(`Exported ${rows.length} tag assignment${rows.length === 1 ? '' : 's'}.`);
   });
 
-  btnExportTaggedIfc.addEventListener('click', () => {
-    if (tagAssignments.size === 0) return;
-
-    const validation = runTagValidation();
-    if (!validation.valid) {
-      updateTagAssignmentUi(
-        `Export blocked: resolve ${validation.counts.errors} tag validation error${validation.counts.errors === 1 ? '' : 's'} first.`,
-        'warning',
-      );
-      return;
-    }
-
-    let exportedModels = 0;
-    let exportedTags = 0;
-    let createdTags = 0;
-    let updatedTags = 0;
-    let deletedTags = 0;
-    let skippedTags = 0;
-    for (const modelEntry of loadedModels) {
-      const assignments = Array.from(tagAssignments.values()).filter((assignment) =>
-        assignment.modelId === modelEntry.model.modelId || assignment.modelId === modelEntry.model.uuid
-      );
-      if (!assignments.length) continue;
-      if (!modelEntry.sourceIfcBytes) {
-        skippedTags += assignments.length;
-        continue;
-      }
-
-      try {
-        const result = addTraySystemAssignmentsToIfc(modelEntry.sourceIfcBytes, assignments);
-        const blob = new Blob([result.bytes], { type: 'application/x-step' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = taggedIfcFileName(modelEntry.name);
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(url);
-        exportedModels += 1;
-        exportedTags += result.applied.length;
-        createdTags += result.applied.filter((item) => item.action === 'created').length;
-        updatedTags += result.applied.filter((item) => item.action === 'updated').length;
-        deletedTags += result.applied.filter((item) => item.action === 'deleted').length;
-        skippedTags += result.skipped.length;
-      } catch (error) {
-        console.error(`[IFC Tag Export] ${modelEntry.name}:`, error);
-        skippedTags += assignments.length;
-      }
-    }
-
-    if (exportedModels === 0) {
-      updateTagAssignmentUi('Warning: no tagged IFC could be generated from the loaded source models.', 'warning');
-      return;
-    }
-    const actionSummary = [
-      createdTags ? `${createdTags} created` : '',
-      updatedTags ? `${updatedTags} updated` : '',
-      deletedTags ? `${deletedTags} deleted` : '',
-    ].filter(Boolean).join(', ');
-    updateTagAssignmentUi(
-      `Successfully exported ${exportedTags} change${exportedTags === 1 ? '' : 's'} into ${exportedModels} new IFC file${exportedModels === 1 ? '' : 's'}${actionSummary ? ` (${actionSummary})` : ''}${skippedTags ? `; ${skippedTags} skipped` : ''}.`,
-      skippedTags ? 'warning' : 'success',
-    );
-  });
+  if (btnExportTaggedIfc) {
+    btnExportTaggedIfc.addEventListener('click', exportUnifiedIfc);
+  }
 
   // Toggle Excel Drawer Collapse
   if (btnExcelPanelClose && excelPanel) {
@@ -4426,6 +4536,8 @@ async function initApp() {
       world.renderer.resize();
     }
   });
+
+  await refreshTaggedTrayHighlights();
 
   // Initialize Excel-IFC WebSocket bridge linkage
   initExcelBridge(components, world);

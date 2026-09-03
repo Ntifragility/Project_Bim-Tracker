@@ -860,13 +860,9 @@ section.control-group[data-sidebar-panel].active {
   display: flex;
   align-items: center;
   gap: 8px;
-<<<<<<< HEAD
   width: 100%;
   min-width: 0;
-=======
-  min-width: 0;
   max-width: 100%;
->>>>>>> origin/codex/batch-tagging-workbench
 }
 
 .ifc-edit-heading {
@@ -1468,6 +1464,83 @@ section.control-group[data-sidebar-panel].active {
   min-height: 0;
   min-width: 0;
   width: 100%;
+}
+
+/* Tagged Tray Highlight Toolbar */
+.tagged-highlight-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.28);
+  border-radius: 9px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.tagged-highlight-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tagged-highlight-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.tagged-highlight-title {
+  color: #a7f3d0;
+  font: 600 0.74rem var(--font-sans);
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+.tagged-highlight-count {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  background: rgba(16, 185, 129, 0.2);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  border-radius: 999px;
+  color: #6ee7b7;
+  font: 700 0.66rem var(--font-mono);
+}
+
+.tagged-highlight-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.tagged-highlight-controls input[type="color"] {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.tagged-highlight-controls input[type="text"] {
+  width: 60px;
+  padding: 3px 6px;
+  background: var(--bg-primary);
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font: 700 0.68rem var(--font-mono);
+  text-align: center;
+  text-transform: uppercase;
 }
 
 .tagging-mode-tabs {

@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>BIM Tracker & IFC Viewer</title>
+    <title>IFC Viewer</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -46,9 +46,8 @@
         <header class="sidebar-header">
           <div class="logo">
             <span class="logo-icon">🏗️</span>
-            <h1>BIM Tracker</h1>
+            <h1>IFC Viewer</h1>
           </div>
-          <p class="subtitle">IFC Model Viewer & Analyzer</p>
         </header>
 
         <!-- Sidebar Navigation Tabs -->
@@ -89,6 +88,10 @@
                   <span class="btn-icon">📊</span> Link Excel File
                 </button>
               </div>
+
+              <button id="btn-export-all-ifc" class="btn btn-primary" title="Export IFC with all property edits, colors, and tag assignments combined">
+                <span class="btn-icon">💾</span> Export Edited IFC
+              </button>
             </div>
           </section>
 
@@ -134,6 +137,14 @@
                   <input type="checkbox" id="toggle-darkmode" checked />
                   <span class="custom-checkbox"></span>
                   Dark Background
+                </label>
+              </div>
+
+              <div class="toggle-option">
+                <label for="toggle-highlight-tagged-sidebar">
+                  <input type="checkbox" id="toggle-highlight-tagged-sidebar" />
+                  <span class="custom-checkbox"></span>
+                  Highlight Tagged Trays
                 </label>
               </div>
 
@@ -305,6 +316,22 @@
         <div class="excel-panel-content">
           <!-- Selection & Configuration -->
           <div class="excel-config-group">
+            <!-- Tagged Tray Highlight Toolbar -->
+            <div class="tagged-highlight-toolbar">
+              <div class="tagged-highlight-main">
+                <label class="tagged-highlight-label" for="toggle-highlight-tagged">
+                  <input type="checkbox" id="toggle-highlight-tagged" />
+                  <span class="custom-checkbox"></span>
+                  <span class="tagged-highlight-title">Highlight Tagged Trays</span>
+                </label>
+                <span id="tagged-highlight-count" class="tagged-highlight-count">0 tagged</span>
+              </div>
+              <div class="tagged-highlight-controls">
+                <input id="tagged-highlight-color" type="color" value="#10b981" aria-label="Tagged tray highlight color" />
+                <input id="tagged-highlight-hex" type="text" value="#10B981" aria-label="Tagged tray highlight hex color" maxlength="7" />
+              </div>
+            </div>
+
             <div class="tagging-mode-tabs" role="tablist" aria-label="Tagging workflow">
               <button id="tagging-tab-assign" class="tagging-mode-tab active" type="button" role="tab" aria-selected="true" aria-controls="batch-tagging-pane">Assign Tags</button>
               <button id="tagging-tab-manage" class="tagging-mode-tab" type="button" role="tab" aria-selected="false" aria-controls="tag-management-pane">Manage Tags</button>
