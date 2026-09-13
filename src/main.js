@@ -1841,96 +1841,146 @@ async function initApp() {
   }
 
   async function readElementIdentity(model, localId, modelName) {
-    const data = (await model.getItemsData([Number(localId)], {
-      attributesDefault: true,
-      relationsDefault: { attributes: false, relations: false },
-    }))?.[0] || {};
+    let data = {};
     const read = (attribute) => attribute && typeof attribute === 'object' && 'value' in attribute
       ? attribute.value
       : attribute;
+
+    if (model && typeof model.getItemsData === 'function') {
+      try {
+        data = (await model.getItemsData([Number(localId)], {
+          attributesDefault: true,
+          relationsDefault: { attributes: false, relations: false },
+        }))?.[0] || {};
+      } catch (err) {
+        console.warn(`[readElementIdentity] getItemsData failed for #${localId}:`, err);
+      }
+    }
+
+    if (!data || Object.keys(data).length === 0) {
+      if (model && typeof model.getProperties === 'function') {
+        try {
+          data = (await model.getProperties(Number(localId))) || {};
+        } catch (err) {
+          console.warn(`[readElementIdentity] getProperties fallback failed for #${localId}:`, err);
+        }
+      }
+    }
+
     return {
-      modelId: model.modelId || model.uuid,
-      modelName,
+      modelId: model?.modelId || model?.uuid || '',
+      modelName: modelName || '',
       localId: Number(localId),
       globalId: read(data.GlobalId ?? data._guid) || '',
       name: read(data.Name) || '',
-      type: getModernIfcTypeName(data),
+      type: getModernIfcTypeName(data) || (data.type ? IFC_TYPE_MAP[data.type] || `IFC Type ${data.type}` : 'IfcElement'),
       ifcTag: read(data.Tag) || '',
     };
   }
 
   // Bidirectional highlighting: 3D Selection -> Excel Selection & Loaded Models Sync
   highlighter.events.select.onHighlight.add(async (fragmentMap) => {
-    if (highlighter.isProgrammaticSelect) return;
+    try {
+      console.log('[onHighlight] FIRED. isProgrammaticSelect=', highlighter.isProgrammaticSelect, 'fragmentMap keys=', Object.keys(fragmentMap || {}));
+      if (highlighter.isProgrammaticSelect) return;
 
-    currentSelectionMap = cloneModelIdMap(fragmentMap);
-    if (batchPreviewAssignments.length) clearBatchPreview('Selection changed. Preview the current selection again.');
-    reconcileSelectionOrder(currentSelectionMap);
-    let selectedModelId = null;
-    let selectedExpressId = null;
-    const viewportSelection = [];
-    if (fragmentMap && Object.keys(fragmentMap).length > 0) {
-      for (const modelId in fragmentMap) {
-        const ids = fragmentMap[modelId];
-        if (ids && ids.size > 0) {
-          for (const id of ids) viewportSelection.push({ modelId, localId: Number(id) });
-        } else if (Array.isArray(ids) && ids.length > 0) {
-          for (const id of ids) viewportSelection.push({ modelId, localId: Number(id) });
+      currentSelectionMap = cloneModelIdMap(fragmentMap);
+      if (batchPreviewAssignments.length) clearBatchPreview('Selection changed. Preview the current selection again.');
+      reconcileSelectionOrder(currentSelectionMap);
+      let selectedModelId = null;
+      let selectedExpressId = null;
+      const viewportSelection = [];
+      if (fragmentMap && Object.keys(fragmentMap).length > 0) {
+        for (const modelId in fragmentMap) {
+          const ids = fragmentMap[modelId];
+          if (ids && ids.size > 0) {
+            for (const id of ids) viewportSelection.push({ modelId, localId: Number(id) });
+          } else if (Array.isArray(ids) && ids.length > 0) {
+            for (const id of ids) viewportSelection.push({ modelId, localId: Number(id) });
+          }
         }
+        selectedModelId = viewportSelection[0]?.modelId ?? null;
+        selectedExpressId = viewportSelection[0]?.localId ?? null;
       }
-      selectedModelId = viewportSelection[0]?.modelId ?? null;
-      selectedExpressId = viewportSelection[0]?.localId ?? null;
-    }
+      console.log('[onHighlight] viewportSelection.length=', viewportSelection.length, 'selectedModelId=', selectedModelId, 'selectedExpressId=', selectedExpressId);
 
-    if (viewportSelection.length > 0) {
-      const identities = [];
-      for (const selected of viewportSelection) {
-        const modelEntry = loadedModels.find((entry) =>
-          entry.model?.modelId === selected.modelId ||
-          entry.model?.uuid === selected.modelId ||
-          entry.uuid === selected.modelId
+      if (viewportSelection.length > 0) {
+        const identities = [];
+        for (const selected of viewportSelection) {
+          const modelEntry = loadedModels.find((entry) =>
+            entry.model?.modelId === selected.modelId ||
+            entry.model?.uuid === selected.modelId ||
+            entry.uuid === selected.modelId
+          );
+          console.log('[onHighlight] Looking for modelEntry for modelId=', selected.modelId, 'found=', !!modelEntry, 'loadedModels count=', loadedModels.length);
+          if (loadedModels.length > 0) {
+            const first = loadedModels[0];
+            console.log('[onHighlight] loadedModels[0] uuid=', first.uuid, 'model.modelId=', first.model?.modelId, 'model.uuid=', first.model?.uuid);
+          }
+          if (!modelEntry || !modelEntry.model) continue;
+          try {
+            const identity = await readElementIdentity(modelEntry.model, selected.localId, modelEntry.name);
+            identities.push(identity);
+          } catch (err) {
+            console.warn('[onHighlight] Identity read failed for', selected.localId, err);
+          }
+        }
+        multiSelectionElements = identities;
+        if (viewportSelection.length > 1) {
+          traySelection.clear();
+          identities.forEach((id) => traySelection.set(getAssignmentKey(id.modelId, id.localId), id));
+        }
+      } else {
+        multiSelectionElements = [];
+      }
+
+      console.log('[onHighlight] About to check selectedExpressId=', selectedExpressId);
+      if (selectedExpressId !== null) {
+        const expressIdNum = Number(selectedExpressId);
+        
+        // Sync viewport selection back to active model state and Loaded Models sidebar list
+        const foundModelEntry = loadedModels.find((entry) =>
+          entry.model?.modelId === selectedModelId ||
+          entry.model?.uuid === selectedModelId ||
+          entry.uuid === selectedModelId
         );
-        if (!modelEntry) continue;
-        const identity = await readElementIdentity(modelEntry.model, selected.localId, modelEntry.name);
-        identities.push(identity);
-      }
-      multiSelectionElements = identities;
-      if (viewportSelection.length > 1) {
-        traySelection.clear();
-        identities.forEach((id) => traySelection.set(getAssignmentKey(id.modelId, id.localId), id));
-      }
-    } else {
-      multiSelectionElements = [];
-    }
+        console.log('[onHighlight] foundModelEntry=', !!foundModelEntry);
+        
+        if (foundModelEntry) {
+          activeModel = foundModelEntry.model;
+          routingController.setSelectedElement(foundModelEntry.model, expressIdNum);
+          try {
+            await setOrbitTargetToElement(foundModelEntry.model, expressIdNum);
+          } catch (err) {
+            console.warn('[onHighlight] setOrbitTargetToElement failed:', err);
+          }
 
-    if (selectedExpressId !== null) {
-      const expressIdNum = Number(selectedExpressId);
-      
-      // Sync viewport selection back to active model state and Loaded Models sidebar list
-      const foundModelEntry = loadedModels.find((entry) =>
-        entry.model?.modelId === selectedModelId ||
-        entry.model?.uuid === selectedModelId ||
-        entry.uuid === selectedModelId
-      );
-      
-      if (foundModelEntry) {
-        activeModel = foundModelEntry.model;
-        selectedIfcElement = await readElementIdentity(foundModelEntry.model, expressIdNum, foundModelEntry.name);
-        routingController.setSelectedElement(foundModelEntry.model, expressIdNum);
-        await setOrbitTargetToElement(foundModelEntry.model, expressIdNum);
+          // Prioritize displaying properties before any other asynchronous tasks
+          console.log('[onHighlight] multiSelectionElements.length=', multiSelectionElements.length, 'calling displayElementProperties...');
+          if (multiSelectionElements.length > 1) {
+            multiSelectionIndex = -1; // Combined View
+            await displayCombinedProperties(multiSelectionElements);
+          } else {
+            multiSelectionIndex = -1;
+            if (multiSelectHeader) multiSelectHeader.style.display = 'none';
+            await displayElementProperties(foundModelEntry.model, expressIdNum, foundModelEntry.name);
+          }
+          console.log('[onHighlight] displayElementProperties DONE');
 
-        if (multiSelectionElements.length > 1) {
-          multiSelectionIndex = -1; // Combined View
-          await displayCombinedProperties(multiSelectionElements);
-        } else {
-          multiSelectionIndex = -1;
-          if (multiSelectHeader) multiSelectHeader.style.display = 'none';
-          await displayElementProperties(foundModelEntry.model, expressIdNum, foundModelEntry.name);
+          // Set selectedIfcElement safely
+          const matchedIdentity = multiSelectionElements.find((id) => id.localId === expressIdNum);
+          if (matchedIdentity) {
+            selectedIfcElement = matchedIdentity;
+          } else {
+            selectedIfcElement = await readElementIdentity(foundModelEntry.model, expressIdNum, foundModelEntry.name);
+          }
+
+          updateTagAssignmentUi();
+          refreshLoadedModelsList();
         }
-
-        updateTagAssignmentUi();
-        refreshLoadedModelsList();
       }
+    } catch (handlerErr) {
+      console.error('[onHighlight] Selection handler failed:', handlerErr);
     }
   });
 
@@ -1998,7 +2048,6 @@ async function initApp() {
       world.camera.controls.setLookAt(12, 12, 12, 0, 2, 0, true);
       return;
     }
-
     const combinedBox = new THREE.Box3();
     let hasBox = false;
     for (const model of targets) {
@@ -2557,11 +2606,15 @@ async function initApp() {
 
     try {
       if (typeof model.getItemsData === 'function') {
-        await displayElementPropertiesModern(model, expressId, modelName);
-        if (propPsetsContainer.children.length === 0) {
-          propPsetsContainer.innerHTML = '<div style="color: var(--text-muted); font-size: 0.8rem; padding: 8px 0; text-align: center;">No additional properties found for this element.</div>';
+        try {
+          await displayElementPropertiesModern(model, expressId, modelName);
+          if (propPsetsContainer.children.length === 0) {
+            propPsetsContainer.innerHTML = '<div style="color: var(--text-muted); font-size: 0.8rem; padding: 8px 0; text-align: center;">No additional properties found for this element.</div>';
+          }
+          return;
+        } catch (modernErr) {
+          console.warn('[Element Properties] displayElementPropertiesModern failed, falling back to getProperties:', modernErr);
         }
-        return;
       }
 
       const props = await model.getProperties(expressId);
