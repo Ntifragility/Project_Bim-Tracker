@@ -10,6 +10,7 @@ import { applySafeIfcEdits, editedIfcFileName } from './ifc/ifc-safe-editor.js';
 import { validateTagIntegrity } from './ifc/tag-validator.js';
 import { allocateElementTags, getSystemTag, normalizeTagScheme } from './tagging/tag-scheme.js';
 import { classifyTaggableElement } from './tagging/element-classifier.js';
+import { TagLabelManager } from './tag-label-manager.js';
 
 // Global variables for active model and state
 let activeModel = null;
@@ -208,6 +209,10 @@ const toggleHighlightTaggedSidebar = document.getElementById('toggle-highlight-t
 const taggedHighlightColorInput = document.getElementById('tagged-highlight-color');
 const taggedHighlightHexInput = document.getElementById('tagged-highlight-hex');
 const taggedHighlightCountBadge = document.getElementById('tagged-highlight-count');
+const toggleFloatingLabels = document.getElementById('toggle-floating-labels');
+const toggleFloatingLabelsSidebar = document.getElementById('toggle-floating-labels-sidebar');
+let isFloatingLabelsActive = localStorage.getItem('bim-floating-labels-active') === 'true';
+let tagLabelManager = null;
 
 // Utility: Show loading overlay
 function showLoader(title, status, progressVal) {
@@ -278,7 +283,7 @@ async function initApp() {
 
   // 2. Set up Scene, Renderer and Camera
   world.scene = new OBC.SimpleScene(components);
-  world.renderer = new OBC.SimpleRenderer(components, container);
+  world.renderer = new OBF.RendererWith2D(components, container);
   world.camera = new OBC.SimpleCamera(components);
 
   components.init();
@@ -399,6 +404,37 @@ async function initApp() {
       traySystemContinuityReport = null;
       renderTraySystemContinuityReport();
       clearContinuityGroupHighlights();
+    },
+  });
+
+  tagLabelManager = new TagLabelManager(components, world, {
+    clusterThreshold: 45,
+    yOffset: 0.25,
+    getHighlightColor: () => taggedHighlightColor,
+    onClick: async (modelId, localId) => {
+      const modelEntry = findLoadedModelEntry(modelId);
+      if (!modelEntry?.model) return;
+
+      const expressId = Number(localId);
+      if (!Number.isInteger(expressId)) return;
+      const fragmentMap = { [modelId]: new Set([expressId]) };
+
+      try {
+        await zoomToElementInModel(modelEntry.model, expressId);
+        highlighter.isProgrammaticSelect = true;
+        await highlighter.highlightByID('select', fragmentMap, true, true);
+        currentSelectionMap = cloneModelIdMap(fragmentMap);
+        activeModel = modelEntry.model;
+        await displayElementProperties(modelEntry.model, expressId, modelEntry.name);
+        selectedIfcElement = await readElementIdentity(modelEntry.model, expressId, modelEntry.name);
+        routingController.setSelectedElement(modelEntry.model, expressId);
+        updateTagAssignmentUi(`Focused on floating tag #${expressId}.`);
+        refreshLoadedModelsList();
+      } catch (err) {
+        console.warn('[Floating Tag] Failed to focus element:', err);
+      } finally {
+        highlighter.isProgrammaticSelect = false;
+      }
     },
   });
 
@@ -974,6 +1010,8 @@ async function initApp() {
       taggedHighlightHexInput.value = taggedHighlightColor.toUpperCase();
     }
 
+    await refreshFloatingLabels();
+
     if (!isTaggedHighlightActive) {
       try {
         await highlighter.clear(TAGGED_TRAY_HIGHLIGHT_STYLE);
@@ -1016,6 +1054,22 @@ async function initApp() {
     refreshTaggedTrayHighlights();
   }
 
+  async function refreshFloatingLabels() {
+    if (!tagLabelManager) return;
+    await tagLabelManager.refreshLabels(getEffectiveTaggedElements(), loadedModels);
+  }
+
+  async function setFloatingLabelsActive(active) {
+    isFloatingLabelsActive = Boolean(active);
+    localStorage.setItem('bim-floating-labels-active', String(isFloatingLabelsActive));
+    if (toggleFloatingLabels) toggleFloatingLabels.checked = isFloatingLabelsActive;
+    if (toggleFloatingLabelsSidebar) toggleFloatingLabelsSidebar.checked = isFloatingLabelsActive;
+    if (!tagLabelManager) return;
+
+    await tagLabelManager.setVisible(isFloatingLabelsActive, loadedModels);
+    if (isFloatingLabelsActive) await refreshFloatingLabels();
+  }
+
   function setTaggedHighlightColorValue(color) {
     const normalized = normalizeHexColor(color);
     if (!normalized) return;
@@ -1034,6 +1088,14 @@ async function initApp() {
 
   toggleHighlightTaggedSidebar?.addEventListener('change', (e) => {
     setTaggedHighlightActive(e.target.checked);
+  });
+
+  toggleFloatingLabels?.addEventListener('change', (e) => {
+    void setFloatingLabelsActive(e.target.checked);
+  });
+
+  toggleFloatingLabelsSidebar?.addEventListener('change', (e) => {
+    void setFloatingLabelsActive(e.target.checked);
   });
 
   taggedHighlightColorInput?.addEventListener('input', (e) => {
@@ -4591,6 +4653,7 @@ async function initApp() {
   });
 
   await refreshTaggedTrayHighlights();
+  await setFloatingLabelsActive(isFloatingLabelsActive);
 
   // Initialize Excel-IFC WebSocket bridge linkage
   initExcelBridge(components, world);
