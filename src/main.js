@@ -79,6 +79,15 @@ const traySystemManagerSummary = document.getElementById('tray-system-manager-su
 const traySystemFilter = document.getElementById('tray-system-filter');
 const traySystemSort = document.getElementById('tray-system-sort');
 const traySystemList = document.getElementById('tray-system-list');
+
+// The highlighter listens for viewport pointer events at a shared level. Keep
+// clicks inside overlay controls from raycasting through to the model behind.
+for (const overlay of [sidebar, excelPanel, viewerSettingsPanel, viewerContextMenu]) {
+  if (!overlay) continue;
+  for (const eventName of ['pointerdown', 'pointerup', 'click', 'dblclick']) {
+    overlay.addEventListener(eventName, (event) => event.stopPropagation());
+  }
+}
 const traySystemComponentList = document.getElementById('tray-system-component-list');
 const traySystemSequenceStatus = document.getElementById('tray-system-sequence-status');
 const traySystemContinuityPanel = document.getElementById('tray-system-continuity-panel');
@@ -395,7 +404,64 @@ async function initApp() {
   highlighter.setup({ world });
   // Allow normal hand jitter without interpreting an intended click as orbiting.
   highlighter.mouseMoveThreshold = 10;
+  highlighter.zoomToSelection = false;
   setSelectionHighlightStyle(selectionHighlightColor);
+
+  // UI panels overlay the renderer. Temporarily disable viewport picking while
+  // their pointer gesture is active so a button click cannot select geometry
+  // underneath and collapse a valid multi-selection.
+  for (const overlay of [sidebar, excelPanel, viewerSettingsPanel, viewerContextMenu]) {
+    if (!overlay) continue;
+    overlay.addEventListener('pointerdown', () => {
+      highlighter.config.selectEnabled = false;
+    });
+    const restoreViewportPicking = () => {
+      window.setTimeout(() => {
+        highlighter.config.selectEnabled = true;
+      }, 0);
+    };
+    overlay.addEventListener('pointerup', restoreViewportPicking);
+    overlay.addEventListener('pointercancel', restoreViewportPicking);
+  }
+
+  // Hidden federated models can remain in the FragmentsManager picker even
+  // after their scene objects are hidden. Exclude them for the GPU pick only.
+  function excludeHiddenModelsFromPicker() {
+    const fragments = components.get(OBC.FragmentsManager);
+    const removed = new Map();
+    if (!fragments?.list) return () => {};
+    for (const modelEntry of loadedModels) {
+      if (modelEntry.visible) continue;
+      const modelId = modelEntry.model?.modelId || modelEntry.model?.uuid || modelEntry.uuid;
+      if (modelId && fragments.list.has(modelId)) {
+        removed.set(modelId, fragments.list.get(modelId));
+        fragments.list.delete(modelId);
+      }
+    }
+    return () => {
+      for (const [id, model] of removed) fragments.list.set(id, model);
+    };
+  }
+
+  try {
+    const raycasterComponent = OBC.Raycasters;
+    if (raycasterComponent) {
+      const raycaster = components.get(raycasterComponent).get(world);
+      if (raycaster && typeof raycaster.castRay === 'function') {
+        const originalCastRay = raycaster.castRay.bind(raycaster);
+        raycaster.castRay = async (...args) => {
+          const restore = excludeHiddenModelsFromPicker();
+          try {
+            return await originalCastRay(...args);
+          } finally {
+            restore();
+          }
+        };
+      }
+    }
+  } catch (error) {
+    console.warn('[Raycaster Wrapper] Could not exclude hidden models from picking:', error);
+  }
   const hider = components.get(OBC.Hider);
   const routingController = initRoutingController({
     world,
@@ -723,6 +789,20 @@ async function initApp() {
 
   function getSelectedModelIdMap() {
     if (countModelIdMapItems(currentSelectionMap)) return cloneModelIdMap(currentSelectionMap);
+    const selectedElements = (multiSelectionElements.length >= 2 && multiSelectionIndex === -1)
+      ? multiSelectionElements
+      : (multiSelectionIndex >= 0 && multiSelectionElements[multiSelectionIndex])
+        ? [multiSelectionElements[multiSelectionIndex]]
+        : [];
+    if (selectedElements.length) {
+      const selection = {};
+      for (const element of selectedElements) {
+        if (!element?.modelId || !Number.isFinite(Number(element.localId))) continue;
+        if (!selection[element.modelId]) selection[element.modelId] = new Set();
+        selection[element.modelId].add(Number(element.localId));
+      }
+      if (countModelIdMapItems(selection)) return selection;
+    }
     if (!selectedIfcElement) return {};
     return { [selectedIfcElement.modelId]: new Set([Number(selectedIfcElement.localId)]) };
   }
@@ -1946,15 +2026,18 @@ async function initApp() {
       console.log('[onHighlight] FIRED. isProgrammaticSelect=', highlighter.isProgrammaticSelect, 'fragmentMap keys=', Object.keys(fragmentMap || {}));
       if (highlighter.isProgrammaticSelect) return;
 
-      currentSelectionMap = cloneModelIdMap(fragmentMap);
+      const visibleSelectionMap = Object.fromEntries(
+        Object.entries(fragmentMap || {}).filter(([modelId]) => findLoadedModelEntry(modelId)?.visible)
+      );
+      currentSelectionMap = cloneModelIdMap(visibleSelectionMap);
       if (batchPreviewAssignments.length) clearBatchPreview('Selection changed. Preview the current selection again.');
       reconcileSelectionOrder(currentSelectionMap);
       let selectedModelId = null;
       let selectedExpressId = null;
       const viewportSelection = [];
-      if (fragmentMap && Object.keys(fragmentMap).length > 0) {
-        for (const modelId in fragmentMap) {
-          const ids = fragmentMap[modelId];
+      if (Object.keys(visibleSelectionMap).length > 0) {
+        for (const modelId in visibleSelectionMap) {
+          const ids = visibleSelectionMap[modelId];
           if (ids && ids.size > 0) {
             for (const id of ids) viewportSelection.push({ modelId, localId: Number(id) });
           } else if (Array.isArray(ids) && ids.length > 0) {
@@ -2007,6 +2090,11 @@ async function initApp() {
           entry.uuid === selectedModelId
         );
         console.log('[onHighlight] foundModelEntry=', !!foundModelEntry);
+
+        if (foundModelEntry && !foundModelEntry.visible) {
+          console.debug(`[Selection] Discarded pick on hidden model "${foundModelEntry.name}" (element #${expressIdNum}).`);
+          return;
+        }
         
         if (foundModelEntry) {
           activeModel = foundModelEntry.model;
