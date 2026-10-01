@@ -1,7 +1,6 @@
 import './style.css';
 import * as THREE from 'three';
 import * as OBC from '@thatopen/components';
-import * as OBF from '@thatopen/components-front';
 import * as XLSX from 'xlsx';
 import { initExcelBridge } from './viewer-socket.js';
 import { initRoutingController } from './routing/routing-controller.js';
@@ -11,6 +10,7 @@ import { validateTagIntegrity } from './ifc/tag-validator.js';
 import { allocateElementTags, getSystemTag, normalizeTagScheme } from './tagging/tag-scheme.js';
 import { classifyTaggableElement } from './tagging/element-classifier.js';
 import { TagLabelManager } from './tag-label-manager.js';
+import { createCovillafEngine } from './covillaf/engine.js';
 
 // Global variables for active model and state
 let activeModel = null;
@@ -274,30 +274,10 @@ function formatBytes(bytes) {
 
 // Main App Initialization
 async function initApp() {
-  console.log("Initializing IFC Viewer...");
+  console.log("Initializing COVILLAF engine...");
 
-  // 1. Initialize Components
-  const components = new OBC.Components();
-  const worlds = components.get(OBC.Worlds);
-  const world = worlds.create();
-
-  // 2. Set up Scene, Renderer and Camera
-  world.scene = new OBC.SimpleScene(components);
-  world.renderer = new OBF.RendererWith2D(components, container);
-  world.camera = new OBC.SimpleCamera(components);
-
-  components.init();
-
-  // Initialize Raycaster for the world to enable selection/picking
-  components.get(OBC.Raycasters).get(world);
-
-
-  // ──────────────────────────────────────────────
-  //  AUTOCAD-STYLE CAMERA PANNING
-  // ──────────────────────────────────────────────
-  // AutoCAD-style navigation: hold the mouse wheel and drag to pan the view.
-  // This moves the camera target, never the IFC model or its coordinates.
-  world.camera.controls.mouseButtons.middle = world.camera.controls.constructor.ACTION.TRUCK;
+  const engine = await createCovillafEngine(container);
+  const { components, world, fragments, highlighter, hider } = engine;
 
   // ──────────────────────────────────────────────
   //  AUTO-ORBIT CAMERA ROTATION
@@ -330,73 +310,12 @@ async function initApp() {
     container.addEventListener('wheel', stopAutoOrbit);
   }
 
-  // 3. Set up environment (lights and background color)
-  world.scene.setup();
-  world.scene.three.background = new THREE.Color('#0a0b0e'); // Default match to dark mode
-
-  // Set initial camera position
-  world.camera.controls.setLookAt(12, 12, 12, 0, 2, 0);
-
-  // 4. Create Grid
-  const grids = components.get(OBC.Grids);
-  const grid = grids.create(world);
-  if (grid.three) {
-    grid.three.position.y = -0.01; // Avoid z-fighting with models resting on 0
-  }
-
-  // 5. Initialize Fragments Manager with worker URL from unpkg
-  const fragments = components.get(OBC.FragmentsManager);
-  try {
-    let workerUrl = "";
-    if (OBC.FragmentsManager && OBC.FragmentsManager.getWorker) {
-      workerUrl = await OBC.FragmentsManager.getWorker();
-    } else if (fragments && fragments.getWorker) {
-      workerUrl = await fragments.getWorker();
-    }
-    if (workerUrl) {
-      fragments.init(workerUrl);
-      console.log("FragmentsManager initialized with worker.");
-    } else {
-      fragments.init();
-      console.log("FragmentsManager initialized without worker.");
-    }
-  } catch (e) {
-    console.warn("FragmentsManager worker setup failed, falling back to main-thread processing:", e);
-    fragments.init();
-  }
-  // Low-quality LOD lines are visible but intentionally carry no element ID,
-  // so the picker cannot select them. Prefer full selectable geometry.
-  fragments.core.settings.graphicsQuality = 1;
-
-  // 6. Set up IfcLoader and Configure WASM path
-  const ifcLoader = components.get(OBC.IfcLoader);
-  ifcLoader.settings.autoSetWasm = false;
-  ifcLoader.settings.wasm = {
-    path: "https://unpkg.com/web-ifc@0.0.77/",
-    absolute: true
-  };
-  // Rebase the first IFC near the viewer origin for numerical stability.
-  // The `coordinate: true` load option below retains the source coordination
-  // data and positions later federated models relative to that first model.
-  ifcLoader.settings.webIfc = {
-    ...ifcLoader.settings.webIfc,
-    COORDINATE_TO_ORIGIN: true,
-  };
-  await ifcLoader.setup();
-  console.log("IfcLoader WASM set up successfully.");
-
   // Current FragmentsModel versions expose relations through getItemsData().
   // Keep the legacy variable for the old-property fallback without requesting
   // the removed IfcRelationsIndexer component.
   let indexer = null;
 
-  // 7. Set up Highlighter
-  const highlighter = components.get(OBF.Highlighter);
-  highlighter.setup({ world });
-  // Allow normal hand jitter without interpreting an intended click as orbiting.
-  highlighter.mouseMoveThreshold = 10;
   setSelectionHighlightStyle(selectionHighlightColor);
-  const hider = components.get(OBC.Hider);
   const routingController = initRoutingController({
     world,
     getLoadedModels: () => loadedModels,
@@ -745,10 +664,6 @@ async function initApp() {
     }
   }
 
-  function appearanceStyleName(color) {
-    return `appearance-${color.replace('#', '').toLowerCase()}`;
-  }
-
   function ifcEditElementKey(modelId, localId) {
     return `${modelId}:${Number(localId)}`;
   }
@@ -880,13 +795,7 @@ async function initApp() {
   }
 
   function setSelectionHighlightStyle(color) {
-    const normalized = normalizeHexColor(color) || '#6366f1';
-    selectionHighlightColor = normalized;
-    highlighter.styles.set('select', {
-      color: new THREE.Color(selectionHighlightColor),
-      opacity: 0.6,
-      transparent: true,
-    });
+    selectionHighlightColor = engine.setSelectionColor(normalizeHexColor(color) || '#6366f1');
     if (selectionHighlightColorInput) selectionHighlightColorInput.value = selectionHighlightColor;
     if (selectionHighlightHex) selectionHighlightHex.value = selectionHighlightColor.toUpperCase();
     localStorage.setItem('bim-selection-highlight-color', selectionHighlightColor);
@@ -911,17 +820,7 @@ async function initApp() {
   }
 
   async function reapplyAppearanceColors() {
-    for (const [color, modelIdMap] of appearanceColorMaps) {
-      const styleName = appearanceStyleName(color);
-      await highlighter.clear(styleName);
-      if (countModelIdMapItems(modelIdMap) === 0) continue;
-      highlighter.styles.set(styleName, {
-        color: new THREE.Color(color),
-        opacity: 0.85,
-        transparent: true,
-      });
-      await highlighter.highlightByID(styleName, modelIdMap, false, false);
-    }
+    await engine.paintGroups(appearanceColorMaps);
   }
 
   async function applyAppearanceColorToCurrentSelection() {
@@ -3091,25 +2990,10 @@ async function initApp() {
     }
 
     try {
-      let model;
-      // Load model using IfcLoader
-      try {
-        model = await ifcLoader.load(buffer, true, name, {
-          instanceCallback: (importer) => {
-            importer.addAllAttributes();
-            importer.addAllRelations();
-          },
-          processData: {
-            progressCallback: (progress) => {
-              const pct = Math.round(progress * 100);
-              updateLoader(`Parsing IFC geometries... (${pct}%)`, 30 + pct * 0.6);
-            }
-          }
-        });
-      } catch (loadErr) {
-        console.warn("Loading with options failed, attempting simple load:", loadErr);
-        model = await ifcLoader.load(buffer, true, name);
-      }
+      const model = await engine.loadIfc(buffer, name, (progress) => {
+        const pct = Math.round(progress * 100);
+        updateLoader(`Parsing IFC geometries... (${pct}%)`, 30 + pct * 0.6);
+      });
 
       if (!model) {
         throw new Error("Parsed model is empty or invalid.");

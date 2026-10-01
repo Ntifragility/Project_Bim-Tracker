@@ -1,0 +1,26 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "grafo",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["tools/servir_grafo.mjs"],
+      "port": 5191,
+      "url": "http://127.0.0.1:5191"
+    },
+    {
+      "name": "interfaz",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "--config", "packages/ui/vite.config.ts"],
+      "port": 5184,
+      "url": "http://127.0.0.1:5184"
+    },
+    {
+      "name": "visor-demo",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "--config", "packages/viewer/demo/vite.config.ts"],
+      "port": 5196,
+      "url": "http://127.0.0.1:5196"
+    }
+  ]
+}
