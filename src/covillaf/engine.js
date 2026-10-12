@@ -3,6 +3,8 @@
 import * as THREE from "three";
 import * as OBC from "@thatopen/components";
 import * as OBF from "@thatopen/components-front";
+import * as FRAGS from "@thatopen/fragments";
+import { createCoordinateFrame } from "./coordinates.js";
 
 const WASM_PATH = "/covillaf/web-ifc/";
 
@@ -29,7 +31,7 @@ export async function createCovillafEngine(container) {
   });
   world.camera = new OBC.SimpleCamera(components);
   components.init();
-  components.get(OBC.Raycasters).get(world);
+  const raycaster = components.get(OBC.Raycasters).get(world);
 
   world.camera.controls.mouseButtons.middle = world.camera.controls.constructor.ACTION.TRUCK;
   world.scene.setup();
@@ -83,6 +85,18 @@ export async function createCovillafEngine(container) {
     ifcLoader,
     highlighter,
     hider,
+    raycaster,
+    coordinates: createCoordinateFrame(fragments),
+
+    /**
+     * Model surface under a screen position (NDC, -1..1). Snapping to model
+     * vertices and edges is optional. Returns the scene point or null.
+     */
+    async pick(ndc, { snap = false } = {}) {
+      const snappingClasses = snap ? [FRAGS.SnappingClass.POINT, FRAGS.SnappingClass.LINE, FRAGS.SnappingClass.FACE] : undefined;
+      const hit = await raycaster.castRay({ position: ndc, snappingClasses });
+      return hit?.point ? { point: hit.point.clone(), snapped: hit.snappingClass ?? null } : null;
+    },
 
     async loadIfc(buffer, name, onProgress) {
       try {
@@ -126,6 +140,7 @@ export async function createCovillafEngine(container) {
     },
   };
 
+  if (import.meta.env?.DEV) window.__covillaf = engine;
   console.log("[COVILLAF] Engine ready. IFC parser is local.");
   return engine;
 }
