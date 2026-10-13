@@ -20,7 +20,7 @@ export function appearanceStyleName(color) {
   return `appearance-${String(color).replace("#", "").toLowerCase()}`;
 }
 
-export async function createCovillafEngine(container) {
+export async function createCovillafEngine(container, { enableHighlighting = true } = {}) {
   const components = new OBC.Components();
   const worlds = components.get(OBC.Worlds);
   const world = worlds.create();
@@ -73,8 +73,12 @@ export async function createCovillafEngine(container) {
   await ifcLoader.setup();
 
   const highlighter = components.get(OBF.Highlighter);
-  highlighter.setup({ world });
-  highlighter.mouseMoveThreshold = 10;
+  if (enableHighlighting) {
+    highlighter.setup({ world });
+    highlighter.mouseMoveThreshold = 10;
+  } else {
+    highlighter.enabled = false;
+  }
   const hider = components.get(OBC.Hider);
 
   const engine = {
