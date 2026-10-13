@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Conduit Takeoff Viewer — trace conduit runs on IFC models and estimate quantities" />
+    <title>Conduit Takeoff</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <div id="app">
+      <!-- 3D Viewport -->
+      <div id="viewer-container"></div>
+
+      <!-- Revit-Style Top Options Bar -->
+      <header id="revit-options-bar" class="revit-options-bar">
+        <div class="revit-group">
+          <span class="revit-label">Size:</span>
+          <select id="top-diameter-select" class="revit-select" title="Conduit Trade Size">
+            <!-- options populated dynamically -->
+          </select>
+        </div>
+
+        <div class="revit-separator"></div>
+
+        <div class="revit-group">
+          <span class="revit-label">Middle Elevation:</span>
+          <div class="revit-input-wrap">
+            <input id="top-elevation-input" type="number" step="0.1" value="2.8" class="revit-input" title="Middle Elevation Offset" />
+            <span class="revit-unit">m</span>
+          </div>
+          <button id="btn-pick-elevation" class="revit-tool-btn" type="button" title="Pick Elevation: Click any slab, beam, or element in the model to sample its elevation">
+            <span>🎯</span> Pick Elevation
+          </button>
+        </div>
+
+        <div class="revit-separator"></div>
+
+        <div class="revit-group">
+          <span class="revit-label">System:</span>
+          <select id="top-system-select" class="revit-select">
+            <option value="Power">Power</option>
+            <option value="Lighting">Lighting</option>
+            <option value="Controls">Controls</option>
+            <option value="Fire Alarm">Fire Alarm</option>
+            <option value="Low Voltage">Low Voltage</option>
+          </select>
+        </div>
+
+        <div class="revit-separator"></div>
+
+        <div class="revit-group">
+          <button id="btn-toggle-workplane" class="revit-tool-btn active" type="button" title="Toggle Work Plane Grid visibility at current elevation">
+            <span>⊞</span> Grid Plane
+          </button>
+          <button id="btn-toggle-autoriser" class="revit-tool-btn active" type="button" title="Auto-Riser: Automatically insert vertical transition when elevation changes">
+            <span>⚡</span> Auto-Riser: ON
+          </button>
+        </div>
+
+        <div class="revit-spacer"></div>
+
+        <div class="revit-group revit-run-summary" id="top-active-run-summary" hidden>
+          <span class="revit-stat">Len: <strong id="top-run-length">0.00 m</strong></span>
+          <span class="revit-stat">Sticks: <strong id="top-run-sticks">0</strong></span>
+          <button id="top-btn-finish" class="btn btn-primary btn-xs" type="button">✔ Finish</button>
+          <button id="top-btn-cancel" class="btn btn-ghost btn-xs" type="button">✖</button>
+        </div>
+      </header>
+
+      <!-- Loading Overlay -->
+      <div id="loading-overlay" class="loading-overlay" hidden>
+        <div class="loading-card">
+          <div class="loading-spinner"></div>
+          <p id="loading-stage" class="loading-stage">Preparing…</p>
+          <div class="loading-bar-track">
+            <div id="loading-bar-fill" class="loading-bar-fill"></div>
+          </div>
+          <p id="loading-detail" class="loading-detail"></p>
+          <button id="loading-cancel" class="btn btn-ghost" type="button">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Glassmorphic Sidebar -->
+      <aside id="sidebar">
+        <button id="sidebar-toggle" class="sidebar-toggle" title="Toggle Sidebar">
+          <span>◀</span>
+        </button>
+
+        <header class="sidebar-header">
+          <div class="logo">
+            <span class="logo-icon">⚡</span>
+            <h1>Conduit Takeoff</h1>
+          </div>
+          <p class="subtitle">Trace · Measure · Export</p>
+        </header>
+
+        <!-- Sidebar Tabs -->
+        <nav class="sidebar-nav-tabs" role="tablist" aria-label="Sidebar sections">
+          <button class="sidebar-tab-btn active" data-tab-target="model" role="tab" aria-selected="true" type="button">
+            <span>🏗️</span> Model
+          </button>
+          <button class="sidebar-tab-btn" data-tab-target="draw" role="tab" aria-selected="false" type="button">
+            <span>✏️</span> Draw
+          </button>
+          <button class="sidebar-tab-btn" data-tab-target="summary" role="tab" aria-selected="false" type="button">
+            <span>📊</span> Summary
+          </button>
+        </nav>
+
+        <div class="sidebar-content">
+          <!-- Model Panel -->
+          <section class="control-group active" data-sidebar-panel="model">
+            <h3>Source IFC</h3>
+            <div class="loader-buttons">
+              <button id="btn-open-ifc" class="btn btn-primary" type="button">
+                <span class="btn-icon">📂</span>
+                Open IFC File
+              </button>
+              <input id="file-input" type="file" accept=".ifc" hidden />
+            </div>
+
+            <div id="model-info" class="model-info-card" hidden>
+              <div class="model-info-row">
+                <span class="model-info-label">File</span>
+                <span id="model-name" class="model-info-value">—</span>
+              </div>
+              <div class="model-info-row">
+                <span class="model-info-label">Size</span>
+                <span id="model-size" class="model-info-value">—</span>
+              </div>
+              <div class="model-info-row">
+                <span class="model-info-label">Unit</span>
+                <span id="model-unit" class="model-info-value">—</span>
+              </div>
+              <div class="model-info-row">
+                <span class="model-info-label">Schema</span>
+                <span id="model-schema" class="model-info-value">—</span>
+              </div>
+            </div>
+
+            <h3>View Controls</h3>
+            <div class="toolbar-row">
+              <button id="btn-fit-view" class="btn-tool" type="button" title="Fit to View">⊞</button>
+              <button id="btn-view-top" class="btn-tool" type="button" title="Top View">⬆</button>
+              <button id="btn-view-front" class="btn-tool" type="button" title="Front View">◻</button>
+              <button id="btn-view-right" class="btn-tool" type="button" title="Right View">▷</button>
+            </div>
+          </section>
+
+          <!-- Draw Panel -->
+          <section class="control-group" data-sidebar-panel="draw">
+            <div class="draw-tools-header">
+              <h3>Drawing Tools</h3>
+              <div class="toolbar-row">
+                <button id="btn-draw-mode" class="btn-tool active" type="button" title="Trace Conduit (Click on model to place points, Enter to finish, Esc to cancel)">✏️ Trace</button>
+                <button id="btn-ortho" class="btn-tool" type="button" title="Ortho Lock (Constrain to 90° axes / Shift)">📐 Ortho</button>
+                <button id="btn-perp" class="btn-tool" type="button" title="Perpendicular to XY plane (Vertical Riser / Press 'V' or 'Z')">⊥ Perpendicular</button>
+                <button id="btn-undo" class="btn-tool" type="button" title="Undo (Ctrl+Z)" disabled>↶</button>
+                <button id="btn-redo" class="btn-tool" type="button" title="Redo (Ctrl+Y)" disabled>↷</button>
+              </div>
+            </div>
+
+            <h3>Diameter (Trade Size)</h3>
+            <div id="diameter-list" class="diameter-list">
+              <p class="text-muted">Loading diameters…</p>
+            </div>
+
+            <h3>Active Run</h3>
+            <div id="active-run-info" class="active-run-card" hidden>
+              <div class="run-stat">
+                <span class="run-stat-label">Length</span>
+                <span id="run-length" class="run-stat-value">0.000</span>
+              </div>
+              <div class="run-stat">
+                <span class="run-stat-label">Sticks</span>
+                <span id="run-sticks" class="run-stat-value">0</span>
+              </div>
+              <div class="run-stat">
+                <span class="run-stat-label">Segments</span>
+                <span id="run-segments" class="run-stat-value">0</span>
+              </div>
+            </div>
+
+            <div class="run-finish-actions" id="active-run-actions" hidden>
+              <button id="btn-finish-run" class="btn btn-primary btn-sm" type="button">✔ Finish Run (Enter)</button>
+              <button id="btn-cancel-run" class="btn btn-ghost btn-sm" type="button">✖ Cancel (Esc)</button>
+            </div>
+
+            <div class="vertical-step-controls" id="vertical-step-controls" hidden>
+              <label class="summary-label">Step (m):
+                <input id="input-vertical-len" type="number" step="0.5" value="2.0" class="input-number" style="width:55px;" />
+              </label>
+              <button id="btn-add-vert-up" class="btn btn-secondary btn-sm" type="button" title="Add vertical segment straight UP">⬆ +Up</button>
+              <button id="btn-add-vert-down" class="btn btn-secondary btn-sm" type="button" title="Add vertical segment straight DOWN">⬇ -Down</button>
+            </div>
+
+            <div class="run-list-header">
+              <h3>Drawn Runs</h3>
+              <span id="runs-count-badge" class="badge">0</span>
+            </div>
+            <div id="run-list" class="run-list">
+              <p class="text-muted">No runs drawn yet. Click on the 3D model to begin tracing.</p>
+            </div>
+          </section>
+
+          <!-- Summary Panel -->
+          <section class="control-group" data-sidebar-panel="summary">
+            <div class="summary-settings-bar">
+              <label for="waste-factor-input" class="summary-label">Waste %:
+                <input id="waste-factor-input" type="number" min="0" max="100" value="0" class="input-number" />
+              </label>
+              <span class="stick-spec-badge">Stick: 10 ft (3.048 m)</span>
+            </div>
+
+            <h3>Takeoff Summary</h3>
+            <div id="summary-table-container">
+              <p class="text-muted">Draw runs to see the summary.</p>
+            </div>
+          </section>
+        </div>
+
+        <!-- Bottom Toolbar -->
+        <footer class="sidebar-footer">
+          <input id="project-file-input" type="file" accept=".json,.conduit.json" hidden />
+          <button id="btn-load-project" class="btn btn-secondary btn-sm" type="button" title="Open .conduit.json project">
+            <span class="btn-icon">📂</span> Open
+          </button>
+          <button id="btn-save" class="btn btn-secondary btn-sm" type="button" title="Save .conduit.json project" disabled>
+            <span class="btn-icon">💾</span> Save
+          </button>
+          <button id="btn-export-csv" class="btn btn-secondary btn-sm" type="button" title="Export CSV" disabled>
+            <span class="btn-icon">📊</span> CSV
+          </button>
+          <button id="btn-export-ifc" class="btn btn-secondary btn-sm" type="button" title="Export Overlay IFC for Revizto" disabled>
+            <span class="btn-icon">📦</span> IFC
+          </button>
+        </footer>
+      </aside>
+
+      <!-- Status Bar -->
+      <div id="status-bar" class="status-bar">
+        <span id="status-text" class="status-text">Ready — open an IFC file to begin</span>
+        <span id="cursor-coords" class="cursor-coords"></span>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

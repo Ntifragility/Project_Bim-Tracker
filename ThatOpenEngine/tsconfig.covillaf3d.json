@@ -1,0 +1,8 @@
+{
+  // Tipos del adaptador del visor (src/visor.ts) contra las fuentes de COVILLAF 3D, con las mismas opciones y alias que el
+  // montaje del visor (packages/viewer/tsconfig.covillaf3d.json). Solo en local: necesita la carpeta hermana.
+  // Uso (desde la raíz de SIMULATE): npx tsc -p packages/ui/tsconfig.covillaf3d.json --noEmit
+  "extends": "../viewer/tsconfig.covillaf3d.json",
+  "include": ["src/visor.ts"],
+  "exclude": []
+}
