@@ -99,7 +99,17 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
     async pick(ndc, { snap = false } = {}) {
       const snappingClasses = snap ? [FRAGS.SnappingClass.POINT, FRAGS.SnappingClass.LINE, FRAGS.SnappingClass.FACE] : undefined;
       const hit = await raycaster.castRay({ position: ndc, snappingClasses });
-      return hit?.point ? { point: hit.point.clone(), snapped: hit.snappingClass ?? null } : null;
+      if (!hit?.point) return null;
+      let normal = null;
+      if (hit.face?.normal) {
+        normal = hit.face.normal.clone();
+        if (hit.object?.matrixWorld) normal.transformDirection(hit.object.matrixWorld);
+      } else if (hit.normal?.isVector3) {
+        normal = hit.normal.clone();
+      }
+      if (normal && normal.lengthSq() > 0) normal.normalize();
+      else normal = null;
+      return { point: hit.point.clone(), snapped: hit.snappingClass ?? null, normal };
     },
 
     async loadIfc(buffer, name, onProgress) {

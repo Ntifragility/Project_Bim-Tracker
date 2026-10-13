@@ -68,5 +68,8 @@ export default defineConfig({
   server: {
     port: 5174, // Different port from the main app
     open: true,
+    fs: {
+      allow: [ROOT],
+    },
   },
 });

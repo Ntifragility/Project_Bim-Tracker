@@ -632,40 +632,67 @@ body {
   pointer-events: none;
 }
 
-.diameter-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
+.diameter-menu {
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
 }
 
-.diameter-pill {
+.diameter-menu summary {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--glass-border);
-  border-radius: 8px;
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+}
+
+.diameter-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.diameter-menu-caret {
+  margin-left: auto;
+  color: var(--text-muted);
+}
+
+.diameter-menu[open] .diameter-menu-caret {
+  transform: rotate(90deg);
+}
+
+.diameter-menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 6px 6px;
+}
+
+.diameter-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
   color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: 0.82rem;
-  font-weight: 550;
+  text-align: left;
   cursor: pointer;
-  transition: all 0.2s ease;
-  user-select: none;
 }
 
-.diameter-pill:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.2);
-  transform: translateY(-1px);
+.diameter-option:hover {
+  background: rgba(255, 255, 255, 0.06);
 }
 
-.diameter-pill.selected {
+.diameter-option.selected {
   background: var(--accent-light);
-  border-color: var(--accent);
+  border-color: var(--accent-border);
   color: var(--accent);
-  box-shadow: 0 0 10px var(--accent-glow);
 }
 
 .diameter-color-swatch {
