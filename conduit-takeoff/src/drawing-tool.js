@@ -96,6 +96,7 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
   let activeRunPoints = []; // [{ x, y, z }]
   let currentCursorPoint = null; // { x, y, z }
   let lastNdc = new THREE.Vector2();
+  let lastScreenPos = { x: 0, y: 0 };
   let selectedRunId = null;
 
   function getCanvasNdc(event) {
@@ -383,6 +384,7 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
   // Pointer move handler
   async function handlePointerMove(event) {
     lastNdc = getCanvasNdc(event);
+    lastScreenPos = { x: event.clientX, y: event.clientY };
 
     if (pointerDownPos.time > 0) {
       const dist = Math.hypot(event.clientX - pointerDownPos.x, event.clientY - pointerDownPos.y);
@@ -404,6 +406,7 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
         onStateChange?.({
           cursor: hit.point,
           sampledElevation: hit.point.y,
+          screenPos: lastScreenPos,
         });
       }
       return;
@@ -432,6 +435,7 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
           liveSegment: previewInfo?.segDist || 0,
           isVertical: !!previewInfo?.isVertical,
           activePoints: activeRunPoints,
+          screenPos: lastScreenPos,
         });
       }
     } else {
@@ -622,6 +626,32 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
         cursor: newPt,
         liveSegment: 0,
         activePoints: activeRunPoints,
+      });
+      return true;
+    },
+
+    commitDistance(distM) {
+      if (activeRunPoints.length === 0 || !currentCursorPoint) return false;
+      const lastPt = activeRunPoints[activeRunPoints.length - 1];
+      const target = currentCursorPoint;
+      const dx = target.x - lastPt.x;
+      const dy = target.y - lastPt.y;
+      const dz = target.z - lastPt.z;
+      const len = Math.hypot(dx, dy, dz);
+      if (len < 0.001) return false;
+
+      const newPt = {
+        x: lastPt.x + (dx / len) * distM,
+        y: lastPt.y + (dy / len) * distM,
+        z: lastPt.z + (dz / len) * distM,
+      };
+      activeRunPoints.push(newPt);
+      updateActiveRunVisuals();
+      onStateChange?.({
+        cursor: newPt,
+        liveSegment: 0,
+        activePoints: activeRunPoints,
+        screenPos: lastScreenPos,
       });
       return true;
     },
