@@ -10,3 +10,4 @@ export * from './marker-model.js';
 export * from './project-io.js';
 export * from './csv-export.js';
 export * from './ifc-exporter.js';
+export * from './fitting-solver.js';
