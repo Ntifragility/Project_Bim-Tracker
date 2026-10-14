@@ -23,6 +23,8 @@ import {
   convertLength,
 } from '@conduit-core';
 import { createDrawingTool } from './drawing-tool.js';
+import { createViewportControls } from './viewport-controls.js';
+import { createSurfacePicker } from './surface-picker.js';
 
 // Application State
 const appState = {
@@ -166,26 +168,50 @@ function renderDiameterPicker() {
   }
 
   els.diameterList.innerHTML = '';
-  const grid = document.createElement('div');
-  grid.className = 'diameter-grid';
+  const menu = document.createElement('details');
+  menu.className = 'diameter-menu';
 
+  const summary = document.createElement('summary');
+  summary.append(
+    diameterSwatch(selected?.color || '#f59e0b'),
+    diameterLabel(selected ? `${selected.label} (${selected.mm} mm)` : 'Select diameter'),
+  );
+  const caret = document.createElement('span');
+  caret.className = 'diameter-menu-caret';
+  caret.textContent = '▸';
+  summary.append(caret);
+  menu.append(summary);
+
+  const list = document.createElement('div');
+  list.className = 'diameter-menu-list';
   for (const d of diameters) {
-    const pill = document.createElement('button');
-    pill.type = 'button';
-    pill.className = `diameter-pill ${selected?.id === d.id ? 'selected' : ''}`;
-    pill.innerHTML = `
-      <span class="diameter-color-swatch" style="background: ${d.color}; color: ${d.color}"></span>
-      <span>${d.label}</span>
-    `;
-    pill.addEventListener('click', () => {
+    const option = document.createElement('button');
+    option.type = 'button';
+    option.className = `diameter-option ${selected?.id === d.id ? 'selected' : ''}`;
+    option.append(diameterSwatch(d.color), diameterLabel(`${d.label} (${d.mm} mm)`));
+    option.addEventListener('click', () => {
       appState.diameterRegistry.setSelected(d.id);
       renderDiameterPicker();
       els.statusText.textContent = `Selected conduit diameter: ${d.label}`;
     });
-    grid.appendChild(pill);
+    list.append(option);
   }
+  menu.append(list);
+  els.diameterList.append(menu);
+}
 
-  els.diameterList.appendChild(grid);
+function diameterSwatch(color) {
+  const swatch = document.createElement('span');
+  swatch.className = 'diameter-color-swatch';
+  swatch.style.background = color;
+  swatch.style.color = color;
+  return swatch;
+}
+
+function diameterLabel(text) {
+  const label = document.createElement('span');
+  label.textContent = text;
+  return label;
 }
 
 function renderRunsList(drawingTool) {
@@ -340,19 +366,18 @@ async function init() {
     engine.highlighter.enabled = false;
   }
 
-  // Navisworks / BIM Standard Navigation Controls:
+  // Navisworks navigation is owned by the Rust viewport core:
+  // right-drag orbits, middle-drag pans, and neither cancels the rubberband.
   const controls = engine.world?.camera?.controls;
-  if (controls) {
-    controls.dollyToCursor = true; // Zoom to cursor position
-    controls.mouseButtons.left = controls.constructor.ACTION.ROTATE; // Left-drag orbits without dropping points
-    controls.mouseButtons.middle = controls.constructor.ACTION.TRUCK; // Middle-drag pans (Truck)
-    controls.mouseButtons.right = controls.constructor.ACTION.ROTATE; // Right-drag orbits (Navisworks / BIM standard)
-  }
+  const viewport = await createViewportControls({ controls });
+  const surfacePicker = createSurfacePicker({ engine });
 
   const drawingTool = createDrawingTool({
     engine,
     commandStack: appState.commandStack,
     diameterRegistry: appState.diameterRegistry,
+    viewport,
+    surfacePicker,
     onStateChange: (state) => {
       if (state.elevationPicked !== undefined) {
         if (els.topElevationInput) {
@@ -560,8 +585,8 @@ async function init() {
     drawingTool.isDrawingMode = !drawingTool.isDrawingMode;
     els.btnDrawMode.classList.toggle('active', drawingTool.isDrawingMode);
     els.statusText.textContent = drawingTool.isDrawingMode
-      ? 'Drawing mode active: click model to trace runs'
-      : 'Drawing paused: navigate camera';
+      ? 'Trace on: click a surface to place pipe'
+      : 'Trace off: look around. Click Trace to place pipe';
   });
 
   els.btnOrtho.addEventListener('click', () => {
@@ -694,13 +719,7 @@ async function init() {
   window.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT') return;
 
-    if (e.key === 'Shift') {
-      drawingTool.isOrthoActive = true;
-      els.btnOrtho.classList.add('active');
-      if (controls) {
-        controls.mouseButtons.middle = controls.constructor.ACTION.ROTATE;
-      }
-    } else if ((e.key.toLowerCase() === 'v' || e.key.toLowerCase() === 'z') && !e.ctrlKey) {
+    if ((e.key.toLowerCase() === 'v' || e.key.toLowerCase() === 'z') && !e.ctrlKey) {
       drawingTool.isPerpendicularActive = !drawingTool.isPerpendicularActive;
       els.btnPerp.classList.toggle('active', drawingTool.isPerpendicularActive);
       els.statusText.textContent = drawingTool.isPerpendicularActive
@@ -717,6 +736,7 @@ async function init() {
     } else if (e.key === 'Escape') {
       drawingTool.cancelCurrentRun();
       updateUndoRedoButtons(drawingTool);
+      engine.highlighter?.clear('select')?.catch(() => {});
     } else if (e.ctrlKey && e.key.toLowerCase() === 'z') {
       e.preventDefault();
       if (e.shiftKey) {
@@ -732,16 +752,6 @@ async function init() {
     } else if (e.ctrlKey && e.key.toLowerCase() === 'y') {
       e.preventDefault();
       if (appState.commandStack.canRedo()) appState.commandStack.redo();
-    }
-  });
-
-  window.addEventListener('keyup', (e) => {
-    if (e.key === 'Shift') {
-      drawingTool.isOrthoActive = false;
-      els.btnOrtho.classList.remove('active');
-      if (controls) {
-        controls.mouseButtons.middle = controls.constructor.ACTION.TRUCK;
-      }
     }
   });
 
