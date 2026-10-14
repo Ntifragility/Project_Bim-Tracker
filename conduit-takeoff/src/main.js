@@ -21,10 +21,13 @@ import {
   formatFileSize,
   formatLength,
   convertLength,
+  analyzeRunBends,
+  nodeById,
 } from '@conduit-core';
 import { createDrawingTool } from './drawing-tool.js';
 import { createViewportControls } from './viewport-controls.js';
 import { createSurfacePicker } from './surface-picker.js';
+import { createMepHud } from './mep-hud.js';
 
 // Application State
 const appState = {
@@ -236,6 +239,9 @@ function renderRunsList(drawingTool) {
     const color = appState.diameterRegistry.getColor(run.size);
     const isSelected = appState.selectedRunId === run.id;
 
+    const runNodes = (run.nodeIds || []).map((nid) => nodeById(appState.network, nid)).filter(Boolean);
+    const bendAnalysis = analyzeRunBends(runNodes);
+
     const card = document.createElement('div');
     card.className = `run-item-card ${isSelected ? 'selected' : ''}`;
     card.innerHTML = `
@@ -249,6 +255,9 @@ function renderRunsList(drawingTool) {
       <div class="run-item-stats">
         <span>${takeoff ? takeoff.length.toFixed(2) : '0'} m (${takeoff ? (takeoff.length / 0.3048).toFixed(1) : '0'} ft)</span>
         <span>${takeoff ? takeoff.sticks : 0} sticks</span>
+        <span class="nec-bend-badge ${bendAnalysis.exceedsNec360 ? 'nec-warning' : 'nec-ok'}" title="${bendAnalysis.warning || 'Compliant with NEC 360° bend limit'}">
+          ${bendAnalysis.totalDegrees}° bends
+        </span>
       </div>
     `;
 
@@ -372,6 +381,7 @@ async function init() {
   const viewport = await createViewportControls({ controls });
   const surfacePicker = createSurfacePicker({ engine });
 
+  let mepHud = null;
   const drawingTool = createDrawingTool({
     engine,
     commandStack: appState.commandStack,
@@ -425,7 +435,29 @@ async function init() {
         if (state.isVertical) {
           els.statusText.textContent = `⊥ Perpendicular to XY (Vertical riser): Height Δ = ${(state.liveSegment || 0).toFixed(2)} m`;
         }
+
+        // Live floating Revit MEP HUD
+        if (mepHud && state.screenPos) {
+          const lastPt = state.activePoints[state.activePoints.length - 1];
+          const targetPt = state.cursor;
+          let angleDeg = 0;
+          if (targetPt && lastPt) {
+            const dx = targetPt.x - lastPt.x;
+            const dz = targetPt.z - lastPt.z;
+            angleDeg = ((Math.atan2(dz, dx) * 180 / Math.PI) + 360) % 360;
+          }
+          mepHud.update({
+            screenX: state.screenPos.x,
+            screenY: state.screenPos.y,
+            lengthM: state.liveSegment || 0,
+            angleDeg,
+            isAngleSnapped: !!state.isVertical || (angleDeg % 45 < 2 || angleDeg % 45 > 43),
+            elevationM: drawingTool.activeElevation,
+            visible: true,
+          });
+        }
       } else {
+        mepHud?.hide();
         els.activeRunInfo.hidden = true;
         els.activeRunActions.hidden = true;
         els.verticalStepControls.hidden = true;
@@ -438,6 +470,13 @@ async function init() {
         renderRunsList(drawingTool);
         renderSummary();
       }
+    },
+  });
+
+  mepHud = createMepHud({
+    container: els.viewerContainer,
+    onCommitDistance: (distM) => {
+      drawingTool.commitDistance(distM);
     },
   });
 

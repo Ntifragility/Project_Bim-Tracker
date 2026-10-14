@@ -1048,4 +1048,183 @@ body.sidebar-is-collapsed .revit-options-bar {
   width: auto;
 }
 
+/* ==========================================================================
+   Revit-Style Live Floating MEP HUD Overlay
+   ========================================================================== */
+
+.conduit-mep-hud {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 1000;
+  display: none;
+  align-items: center;
+  gap: 6px;
+  transform: translate3d(0, 0, 0);
+  transition: transform 0.04s cubic-bezier(0.2, 0.8, 0.2, 1);
+  will-change: transform;
+}
+
+.mep-hud-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(18, 20, 28, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.mep-hud-length {
+  border-color: rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+  font-weight: 600;
+}
+
+.mep-hud-angle {
+  border-color: rgba(99, 102, 241, 0.3);
+  color: #a5b4fc;
+}
+
+.mep-hud-angle.snapped {
+  border-color: #00ffff;
+  color: #00ffff;
+  background: rgba(0, 255, 255, 0.15);
+  box-shadow: 0 0 10px rgba(0, 255, 255, 0.3);
+}
+
+.mep-hud-elevation {
+  border-color: rgba(16, 185, 129, 0.3);
+  color: #6ee7b7;
+}
+
+.mep-hud-label {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+.mep-hud-input {
+  display: none;
+  pointer-events: auto;
+  background: rgba(10, 11, 14, 0.95);
+  border: 1px solid var(--accent);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  width: 55px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  outline: none;
+}
+
+.conduit-mep-hud.is-typing .mep-hud-length {
+  border-color: var(--accent);
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+
+/* ==========================================================================
+   Revit-Style Properties & Run Item Cards
+   ========================================================================== */
+
+.run-item-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: all 0.2s var(--ease-out);
+}
+
+.run-item-card:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.run-item-card.selected {
+  border-color: var(--accent);
+  background: rgba(245, 158, 11, 0.08);
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+
+.run-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.run-item-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+
+.run-color-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.run-size-badge {
+  font-size: 0.7rem;
+  font-family: var(--font-mono);
+  background: rgba(255, 255, 255, 0.08);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--text-secondary);
+}
+
+.run-item-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.74rem;
+  color: var(--text-secondary);
+}
+
+.run-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.run-detail-row strong {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+.nec-bend-badge {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.nec-ok {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.nec-warning {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.text-danger {
+  color: var(--error) !important;
+}
+
 
