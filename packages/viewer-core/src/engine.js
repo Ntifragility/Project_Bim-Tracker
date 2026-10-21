@@ -1,4 +1,4 @@
-// COVILLAF viewer: That Open fragments in the page. Loads an IFC, selects elements,
+// COVILLAF viewer engine: That Open fragments in the page. Loads an IFC, selects elements,
 // and paints appearance colors. Tag text and IFC export stay in the tracker modules.
 import * as THREE from "three";
 import * as OBC from "@thatopen/components";
@@ -158,3 +158,5 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
   console.log("[COVILLAF] Engine ready. IFC parser is local.");
   return engine;
 }
+
+export const createEngine = createCovillafEngine;

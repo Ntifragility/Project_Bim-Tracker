@@ -3,7 +3,7 @@
 
 import './style.css';
 import * as THREE from 'three';
-import { createCovillafEngine } from '@covillaf/engine.js';
+import { createCovillafEngine } from 'viewer-core';
 import {
   createNetwork,
   createCommandStack,
