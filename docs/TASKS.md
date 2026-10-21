@@ -6,7 +6,7 @@ Phases and dependencies come from `ARCHITECTURE.md` section 7. Only one agent at
 ## Phase 0: Stabilize (single agent, in order)
 | ID | Task | Branch | Depends on | Owner | Status |
 |---|---|---|---|---|---|
-| 0.1 | Fix duplicate `highlighter`/`hider` declarations in `src/main.js`; `npm run build` must pass | `fix/main-build` | none | | todo |
+| 0.1 | Fix duplicate `highlighter`/`hider` declarations in `src/main.js`; `npm run build` must pass | `fix/main-build` | none | opencode | in progress |
 | 0.2 | CI baseline: `npm test`, `npm run build`, `npm run build:conduit` on every PR | `infra/ci-baseline` | 0.1 | | todo |
 | 0.3 | Merge `feature/revit-snap-engine` into `main` | `infra/merge-snap` | 0.2 | | todo |
 | 0.4 | Merge `feature/revit-fitting-solver` into `main` | `infra/merge-fitting` | 0.3 | | todo |
