@@ -155,8 +155,8 @@
             <div class="draw-tools-header">
               <h3>Drawing Tools</h3>
               <div class="toolbar-row">
-                <button id="btn-draw-mode" class="btn-tool active" type="button" title="Trace Conduit (Click on model to place points, Enter to finish, Esc to cancel)">✏️ Trace</button>
-                <button id="btn-ortho" class="btn-tool" type="button" title="Ortho Lock (Constrain to 90° axes / Shift)">📐 Ortho</button>
+                <button id="btn-draw-mode" class="btn-tool" type="button" title="Trace Conduit (Click on model to place points, Enter to finish, Esc to cancel)">✏️ Trace</button>
+                <button id="btn-ortho" class="btn-tool" type="button" title="Ortho lock: keep the next segment on one axis">📐 Ortho</button>
                 <button id="btn-perp" class="btn-tool" type="button" title="Perpendicular to XY plane (Vertical Riser / Press 'V' or 'Z')">⊥ Perpendicular</button>
                 <button id="btn-undo" class="btn-tool" type="button" title="Undo (Ctrl+Z)" disabled>↶</button>
                 <button id="btn-redo" class="btn-tool" type="button" title="Redo (Ctrl+Y)" disabled>↷</button>
@@ -242,7 +242,7 @@
 
       <!-- Status Bar -->
       <div id="status-bar" class="status-bar">
-        <span id="status-text" class="status-text">Ready — open an IFC file to begin</span>
+        <span id="status-text" class="status-text">Trace off: look around. Click Trace to place pipe</span>
         <span id="cursor-coords" class="cursor-coords"></span>
       </div>
     </div>
