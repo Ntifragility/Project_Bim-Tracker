@@ -1,0 +1,265 @@
+{
+  "module": "tray",
+  "feature": "tagging",
+  "source": "legacy/src/tagging/tag-scheme.js + legacy/src/tagging/element-classifier.js (tests: legacy/packages/routing-core/test/tag-scheme.test.js)",
+  "units": "metres (tags are unit-free strings; lengths N/A)",
+  "notes": "Scheme normalize/format/parse/validate + tag allocation (independent per-kind sequences, gap-append, overflow) + conservative IFC classifier. Vec helper duplication with conduit snap.json is intentional until geom-core (3.1) canonicalizes (see vectors.md open question).",
+  "cases": [
+    {
+      "id": "get-system-tag",
+      "fn": "getSystemTag",
+      "input": { "scheme": { "prefix": "PT", "system": "1" } },
+      "expected": "PT1"
+    },
+    {
+      "id": "format-element-tag",
+      "fn": "formatElementTag",
+      "input": { "systemTag": "PT1", "typeCode": "01", "sequenceNumber": "03" },
+      "expected": "PT1.01.03"
+    },
+    {
+      "id": "format-custom-separator",
+      "fn": "formatElementTag",
+      "input": { "systemTag": "S", "typeCode": "T", "sequenceNumber": "7", "separator": "-" },
+      "expected": "S-T-7"
+    },
+    {
+      "id": "parse-generated-tag",
+      "fn": "parseGeneratedElementTag",
+      "input": {
+        "value": "PT1.02.14",
+        "scheme": { "prefix": "PT", "system": "1", "separator": ".", "sequenceDigits": 2, "startSequence": 1, "typeCodes": { "tray": "01", "fitting": "02" } }
+      },
+      "expected": { "systemTag": "PT1", "typeCode": "02", "sequenceNumber": "14", "sequence": 14 }
+    },
+    {
+      "id": "parse-wrong-parts",
+      "fn": "parseGeneratedElementTag",
+      "input": {
+        "value": "PT1.01",
+        "scheme": { "prefix": "PT", "system": "1", "separator": ".", "sequenceDigits": 2, "startSequence": 1, "typeCodes": { "tray": "01", "fitting": "02" } }
+      },
+      "expected": null
+    },
+    {
+      "id": "parse-non-numeric-sequence",
+      "fn": "parseGeneratedElementTag",
+      "input": {
+        "value": "PT1.01.XX",
+        "scheme": { "prefix": "PT", "system": "1", "separator": ".", "sequenceDigits": 2, "startSequence": 1, "typeCodes": { "tray": "01", "fitting": "02" } }
+      },
+      "expected": null
+    },
+    {
+      "id": "normalize-trims-and-defaults",
+      "fn": "normalizeTagScheme",
+      "input": { "prefix": " PT ", "system": "1", "separator": "-", "sequenceDigits": "3" },
+      "expected": {
+        "prefix": "PT",
+        "system": "1",
+        "separator": "-",
+        "sequenceDigits": 3,
+        "startSequence": 1,
+        "typeCodes": { "tray": "01", "fitting": "02" }
+      }
+    },
+    {
+      "id": "normalize-clamps-digits",
+      "fn": "normalizeTagScheme",
+      "input": { "prefix": "P", "system": "1", "sequenceDigits": "0" },
+      "expected": { "sequenceDigits": 2 }
+    },
+    {
+      "id": "normalize-clamps-digits-high",
+      "fn": "normalizeTagScheme",
+      "input": { "prefix": "P", "system": "1", "sequenceDigits": "7" },
+      "expected": { "sequenceDigits": 2 }
+    },
+    {
+      "id": "normalize-default-type-codes",
+      "fn": "normalizeTagScheme",
+      "input": {},
+      "expected": { "typeCodes": { "tray": "01", "fitting": "02" }, "separator": ".", "sequenceDigits": 2, "startSequence": 1 }
+    },
+    {
+      "id": "validate-ok",
+      "fn": "validateTagScheme",
+      "input": { "prefix": "PT", "system": "1", "separator": ".", "sequenceDigits": 2, "typeCodes": { "tray": "01", "fitting": "02" } },
+      "expected": { "valid": true, "errors": [] }
+    },
+    {
+      "id": "validate-blank-prefix",
+      "fn": "validateTagScheme",
+      "input": { "prefix": "", "system": "1", "separator": ".", "typeCodes": { "tray": "01", "fitting": "02" } },
+      "expected": { "valid": false, "errors": ["Enter a tag prefix."] }
+    },
+    {
+      "id": "validate-separator-in-prefix",
+      "fn": "validateTagScheme",
+      "input": { "prefix": "P.T", "system": "1", "separator": ".", "typeCodes": { "tray": "01", "fitting": "02" } },
+      "expected": { "valid": false, "errorsContains": "cannot contain the" }
+    },
+    {
+      "id": "validate-duplicate-type-codes",
+      "fn": "validateTagScheme",
+      "input": { "prefix": "P", "system": "1", "separator": ".", "typeCodes": { "tray": "01", "fitting": "01" } },
+      "expected": { "valid": false, "errorsContains": "must be different" }
+    },
+    {
+      "id": "allocate-tray-sequence",
+      "fn": "allocateElementTags",
+      "input": {
+        "elements": [{ "localId": 1 }, { "localId": 2 }, { "localId": 3 }],
+        "elementKind": "tray",
+        "scheme": { "prefix": "PT", "system": "1", "separator": ".", "sequenceDigits": 2, "startSequence": 1, "typeCodes": { "tray": "01", "fitting": "02" } }
+      },
+      "expected": { "valid": true, "elementTags": ["PT1.01.01", "PT1.01.02", "PT1.01.03"], "schemeVersion": "2", "componentIdEqualsElementTag": true }
+    },
+    {
+      "id": "allocate-fitting-independent-sequence",
+      "fn": "allocateElementTags",
+      "input": {
+        "elements": [{ "localId": 4 }, { "localId": 5 }],
+        "elementKind": "fitting",
+        "scheme": { "prefix": "PT", "system": "1", "separator": ".", "sequenceDigits": 2, "startSequence": 1, "typeCodes": { "tray": "01", "fitting": "02" } }
+      },
+      "expected": { "valid": true, "elementTags": ["PT1.02.01", "PT1.02.02"] }
+    },
+    {
+      "id": "allocate-appends-after-gap",
+      "fn": "allocateElementTags",
+      "input": {
+        "elements": [{ "localId": 3 }],
+        "elementKind": "tray",
+        "scheme": { "prefix": "PT", "system": "1", "separator": ".", "sequenceDigits": 2, "startSequence": 1, "typeCodes": { "tray": "01", "fitting": "02" } },
+        "existingAssignments": [{ "componentId": "PT1.01.01" }, { "componentId": "PT1.01.03" }]
+      },
+      "expected": { "valid": true, "elementTags": ["PT1.01.04"] }
+    },
+    {
+      "id": "allocate-ignores-other-system",
+      "fn": "allocateElementTags",
+      "input": {
+        "elements": [{ "localId": 1 }],
+        "elementKind": "tray",
+        "scheme": { "prefix": "PT", "system": "1", "separator": ".", "sequenceDigits": 2, "startSequence": 1, "typeCodes": { "tray": "01", "fitting": "02" } },
+        "existingAssignments": [{ "componentId": "OTHER.01.05" }]
+      },
+      "expected": { "valid": true, "elementTags": ["PT1.01.01"] }
+    },
+    {
+      "id": "allocate-ignores-other-type",
+      "fn": "allocateElementTags",
+      "input": {
+        "elements": [{ "localId": 1 }],
+        "elementKind": "tray",
+        "scheme": { "prefix": "PT", "system": "1", "separator": ".", "sequenceDigits": 2, "startSequence": 1, "typeCodes": { "tray": "01", "fitting": "02" } },
+        "existingAssignments": [{ "componentId": "PT1.02.05" }]
+      },
+      "expected": { "valid": true, "elementTags": ["PT1.01.01"] }
+    },
+    {
+      "id": "allocate-matches-case-insensitive",
+      "fn": "allocateElementTags",
+      "input": {
+        "elements": [{ "localId": 1 }],
+        "elementKind": "tray",
+        "scheme": { "prefix": "PT", "system": "1", "separator": ".", "sequenceDigits": 2, "startSequence": 1, "typeCodes": { "tray": "01", "fitting": "02" } },
+        "existingAssignments": [{ "componentId": "pt1.01.02" }]
+      },
+      "expected": { "valid": true, "elementTags": ["PT1.01.03"] }
+    },
+    {
+      "id": "allocate-after-high-reserved",
+      "fn": "allocateElementTags",
+      "input": {
+        "elements": [{ "localId": 1 }, { "localId": 2 }],
+        "elementKind": "fitting",
+        "scheme": { "prefix": "PT", "system": "1", "separator": ".", "sequenceDigits": 2, "startSequence": 1, "typeCodes": { "tray": "01", "fitting": "02" } },
+        "existingAssignments": [{ "componentId": "PT1.02.05" }]
+      },
+      "expected": { "valid": true, "elementTags": ["PT1.02.06", "PT1.02.07"] }
+    },
+    {
+      "id": "allocate-sequence-overflow",
+      "fn": "allocateElementTags",
+      "input": {
+        "elements": [{ "localId": 100 }],
+        "elementKind": "tray",
+        "scheme": { "prefix": "PT", "system": "1", "separator": ".", "sequenceDigits": 2, "startSequence": 99, "typeCodes": { "tray": "01", "fitting": "02" } },
+        "existingAssignments": [{ "componentId": "PT1.01.99" }]
+      },
+      "expected": { "valid": false, "errorsContains": "sequence is full" }
+    },
+    {
+      "id": "allocate-unknown-kind",
+      "fn": "allocateElementTags",
+      "input": {
+        "elements": [{ "localId": 1 }],
+        "elementKind": "duct",
+        "scheme": { "prefix": "PT", "system": "1", "separator": ".", "sequenceDigits": 2, "typeCodes": { "tray": "01", "fitting": "02" } }
+      },
+      "expected": { "valid": false, "errorsContains": "Cable Tray or Cable Fitting" }
+    },
+    {
+      "id": "classify-ifc-tray-class",
+      "fn": "classifyTaggableElement",
+      "input": { "element": { "type": "IfcCableCarrierSegment" } },
+      "expected": { "kind": "tray", "confidence": 1 }
+    },
+    {
+      "id": "classify-ifc-fitting-class",
+      "fn": "classifyTaggableElement",
+      "input": { "element": { "type": "IfcCableCarrierFitting" } },
+      "expected": { "kind": "fitting", "confidence": 1 }
+    },
+    {
+      "id": "classify-ifc-cable-fitting",
+      "fn": "classifyTaggableElement",
+      "input": { "element": { "type": "IFCCableFitting" } },
+      "expected": { "kind": "fitting", "confidence": 1 }
+    },
+    {
+      "id": "classify-tray-by-name",
+      "fn": "classifyTaggableElement",
+      "input": { "element": { "type": "IfcBuildingElementPart", "name": "Cable Tray Run" } },
+      "expected": { "kind": "tray", "confidence": 0.72 }
+    },
+    {
+      "id": "classify-fitting-by-name",
+      "fn": "classifyTaggableElement",
+      "input": { "element": { "type": "IfcBuildingElementPart", "name": "Elbow fitting" } },
+      "expected": { "kind": "fitting", "confidence": 0.72 }
+    },
+    {
+      "id": "classify-spanish-tray",
+      "fn": "classifyTaggableElement",
+      "input": { "element": { "type": "X", "name": "Bandeja de cables" } },
+      "expected": { "kind": "tray", "confidence": 0.72 }
+    },
+    {
+      "id": "classify-spanish-fitting",
+      "fn": "classifyTaggableElement",
+      "input": { "element": { "type": "X", "name": "Codo 90" } },
+      "expected": { "kind": "fitting", "confidence": 0.72 }
+    },
+    {
+      "id": "classify-reducer-fitting",
+      "fn": "classifyTaggableElement",
+      "input": { "element": { "type": "X", "name": "Reducer 100x50" } },
+      "expected": { "kind": "fitting", "confidence": 0.72 }
+    },
+    {
+      "id": "classify-ambiguous-returns-null",
+      "fn": "classifyTaggableElement",
+      "input": { "element": { "type": "IfcBuildingElementPart", "name": "Cable Tray with Fittings" } },
+      "expected": { "kind": null, "confidence": 0 }
+    },
+    {
+      "id": "classify-unknown-returns-null",
+      "fn": "classifyTaggableElement",
+      "input": { "element": { "type": "IfcValve" } },
+      "expected": { "kind": null, "confidence": 0 }
+    }
+  ]
+}
