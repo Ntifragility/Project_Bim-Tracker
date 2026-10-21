@@ -289,34 +289,22 @@ async function initApp() {
   const { components, world, fragments, highlighter, hider } = engine;
 
   // ──────────────────────────────────────────────
-  //  AUTO-ORBIT CAMERA ROTATION
+  //  AUTO-ORBIT CAMERA ROTATION (delegated to viewer-core)
   // ──────────────────────────────────────────────
-  const autoRotateSpeed = 0.003; // Radians per frame
-  
-  function updateAutoRotate() {
-    if (autoRotateActive && world.camera && world.camera.controls && world.camera.controls.enabled) {
-      world.camera.controls.azimuthAngle += autoRotateSpeed;
+  engine.autoOrbit.onChange((active) => {
+    autoRotateActive = active;
+    if (orbitIndicator) {
+      orbitIndicator.style.display = active ? 'flex' : 'none';
     }
-    requestAnimationFrame(updateAutoRotate);
-  }
-  
-  // Start the animation loop
-  updateAutoRotate();
+  });
 
-  // Stop auto-orbit on any canvas user interaction
-  const stopAutoOrbit = () => {
-    if (autoRotateActive) {
-      autoRotateActive = false;
-      if (orbitIndicator) {
-        orbitIndicator.style.display = 'none';
-      }
-      console.log("[Auto-Orbit] Deactivated by user interaction.");
-    }
-  };
-
-  if (container) {
-    container.addEventListener('pointerdown', stopAutoOrbit);
-    container.addEventListener('wheel', stopAutoOrbit);
+  if (orbitIndicator) {
+    orbitIndicator.style.cursor = 'pointer';
+    orbitIndicator.title = 'Click to toggle Auto-Orbit';
+    orbitIndicator.addEventListener('click', (e) => {
+      e.stopPropagation();
+      engine.autoOrbit.toggle();
+    });
   }
 
   // Current FragmentsModel versions expose relations through getItemsData().
@@ -3047,10 +3035,7 @@ async function initApp() {
         fitModelToView(modelEntry.model);
         
         // 3. Trigger Auto-Orbit
-        autoRotateActive = true;
-        if (orbitIndicator) {
-          orbitIndicator.style.display = 'flex';
-        }
+        engine.autoOrbit.start();
         console.log(`[Auto-Orbit] Activated for model: ${modelEntry.name}`);
 
         refreshLoadedModelsList();

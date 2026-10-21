@@ -2,7 +2,7 @@
 // Gesture policy, orbit/pan deltas, and the IFC selection gate live in
 // packages/viewport-core. This file only applies those deltas to camera-controls.
 
-import wasmUrl from '../../packages/viewport-core/pkg/viewport_core.wasm?url';
+import wasmUrl from '../../crates/viewport-core/pkg/viewport_core.wasm?url';
 
 const ACTION_NAME = ['none', 'orbit', 'pan', 'place', 'sample', 'select'];
 const MODE_CODE = { navigate: 0, drawing: 1, 'pick-elevation': 2 };

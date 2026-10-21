@@ -81,6 +81,76 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
   }
   const hider = components.get(OBC.Hider);
 
+  // Auto-Orbit management
+  let autoRotateActive = false;
+  let autoRotateSpeed = 0.003;
+  const autoOrbitListeners = new Set();
+  let autoRotateAnimId = null;
+
+  function notifyAutoOrbit(active) {
+    autoRotateActive = active;
+    for (const listener of autoOrbitListeners) {
+      try {
+        listener(active);
+      } catch (err) {
+        console.error("[COVILLAF] autoOrbit listener error:", err);
+      }
+    }
+  }
+
+  function autoRotateLoop() {
+    if (autoRotateActive && world.camera?.controls && world.camera.controls.enabled) {
+      world.camera.controls.azimuthAngle += autoRotateSpeed;
+    }
+    autoRotateAnimId = requestAnimationFrame(autoRotateLoop);
+  }
+  autoRotateAnimId = requestAnimationFrame(autoRotateLoop);
+
+  const stopAutoOrbitOnUserAction = () => {
+    if (autoRotateActive) {
+      notifyAutoOrbit(false);
+      console.log("[Auto-Orbit] Deactivated by user interaction.");
+    }
+  };
+
+  if (container) {
+    container.addEventListener("pointerdown", stopAutoOrbitOnUserAction);
+    container.addEventListener("wheel", stopAutoOrbitOnUserAction);
+  }
+
+  const autoOrbit = {
+    start(speed) {
+      if (typeof speed === "number") autoRotateSpeed = speed;
+      notifyAutoOrbit(true);
+    },
+    stop() {
+      notifyAutoOrbit(false);
+    },
+    toggle(speed) {
+      if (autoRotateActive) {
+        autoOrbit.stop();
+      } else {
+        autoOrbit.start(speed);
+      }
+      return autoRotateActive;
+    },
+    isActive() {
+      return autoRotateActive;
+    },
+    onChange(callback) {
+      autoOrbitListeners.add(callback);
+      return () => autoOrbitListeners.delete(callback);
+    },
+    dispose() {
+      if (autoRotateAnimId) cancelAnimationFrame(autoRotateAnimId);
+      if (container) {
+        container.removeEventListener("pointerdown", stopAutoOrbitOnUserAction);
+        container.removeEventListener("wheel", stopAutoOrbitOnUserAction);
+      }
+      autoOrbitListeners.clear();
+    },
+  };
+
   const engine = {
     name: "COVILLAF",
     components,
@@ -91,6 +161,7 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
     hider,
     raycaster,
     coordinates: createCoordinateFrame(fragments),
+    autoOrbit,
 
     /**
      * Model surface under a screen position (NDC, -1..1). Snapping to model
@@ -151,6 +222,11 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
         });
         await highlighter.highlightByID(styleName, modelIdMap, false, false);
       }
+    },
+
+    dispose() {
+      autoOrbit.dispose();
+      components.dispose();
     },
   };
 
