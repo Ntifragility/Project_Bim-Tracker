@@ -1,7 +1,7 @@
 import './style.css';
 import * as THREE from 'three';
 import * as OBC from '@thatopen/components';
-import * as XLSX from 'xlsx';
+import { readWorkbook, exportTagMapping } from 'excel-io';
 import { initExcelBridge } from './viewer-socket.js';
 import { initRoutingController } from './routing/routing-controller.js';
 import { addTraySystemAssignmentsToIfc, extractTraySystemAssignmentsFromIfc, taggedIfcFileName } from './ifc/ifc-tag-exporter.js';
@@ -3148,9 +3148,7 @@ async function initApp() {
 
   function setWireframe(value) {
     isWireframe = value;
-    loadedModels.forEach(m => {
-      setWireframeForModel(m.model, isWireframe);
-    });
+    engine.setWireframe(isWireframe);
   }
 
   // Listeners: Sidebar controls
@@ -4151,10 +4149,8 @@ async function initApp() {
     reader.onload = (e) => {
       try {
         const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, { type: 'array' });
-        const firstSheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[firstSheetName];
-        const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+        const workbook = readWorkbook(data);
+        const jsonData = workbook.readSheet();
 
         if (jsonData.length > 0) {
           excelColumns = Object.keys(jsonData[0]);
@@ -4569,19 +4565,7 @@ async function initApp() {
         Excel_Row: Number.isInteger(assignment.excelRowIndex) ? assignment.excelRowIndex + 2 : '',
       };
     }));
-    const worksheet = XLSX.utils.json_to_sheet(rows);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Tag Register');
-    const summaryRows = getTraySystemSummaries().map((system) => ({
-      SystemTag: system.tag,
-      Components: system.count,
-      CableTrays: system.members.filter((member) => member.elementKind === 'tray').length,
-      CableFittings: system.members.filter((member) => member.elementKind === 'fitting').length,
-      Models: system.models.join(', '),
-      Status: system.status,
-    }));
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(summaryRows), 'Summary');
-    XLSX.writeFile(workbook, 'IFC_Tag_Mapping.xlsx');
+    exportTagMapping(rows, summaryRows, 'IFC_Tag_Mapping.xlsx');
     updateTagAssignmentUi(`Exported ${rows.length} tag assignment${rows.length === 1 ? '' : 's'}.`);
   });
 

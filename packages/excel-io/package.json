@@ -3,5 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Optional Excel plugin for apps (scaffold, task 1.1)"
+  "description": "Optional Excel plugin for apps",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  }
 }

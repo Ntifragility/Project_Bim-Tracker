@@ -224,6 +224,19 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
       }
     },
 
+    setWireframe(enabled) {
+      if (!world?.scene?.three) return;
+      world.scene.three.traverse((child) => {
+        if (child.isMesh && child.material) {
+          if (Array.isArray(child.material)) {
+            child.material.forEach((m) => { m.wireframe = enabled; });
+          } else {
+            child.material.wireframe = enabled;
+          }
+        }
+      });
+    },
+
     dispose() {
       autoOrbit.dispose();
       components.dispose();
