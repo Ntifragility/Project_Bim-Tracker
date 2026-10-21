@@ -1,0 +1,183 @@
+{
+  "module": "conduit",
+  "feature": "takeoff",
+  "source": "legacy/packages/conduit-core/test/conduit-core.test.js + src/network.js + src/takeoff.js + src/snap.js + src/geometry.js",
+  "units": "metres",
+  "canonicalDecision": "Minimal takeoff: computeTakeoff reports ONLY {id, name, size, system, length, sticks, points} per run plus bySize {size, runs, length, sticks} and totals {runs, length, sticks}. Elbows/risers/couplings are OUT OF SCOPE for takeoff (conduit is bent on site). Hardware counts (couplings, box connectors, straps, elbows, pull boxes) live in bom.json, and CSV/IFC text rendering lives behind the wasm/TS boundary. The old Python takeoff-overlay.md elbow/riser/coupling rules are superseded for the JS engine by this vector file.",
+  "cases": [
+    {
+      "id": "straight-10m-3m-sticks",
+      "fn": "computeTakeoff",
+      "input": { "stickLength": 3, "runs": [{ "size": "3/4\"", "system": "", "points": [[0, 0, 0], [10, 0, 0]] }] },
+      "expected": { "runs": [{ "length": 10, "sticks": 4, "points": 2 }], "totals": { "length": 10, "sticks": 4 } },
+      "tol": 1e-9
+    },
+    {
+      "id": "one-stick-exact",
+      "fn": "computeTakeoff",
+      "input": { "stickLength": 3.048, "runs": [{ "size": "3/4\"", "system": "", "points": [[0, 0, 0], [3.048, 0, 0]] }] },
+      "expected": { "runs": [{ "sticks": 1 }], "totals": { "sticks": 1 } }
+    },
+    {
+      "id": "acceptance-25ft-run",
+      "fn": "computeTakeoff",
+      "input": { "stickLength": 3.048, "runs": [{ "size": "3/4\"", "system": "", "points": [[0, 0, 0], [7.62, 0, 0]] }] },
+      "expected": { "runs": [{ "sticks": 3 }] },
+      "note": "Acceptance test #7 from the spec: 25 ft run at 10 ft stick = 3 sticks"
+    },
+    {
+      "id": "l-run-length-sum",
+      "fn": "computeTakeoff",
+      "input": { "stickLength": 3, "runs": [{ "size": "3/4\"", "system": "", "points": [[0, 0, 0], [4, 0, 0], [4, 2, 0], [4, 5, 0]] }] },
+      "expected": { "runs": [{ "length": 9, "sticks": 3 }] },
+      "tol": 1e-9
+    },
+    {
+      "id": "per-run-sticks-sum",
+      "fn": "computeTakeoff",
+      "input": {
+        "stickLength": 3,
+        "runs": [
+          { "size": "3/4\"", "system": "", "points": [[0, 0, 0], [7, 0, 0]] },
+          { "size": "3/4\"", "system": "", "points": [[0, 5, 0], [5, 5, 0]] }
+        ]
+      },
+      "expected": {
+        "bySize": [{ "size": "3/4\"", "runs": 2, "length": 12, "sticks": 5 }],
+        "totals": { "sticks": 5 }
+      },
+      "tol": 1e-9,
+      "note": "3 + 2 per-run sticks = 5, NOT ceil(12/3) = 4"
+    },
+    {
+      "id": "diameter-grouping",
+      "fn": "computeTakeoff",
+      "input": {
+        "stickLength": 3,
+        "runs": [
+          { "size": "3/4\"", "system": "", "points": [[0, 0, 0], [6, 0, 0]] },
+          { "size": "1\"", "system": "", "points": [[0, 5, 0], [4, 5, 0]] }
+        ]
+      },
+      "expected": { "bySizeCount": 2, "totals": { "runs": 2, "length": 10 } },
+      "tol": 1e-9
+    },
+    {
+      "id": "no-hardware-fields",
+      "fn": "computeTakeoff",
+      "input": { "stickLength": 3, "runs": [{ "size": "3/4\"", "system": "", "points": [[0, 0, 0], [4, 0, 0], [4, 2, 0]] }] },
+      "expected": {
+        "runs": [{ "length": 6, "sticks": 2, "elbow90": null, "riserLength": null, "couplings": null }],
+        "absentTotals": ["elbow90"]
+      },
+      "tol": 1e-9,
+      "note": "null = field must be absent/undefined"
+    },
+    {
+      "id": "zero-length-run",
+      "fn": "computeTakeoff",
+      "input": { "stickLength": 3, "runs": [{ "size": "1\"", "system": "", "points": [[0, 0, 0]] }] },
+      "expected": { "runs": [{ "length": 0, "sticks": 0 }] },
+      "tol": 1e-9
+    },
+    {
+      "id": "collinear-midpoint-no-op",
+      "fn": "computeTakeoff",
+      "input": { "stickLength": 3, "runs": [{ "size": "3/4\"", "system": "", "points": [[0, 0, 0], [2, 0, 0], [5, 0, 0]] }] },
+      "expected": { "runs": [{ "length": 5, "sticks": 2 }] },
+      "tol": 1e-9
+    },
+    {
+      "id": "findsnap-node",
+      "fn": "findSnap",
+      "input": {
+        "network": { "nodes": [{ "id": "n1", "x": 0, "y": 0, "z": 0 }, { "id": "n2", "x": 10, "y": 0, "z": 0 }], "runs": [{ "id": "r1", "nodeIds": ["n1", "n2"] }] },
+        "point": { "x": 0.001, "y": 0.001, "z": 0 },
+        "tolerance": 0.01
+      },
+      "expected": { "kind": "node", "nodeId": "n1" }
+    },
+    {
+      "id": "findsnap-segment",
+      "fn": "findSnap",
+      "input": {
+        "network": { "nodes": [{ "id": "n1", "x": 0, "y": 0, "z": 0 }, { "id": "n2", "x": 10, "y": 0, "z": 0 }], "runs": [{ "id": "r1", "nodeIds": ["n1", "n2"] }] },
+        "point": { "x": 5, "y": 0.005, "z": 0 },
+        "tolerance": 0.01
+      },
+      "expected": { "kind": "segment", "runId": "r1", "index": 0 }
+    },
+    {
+      "id": "findsnap-miss",
+      "fn": "findSnap",
+      "input": {
+        "network": { "nodes": [{ "id": "n1", "x": 0, "y": 0, "z": 0 }, { "id": "n2", "x": 10, "y": 0, "z": 0 }], "runs": [{ "id": "r1", "nodeIds": ["n1", "n2"] }] },
+        "point": { "x": 5, "y": 1, "z": 0 },
+        "tolerance": 0.01
+      },
+      "expected": null
+    },
+    {
+      "id": "constrain-ortho-axis",
+      "fn": "constrainOrtho",
+      "input": { "from": { "x": 0, "y": 0, "z": 0 }, "to": { "x": 3, "y": 1, "z": 0 }, "planAngle": 0 },
+      "expected": { "x": 3, "y": 0, "z": 0 },
+      "tol": 1e-9
+    },
+    {
+      "id": "constrain-ortho-rotated-grid",
+      "fn": "constrainOrtho",
+      "input": { "from": { "x": 0, "y": 0, "z": 0 }, "to": { "x": 3, "y": 1, "z": 0 }, "planAngle": 45 },
+      "expected": { "x": 2.0000000000000004, "y": 2, "z": 0 },
+      "tol": 1e-9,
+      "note": "Rotated plan grid: dominant axis remapped back through planAngle. len>0 invariant holds."
+    },
+    {
+      "id": "network-edit-prune",
+      "fn": "removeLastPoint+deleteRun",
+      "input": { "stickLength": 3, "points": [[0, 0, 0], [1, 0, 0], [2, 0, 0]] },
+      "expected": { "nodesAfterRemove": 2, "nodesAfterDelete": 0, "runsAfterDelete": 0 }
+    },
+    {
+      "id": "network-reload-roundtrip",
+      "fn": "validateNetwork(computeTakeoff)",
+      "input": { "stickLength": 3, "points": [[0, 0, 0], [10, 0, 0]] },
+      "expected": { "length": 10, "sticks": 4 },
+      "tol": 1e-9,
+      "note": "JSON serialize -> validateNetwork -> takeoff identical. ceil(10/3) = 4."
+    },
+    {
+      "id": "size-ordering-mm",
+      "fn": "sizeToMillimetres",
+      "input": { "queries": ["3/4\"", "1\"", "25mm", "2\"", "foo", "1 1/2\""] },
+      "expected": { "lt": [["3/4\"", "1\""], ["25mm", "2\""]], "nan": ["foo"], "mm_1_5in": 38.1 },
+      "tol": 1e-9
+    },
+    {
+      "id": "split-segment-keeps-length",
+      "fn": "splitSegment",
+      "input": { "stickLength": 3, "points": [[0, 0, 0], [10, 0, 0]], "split": { "index": 0, "point": [5, 0, 0] } },
+      "expected": { "nodeCount": 3, "length": 10 },
+      "tol": 1e-9
+    },
+    {
+      "id": "run-takeoff-standalone",
+      "fn": "computeRunTakeoff",
+      "input": { "stickLength": 3, "points": [[0, 0, 0], [8, 0, 0]] },
+      "expected": { "length": 8, "sticks": 3, "points": 2 },
+      "tol": 1e-9
+    },
+    {
+      "id": "system-grouping",
+      "fn": "computeTakeoff",
+      "input": {
+        "stickLength": 3,
+        "runs": [
+          { "size": "3/4\"", "system": "Power", "points": [[0, 0, 0], [6, 0, 0]] },
+          { "size": "3/4\"", "system": "Lighting", "points": [[0, 5, 0], [4, 5, 0]] }
+        ]
+      },
+      "expected": { "bySizeCount": 1, "systems": ["Power", "Lighting"] }
+    }
+  ]
+}

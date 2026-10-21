@@ -1,0 +1,148 @@
+{
+  "module": "conduit",
+  "feature": "units",
+  "source": "legacy/packages/conduit-core/test/coordinate-utils.test.js + src/coordinate-utils.js + src/config.js + src/diameter-registry.js",
+  "units": "metres internally; imperial converted at edges (ARCHITECTURE section 3)",
+  "notes": "resolveUnit/convertLength/toMetres/fromMetres and the UNIT_TABLE factors port to geom-core (pure). sizeToMillimetres ports to conduit-core (trade-size parsing). DEFAULT_DIAMETERS + DIAMETER_PALETTE + default selection are registry seed data (ports as constants). formatLength/formatFileSize are presentation-only: TS-side, do not port.",
+  "cases": [
+    {
+      "id": "unit-table-factors",
+      "fn": "UNIT_TABLE",
+      "input": {},
+      "expected": {
+        "METRE": { "factor": 1, "label": "m" },
+        "MILLIMETRE": { "factor": 0.001, "label": "mm" },
+        "CENTIMETRE": { "factor": 0.01, "label": "cm" },
+        "FOOT": { "factor": 0.3048, "label": "ft" },
+        "INCH": { "factor": 0.0254, "label": "in" }
+      },
+      "tol": 0
+    },
+    {
+      "id": "resolve-standard-units",
+      "fn": "resolveUnit",
+      "input": { "queries": ["METRE", "FOOT", "MILLIMETRE", "INCH"] },
+      "expected": { "keys": ["METRE", "FOOT", "MILLIMETRE", "INCH"] }
+    },
+    {
+      "id": "resolve-dotted-ifc",
+      "fn": "resolveUnit",
+      "input": { "queries": [".MILLI.METRE."] },
+      "expected": { "keys": ["MILLIMETRE"], "factors": [0.001] },
+      "tol": 1e-12
+    },
+    {
+      "id": "resolve-case-insensitive",
+      "fn": "resolveUnit",
+      "input": { "queries": ["metre", "Foot"] },
+      "expected": { "nonNull": true }
+    },
+    {
+      "id": "resolve-unknown-null",
+      "fn": "resolveUnit",
+      "input": { "queries": ["FATHOM", "", null] },
+      "expected": [null, null, null]
+    },
+    {
+      "id": "convert-metre-foot",
+      "fn": "convertLength",
+      "input": { "value": 1, "from": "METRE", "to": "FOOT" },
+      "expected": 3.280839895013123,
+      "tol": 1e-9
+    },
+    {
+      "id": "convert-foot-metre",
+      "fn": "convertLength",
+      "input": { "value": 10, "from": "FOOT", "to": "METRE" },
+      "expected": 3.048,
+      "tol": 1e-9
+    },
+    {
+      "id": "convert-mm-inch",
+      "fn": "convertLength",
+      "input": { "value": 25.4, "from": "MILLIMETRE", "to": "INCH" },
+      "expected": 1.0,
+      "tol": 1e-9
+    },
+    {
+      "id": "convert-identity",
+      "fn": "convertLength",
+      "input": { "value": 42, "from": "METRE", "to": "METRE" },
+      "expected": 42,
+      "tol": 0
+    },
+    {
+      "id": "convert-unknown-throws",
+      "fn": "convertLength",
+      "input": { "value": 1, "from": "FATHOM", "to": "METRE" },
+      "expected": { "throws": "Unknown unit" }
+    },
+    {
+      "id": "from-metres-10ft",
+      "fn": "fromMetres",
+      "input": { "value": 3.048, "to": "FOOT" },
+      "expected": 10,
+      "tol": 1e-9
+    },
+    {
+      "id": "to-metres-10ft",
+      "fn": "toMetres",
+      "input": { "value": 10, "from": "FOOT" },
+      "expected": 3.048,
+      "tol": 1e-9
+    },
+    {
+      "id": "format-length-ts",
+      "fn": "formatLength",
+      "input": { "calls": [[3.048, "METRE", 3], [10, "FOOT", 0]] },
+      "expected": ["3.048 m", "10 ft"],
+      "tsOnly": true
+    },
+    {
+      "id": "format-file-size-ts",
+      "fn": "formatFileSize",
+      "input": { "calls": [[500], [1536], [10485760]] },
+      "expected": ["500 B", "1.5 KB", "10.0 MB"],
+      "tsOnly": true
+    },
+    {
+      "id": "size-to-mm-table",
+      "fn": "sizeToMillimetres",
+      "input": { "queries": ["3/4\"", "1\"", "25mm", "2\"", "foo", "1 1/2\"", "½\"", "¾\""] },
+      "expected": { "values": [19.05, 25.4, 25, 50.8, null, 38.1, null, null], "nanIndex": [4, 6, 7] },
+      "tol": 1e-9,
+      "note": "null = NaN. Unicode fraction labels (½, ¾) are NOT parsed by sizeToMillimetres (NaN); NEC lookup in fitting.json handles them separately. TS edge normalizes labels before calling."
+    },
+    {
+      "id": "default-diameters-seed",
+      "fn": "DEFAULT_DIAMETERS",
+      "input": {},
+      "expected": {
+        "count": 9,
+        "labels": ["½\"", "¾\"", "1\"", "1¼\"", "1½\"", "2\"", "2½\"", "3\"", "4\""],
+        "mm": [12.7, 19.05, 25.4, 31.75, 38.1, 50.8, 63.5, 76.2, 101.6]
+      }
+    },
+    {
+      "id": "default-stick-length",
+      "fn": "DEFAULT_STICK_LENGTH_M",
+      "input": {},
+      "expected": 3.048,
+      "tol": 0
+    },
+    {
+      "id": "registry-defaults",
+      "fn": "DiameterRegistry.defaults",
+      "input": {},
+      "expected": {
+        "countGte": 9,
+        "hasLabels": ["¾\"", "1\""],
+        "defaultSelected": "¾\"",
+        "selectedAfterSet": "1\"",
+        "colorOf1in": "#10b981",
+        "colorOfUnknown": "#f59e0b",
+        "ids": ["diam-1", "diam-2", "diam-3", "diam-4", "diam-5", "diam-6", "diam-7", "diam-8", "diam-9"]
+      }
+    }
+  ]
+}
