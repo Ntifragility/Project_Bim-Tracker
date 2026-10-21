@@ -324,10 +324,9 @@ async function initApp() {
   // the removed IfcRelationsIndexer component.
   let indexer = null;
 
-  // 7. Set up Highlighter (instances come from the engine; do not redeclare here).
-  highlighter.setup({ world });
-  // Allow normal hand jitter without interpreting an intended click as orbiting.
-  highlighter.mouseMoveThreshold = 10;
+  // 7. Highlighter setup (setup + mouseMoveThreshold, allowing normal hand
+  // jitter) lives in the engine; do not call setup here again. Apply only
+  // app-specific selection behaviour below.
   highlighter.zoomToSelection = false;
   setSelectionHighlightStyle(selectionHighlightColor);
 
