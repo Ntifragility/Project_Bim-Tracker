@@ -1,0 +1,24 @@
+{
+  "name": "bim-tracker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:conduit": "vite conduit-takeoff --open",
+    "build": "vite build",
+    "build:conduit": "vite build conduit-takeoff",
+    "preview": "vite preview",
+    "test": "node --test packages/routing-core/test/*.test.js packages/conduit-core/test/*.test.js packages/viewport-core/test/*.test.mjs"
+  },
+  "devDependencies": {
+    "vite": "^8.0.12"
+  },
+  "dependencies": {
+    "@thatopen/components": "^3.4.6",
+    "@thatopen/components-front": "^3.4.3",
+    "@thatopen/fragments": "^3.4.5",
+    "three": "^0.184.0",
+    "xlsx": "^0.18.5"
+  }
+}

@@ -8,19 +8,19 @@ Phases and dependencies come from `ARCHITECTURE.md` section 7. Only one agent at
 |---|---|---|---|---|---|
 | 0.1 | Fix duplicate `highlighter`/`hider` declarations in `src/main.js`; `npm run build` must pass | `fix/main-build` | none | opencode | done |
 | 0.2 | CI baseline: `npm test`, `npm run build`, `npm run build:conduit` on every PR | `infra/ci-baseline` | 0.1 | opencode | done |
-| 0.3 | Merge `feature/revit-snap-engine` into `main` | `infra/merge-snap` | 0.2 | | todo |
-| 0.4 | Merge `feature/revit-fitting-solver` into `main` | `infra/merge-fitting` | 0.3 | | todo |
-| 0.5 | Merge `feature/revit-mep-hud` into `main` | `infra/merge-hud` | 0.4 | | todo |
-| 0.6 | Merge `feature/revit-bom-export` into `main` | `infra/merge-bom` | 0.5 | | todo |
-| 0.7 | Merge `feature/revit-viewport-controls` into `main`; inspect what it changes in `engine.js` | `infra/merge-viewport` | 0.6 | | todo |
-| 0.8 | Tag `legacy-js-v0`; move `ThatOpenEngine/` out of the repo | `infra/legacy-baseline` | 0.7 | | todo |
-| 0.9 | Repo hygiene: untrack `__pycache__`, `.nwc`, `.log.html`; move root notes to `docs/`; samples to `samples/`. Do NOT delete items listed in `docs/review-12345.md` | `infra/hygiene` | 0.8 | | todo |
-| 0.10 | Move (never delete) the five existing docs and the root notes into `docs/`, originals unchanged (routing and tagging also copied to `docs/specs/tray/` as baselines); add `ARCHITECTURE.md`, `AGENTS.md`, `docs/TASKS.md`, the review file | `infra/docs-move` | 0.9 | | todo |
+| 0.3 | Merge `feature/revit-snap-engine` into `main` | `infra/merge-snap` | 0.2 | | done |
+| 0.4 | Merge `feature/revit-fitting-solver` into `main` | `infra/merge-fitting` | 0.3 | | done |
+| 0.5 | Merge `feature/revit-mep-hud` into `main` | `infra/merge-hud` | 0.4 | | done |
+| 0.6 | Merge `feature/revit-bom-export` into `main` | `infra/merge-bom` | 0.5 | | done |
+| 0.7 | Merge `feature/revit-viewport-controls` into `main`; inspect what it changes in `engine.js` | `infra/merge-viewport` | 0.6 | | done |
+| 0.8 | Tag `legacy-js-v0`; move `ThatOpenEngine/` out of the repo | `infra/legacy-baseline` | 0.7 | | done |
+| 0.9 | Repo hygiene: untrack `__pycache__`, `.nwc`, `.log.html`; move root notes to `docs/`; samples to `samples/`. Do NOT delete items listed in `docs/review-12345.md` | `infra/hygiene` | 0.8 | | done |
+| 0.10 | Move (never delete) the five existing docs and the root notes into `docs/`, originals unchanged (routing and tagging also copied to `docs/specs/tray/` as baselines); add `ARCHITECTURE.md`, `AGENTS.md`, `docs/TASKS.md`, the review file | `infra/docs-move` | 0.9 | | done |
 
 ## Phase 1: Scaffold (single agent; shared root files)
 | ID | Task | Branch | Depends on | Owner | Status |
 |---|---|---|---|---|---|
-| 1.1 | Cargo + npm workspaces with glob members; `legacy/` folder; empty crates, bindings, packages, apps | `infra/workspaces` | 0.9 | | todo |
+| 1.1 | Cargo + npm workspaces with glob members; `legacy/` folder; empty crates, bindings, packages, apps | `infra/workspaces` | 0.9 | | done |
 | 1.2 | Rust CI (fmt, clippy, test, wasm build) + boundary check | `infra/ci-rust` | 1.1 | | todo |
 
 ## Phase 2: Golden vectors (parallel: conduit and tray)

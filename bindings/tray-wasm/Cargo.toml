@@ -1,0 +1,13 @@
+[package]
+name = "tray-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+tray-tagging = { path = "../../crates/tray-tagging" }
+tray-routing = { path = "../../crates/tray-routing" }
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"

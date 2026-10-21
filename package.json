@@ -3,13 +3,17 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
     "dev": "vite",
     "dev:conduit": "vite conduit-takeoff --open",
     "build": "vite build",
     "build:conduit": "vite build conduit-takeoff",
     "preview": "vite preview",
-    "test": "node --test packages/routing-core/test/*.test.js packages/conduit-core/test/*.test.js"
+    "test": "node --test packages/routing-core/test/*.test.js packages/conduit-core/test/*.test.js packages/viewport-core/test/*.test.mjs"
   },
   "devDependencies": {
     "vite": "^8.0.12"
