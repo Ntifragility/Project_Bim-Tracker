@@ -10,7 +10,7 @@ import { validateTagIntegrity } from './ifc/tag-validator.js';
 import { allocateElementTags, getSystemTag, normalizeTagScheme } from './tagging/tag-scheme.js';
 import { classifyTaggableElement } from './tagging/element-classifier.js';
 import { TagLabelManager } from './tag-label-manager.js';
-import { createCovillafEngine } from './covillaf/engine.js';
+import { createCovillafEngine } from 'viewer-core';
 
 // Global variables for active model and state
 let activeModel = null;
