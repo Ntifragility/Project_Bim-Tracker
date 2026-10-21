@@ -1,5 +1,5 @@
 # viewer / ghost-isolate
-Status: draft
+Status: done
 Branch: viewer/ghost-isolate        Owner folders: packages/viewer-core/, docs/specs/viewer/
 
 ## Goal

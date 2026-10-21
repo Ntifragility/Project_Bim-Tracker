@@ -151,6 +151,155 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
     },
   };
 
+  // Clipper setup
+  const rawClipper = components.get(OBC.Clipper);
+  if (world?.renderer?.three) {
+    world.renderer.three.localClippingEnabled = true;
+  }
+
+  const clipper = {
+    get raw() { return rawClipper; },
+    get enabled() { return rawClipper.enabled; },
+    set enabled(val) { rawClipper.enabled = Boolean(val); },
+    get visible() { return rawClipper.visible; },
+    set visible(val) { rawClipper.visible = Boolean(val); },
+    pickHonorsPlanes: true,
+
+    createPlane(planeNormal = new THREE.Vector3(0, -1, 0), planeConstant = 0) {
+      rawClipper.enabled = true;
+      const normal = planeNormal.clone().normalize();
+      const point = normal.clone().multiplyScalar(-planeConstant);
+      return rawClipper.createFromNormalAndCoplanarPoint(world, normal, point);
+    },
+
+    async createFromIntersection() {
+      rawClipper.enabled = true;
+      return await rawClipper.create(world);
+    },
+
+    async deletePlane(planeId) {
+      await rawClipper.delete(world, planeId);
+    },
+
+    deleteAll() {
+      rawClipper.deleteAll();
+    },
+
+    toggle(enabled) {
+      if (typeof enabled === "boolean") {
+        rawClipper.enabled = enabled;
+      } else {
+        rawClipper.enabled = !rawClipper.enabled;
+      }
+      return rawClipper.enabled;
+    },
+
+    getPlanes() {
+      const planes = [];
+      if (rawClipper.list) {
+        for (const [id, item] of rawClipper.list) {
+          planes.push({ id, plane: item.plane ?? item });
+        }
+      }
+      return planes;
+    },
+  };
+
+  // Ghost & Hard Isolation setup
+  let ghostActive = false;
+  const GHOST_STYLE_NAME = "ghost-isolation";
+  highlighter.styles.set(GHOST_STYLE_NAME, {
+    color: new THREE.Color("#64748b"),
+    opacity: 0.15,
+    transparent: true,
+  });
+
+  const isolation = {
+    async ghostIsolate(modelIdMap = {}) {
+      await highlighter.clear(GHOST_STYLE_NAME);
+      ghostActive = true;
+      const inverseMap = {};
+
+      if (fragments?.groups) {
+        for (const [modelId, model] of fragments.groups) {
+          const kept = new Set(modelIdMap[modelId] || []);
+          const nonKept = [];
+          if (model?.data?.keys) {
+            for (const expressId of model.data.keys()) {
+              if (!kept.has(expressId)) nonKept.push(expressId);
+            }
+          }
+          if (nonKept.length > 0) {
+            inverseMap[modelId] = nonKept;
+          }
+        }
+      }
+
+      await highlighter.highlightByID(GHOST_STYLE_NAME, inverseMap, false, false);
+    },
+
+    async hardIsolate(modelIdMap = {}) {
+      ghostActive = false;
+      await highlighter.clear(GHOST_STYLE_NAME);
+      await hider.isolate(modelIdMap);
+    },
+
+    async resetIsolation() {
+      ghostActive = false;
+      await highlighter.clear(GHOST_STYLE_NAME);
+      await hider.set(true);
+    },
+
+    isGhostActive() {
+      return ghostActive;
+    },
+  };
+
+  // High-resolution PNG View Export
+  const exportPng = {
+    async capturePng({ width, height } = {}) {
+      if (!world?.renderer?.three) throw new Error("Renderer not initialized");
+      const renderer = world.renderer.three;
+      if (world.renderer.update) world.renderer.update();
+      const canvas = renderer.domElement;
+      if (!canvas) throw new Error("Canvas element not found");
+
+      return new Promise((resolve, reject) => {
+        if (canvas.toBlob) {
+          canvas.toBlob((blob) => {
+            if (blob) resolve(blob);
+            else reject(new Error("Failed to capture canvas as PNG blob"));
+          }, "image/png");
+        } else {
+          try {
+            resolve(canvas.toDataURL("image/png"));
+          } catch (err) {
+            reject(err);
+          }
+        }
+      });
+    },
+
+    async downloadPng(fileName = "bim-tracker-view.png", options = {}) {
+      const blobOrUrl = await exportPng.capturePng(options);
+      let url = "";
+      let revoke = false;
+      if (typeof blobOrUrl === "string") {
+        url = blobOrUrl;
+      } else if (blobOrUrl instanceof Blob) {
+        url = URL.createObjectURL(blobOrUrl);
+        revoke = true;
+      }
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      if (revoke) URL.revokeObjectURL(url);
+    },
+  };
+
   const engine = {
     name: "COVILLAF",
     components,
@@ -159,6 +308,9 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
     ifcLoader,
     highlighter,
     hider,
+    clipper,
+    isolation,
+    exportPng,
     raycaster,
     coordinates: createCoordinateFrame(fragments),
     autoOrbit,
@@ -171,6 +323,19 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
       const snappingClasses = snap ? [FRAGS.SnappingClass.POINT, FRAGS.SnappingClass.LINE, FRAGS.SnappingClass.FACE] : undefined;
       const hit = await raycaster.castRay({ position: ndc, snappingClasses });
       if (!hit?.point) return null;
+
+      // Discard intersections that fall in clipped space
+      if (clipper.pickHonorsPlanes && rawClipper.enabled && rawClipper.list?.size > 0) {
+        for (const [, item] of rawClipper.list) {
+          const plane = item.plane ?? (item.isPlane ? item : null);
+          if (plane && typeof plane.distanceToPoint === "function") {
+            if (plane.distanceToPoint(hit.point) < -1e-4) {
+              return null;
+            }
+          }
+        }
+      }
+
       let normal = null;
       if (hit.face?.normal) {
         normal = hit.face.normal.clone();

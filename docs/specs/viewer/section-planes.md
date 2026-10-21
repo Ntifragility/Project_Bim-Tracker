@@ -1,5 +1,5 @@
 # viewer / section-planes
-Status: draft
+Status: done
 Branch: viewer/section-planes        Owner folders: packages/viewer-core/, docs/specs/viewer/
 
 ## Goal

@@ -1,5 +1,5 @@
 # viewer / view-export-png
-Status: draft
+Status: done
 Branch: viewer/export-png        Owner folders: packages/viewer-core/, docs/specs/viewer/
 
 ## Goal
