@@ -9,8 +9,11 @@ lerna-debug.log*
 
 node_modules
 dist
+crates/viewport-core/target
 packages/viewport-core/target
 target/
+pkg/
+**/pkg/
 dist-ssr
 *.local
 

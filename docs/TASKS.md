@@ -56,7 +56,7 @@ Phases and dependencies come from `ARCHITECTURE.md` section 7. Only one agent at
 | ID | Task | Branch | Depends on | Owner | Status |
 |---|---|---|---|---|---|
 | 6.1 | `viewer-core`: extract engine, coordinates and Vite asset plugin with unchanged behaviour; remove `@covillaf` alias | `viewer/extract-engine` | 1.1 | antigravity | done |
-| 6.1b | Move Rust `viewport-core` (from 0.7) to `crates/viewport-core`; stop committing `pkg/`; per-instance state; split generic gestures from conduit tool decisions; add auto-orbit (with toggle) and surface-pick normal to the viewer-core interface | `viewer/viewport` | 6.1 | | todo |
+| 6.1b | Move Rust `viewport-core` (from 0.7) to `crates/viewport-core`; stop committing `pkg/`; per-instance state; split generic gestures from conduit tool decisions; add auto-orbit (with toggle) and surface-pick normal to the viewer-core interface | `viewer/viewport` | 6.1 | antigravity | done |
 | 6.2 | Compatibility smoke tests on a public sample IFC (use the `?ifc=` deep link) | `viewer/smoke-tests` | 6.1 | | todo |
 | 6.3+ | Improvement specs (section planes, ghost isolate, undo, PNG export, ...), one branch each | `viewer/<topic>` | 6.2 | | todo |
 
