@@ -20,7 +20,7 @@ Phases and dependencies come from `ARCHITECTURE.md` section 7. Only one agent at
 ## Phase 1: Scaffold (single agent; shared root files)
 | ID | Task | Branch | Depends on | Owner | Status |
 |---|---|---|---|---|---|
-| 1.1 | Cargo + npm workspaces with glob members; `legacy/` folder; empty crates, bindings, packages, apps | `infra/workspaces` | 0.9 | | todo |
+| 1.1 | Cargo + npm workspaces with glob members; `legacy/` folder; empty crates, bindings, packages, apps | `infra/workspaces` | 0.9 | | done |
 | 1.2 | Rust CI (fmt, clippy, test, wasm build) + boundary check | `infra/ci-rust` | 1.1 | | todo |
 
 ## Phase 2: Golden vectors (parallel: conduit and tray)
