@@ -324,8 +324,7 @@ async function initApp() {
   // the removed IfcRelationsIndexer component.
   let indexer = null;
 
-  // 7. Set up Highlighter
-  const highlighter = components.get(OBF.Highlighter);
+  // 7. Set up Highlighter (instances come from the engine; do not redeclare here).
   highlighter.setup({ world });
   // Allow normal hand jitter without interpreting an intended click as orbiting.
   highlighter.mouseMoveThreshold = 10;
@@ -387,7 +386,7 @@ async function initApp() {
   } catch (error) {
     console.warn('[Raycaster Wrapper] Could not exclude hidden models from picking:', error);
   }
-  const hider = components.get(OBC.Hider);
+  // Hider comes from the engine (destructured above); do not redeclare here.
   const routingController = initRoutingController({
     world,
     getLoadedModels: () => loadedModels,
