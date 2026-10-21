@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 conduit-core = { path = "../../crates/conduit-core" }
+wasm-bindgen = "0.2"
 
 [lib]
 crate-type = ["cdylib"]

@@ -1,4 +1,4 @@
-name: ci-baseline
+name: ci
 
 on:
   pull_request:
@@ -19,3 +19,25 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run build:conduit
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      - name: Install wasm-pack
+        run: |
+          curl -sL https://github.com/rustwasm/wasm-pack/releases/download/v0.15.0/wasm-pack-v0.15.0-x86_64-unknown-linux-musl.tar.gz | tar xz -C /tmp
+          mkdir -p ~/.cargo/bin
+          cp /tmp/wasm-pack-v0.15.0-x86_64-unknown-linux-musl/wasm-pack ~/.cargo/bin/wasm-pack
+          chmod +x ~/.cargo/bin/wasm-pack
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      - run: cargo fmt --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - run: wasm-pack build bindings/conduit-wasm --target bundler
+      - run: wasm-pack build bindings/tray-wasm --target bundler
+      - run: python3 scripts/check-boundaries.py
