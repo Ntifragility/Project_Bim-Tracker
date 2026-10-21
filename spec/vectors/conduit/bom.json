@@ -1,0 +1,71 @@
+{
+  "module": "conduit",
+  "feature": "bom",
+  "source": "legacy/packages/conduit-core/test/bom-calculator.test.js + src/bom-calculator.js",
+  "units": "metres; stickLengthM default 3.048 (10 ft)",
+  "notes": "Hardware BOM and FFD bin-packing are pure (no DOM/IO) and DO port to Rust conduit-core. Elbow tolerance: within 5 deg of 90/45 counts. Pull box when cumulativeBendsDeg > 360 or runLength > 30.48 m. Couplings = ceil(len/stick) - 1 per run; box connectors = 2 per non-empty run; straps = max(2, 2 + floor(len/stick)). optimizeStickCutting uses kerfWasteM = 0.003 default; wasteM reported per stick to 3 decimals.",
+  "cases": [
+    {
+      "id": "ffd-two-cuts-one-stick",
+      "fn": "optimizeStickCutting",
+      "input": { "cuts": [1.4, 1.4], "stockLengthM": 3.048 },
+      "expected": {
+        "sticksNeeded": 1,
+        "totalLengthM": 2.8,
+        "totalWasteM": 0.245,
+        "sticks": [{ "stickNumber": 1, "cuts": [1.4, 1.4], "wasteM": 0.245 }]
+      },
+      "tol": 1e-3
+    },
+    {
+      "id": "ffd-three-cuts-three-sticks",
+      "fn": "optimizeStickCutting",
+      "input": { "cuts": [1.6, 1.6, 1.6], "stockLengthM": 3.048 },
+      "expected": { "sticksNeeded": 3, "totalLengthM": 4.8, "totalWasteM": 4.344 },
+      "tol": 1e-3
+    },
+    {
+      "id": "ffd-oversize-spans-sticks",
+      "fn": "optimizeStickCutting",
+      "input": { "cuts": [7.0], "stockLengthM": 3.048 },
+      "expected": { "sticksNeeded": 3, "totalLengthM": 7.0, "totalWasteM": 2.144 },
+      "tol": 1e-3
+    },
+    {
+      "id": "ffd-empty",
+      "fn": "optimizeStickCutting",
+      "input": { "cuts": [], "stockLengthM": 3.048 },
+      "expected": { "sticksNeeded": 0, "totalLengthM": 0, "totalWasteM": 0, "wastePercentage": 0, "sticks": [] },
+      "tol": 0
+    },
+    {
+      "id": "bom-l-run-hardware",
+      "fn": "computeDetailedBom",
+      "input": {
+        "stockLengthM": 3.048,
+        "runs": [{ "size": "3/4\"", "system": "Power", "points": [[0, 0, 0], [3, 0, 0], [3, 5, 0]] }]
+      },
+      "expected": {
+        "totals": { "runs": 1, "lengthM": 8.0, "sticks": 3, "couplings": 2, "boxConnectors": 2, "elbows90": 1, "pullBoxes": 0 },
+        "runs": [{ "isNecCompliant": true }]
+      },
+      "tol": 1e-2
+    },
+    {
+      "id": "bom-nec-violation-pullbox",
+      "fn": "computeDetailedBom",
+      "input": {
+        "stockLengthM": 3.048,
+        "runs": [{
+          "size": "1\"",
+          "system": "Data",
+          "points": [[0, 0, 0], [2, 0, 0], [2, 2, 0], [4, 2, 0], [4, 0, 0], [6, 0, 0], [6, 2, 0]]
+        }]
+      },
+      "expected": {
+        "runs": [{ "isNecCompliant": false, "cumulativeBendsDegGt": 360 }],
+        "totals": { "pullBoxesGte": 1 }
+      }
+    }
+  ]
+}

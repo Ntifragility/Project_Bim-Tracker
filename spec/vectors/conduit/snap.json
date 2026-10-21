@@ -1,0 +1,268 @@
+{
+  "module": "conduit",
+  "feature": "snap",
+  "source": "legacy/packages/conduit-core/test/snap-engine.test.js + src/snap-engine.js + src/snap.js",
+  "units": "metres",
+  "notes": "All points are {x, y, z} in metres. Snap priority: endpoint > midpoint > segment > ortho > polar > workplane fallback. Rust target: conduit-core snap module (pure; SnapEngine options become an explicit config struct, no class state).",
+  "cases": [
+    {
+      "id": "vec3-add",
+      "fn": "vec3.add",
+      "input": { "a": { "x": 1, "y": 2, "z": 3 }, "b": { "x": 4, "y": 5, "z": 6 } },
+      "expected": { "x": 5, "y": 7, "z": 9 },
+      "tol": 0
+    },
+    {
+      "id": "vec3-sub",
+      "fn": "vec3.sub",
+      "input": { "a": { "x": 4, "y": 5, "z": 6 }, "b": { "x": 1, "y": 2, "z": 3 } },
+      "expected": { "x": 3, "y": 3, "z": 3 },
+      "tol": 0
+    },
+    {
+      "id": "vec3-distance-3-4-0",
+      "fn": "vec3.distance",
+      "input": { "a": { "x": 0, "y": 0, "z": 0 }, "b": { "x": 3, "y": 4, "z": 0 } },
+      "expected": 5.0,
+      "tol": 1e-9
+    },
+    {
+      "id": "vec3-length-0-3-4",
+      "fn": "vec3.length",
+      "input": { "a": { "x": 0, "y": 3, "z": 4 } },
+      "expected": 5.0,
+      "tol": 1e-9
+    },
+    {
+      "id": "vec3-normalize-x",
+      "fn": "vec3.normalize",
+      "input": { "a": { "x": 10, "y": 0, "z": 0 } },
+      "expected": { "x": 1, "y": 0, "z": 0 },
+      "tol": 1e-9
+    },
+    {
+      "id": "closest-midpoint",
+      "fn": "closestPointOnSegment",
+      "input": {
+        "p": { "x": 5, "y": 5, "z": 0 },
+        "a": { "x": 0, "y": 2, "z": 0 },
+        "b": { "x": 10, "y": 2, "z": 0 }
+      },
+      "expected": { "point": { "x": 5, "y": 2, "z": 0 }, "t": 0.5, "distance": 3.0 },
+      "tol": 1e-9
+    },
+    {
+      "id": "closest-clamped-before-start",
+      "fn": "closestPointOnSegment",
+      "input": {
+        "p": { "x": -5, "y": 2, "z": 0 },
+        "a": { "x": 0, "y": 2, "z": 0 },
+        "b": { "x": 10, "y": 2, "z": 0 }
+      },
+      "expected": { "point": { "x": 0, "y": 2, "z": 0 }, "t": 0.0 },
+      "tol": 1e-9
+    },
+    {
+      "id": "closest-clamped-after-end",
+      "fn": "closestPointOnSegment",
+      "input": {
+        "p": { "x": 15, "y": 2, "z": 0 },
+        "a": { "x": 0, "y": 2, "z": 0 },
+        "b": { "x": 10, "y": 2, "z": 0 }
+      },
+      "expected": { "point": { "x": 10, "y": 2, "z": 0 }, "t": 1.0 },
+      "tol": 1e-9
+    },
+    {
+      "id": "snap-nodes-hit-n1",
+      "fn": "snapToNodes",
+      "input": {
+        "query": { "x": 0.1, "y": 2.8, "z": 0.05 },
+        "nodes": [
+          { "id": "n1", "x": 0, "y": 2.8, "z": 0 },
+          { "id": "n2", "x": 5, "y": 2.8, "z": 5 }
+        ],
+        "tolerance": 0.25
+      },
+      "expected": {
+        "snapType": "endpoint",
+        "targetId": "n1",
+        "point": { "x": 0, "y": 2.8, "z": 0 }
+      },
+      "tol": 1e-9
+    },
+    {
+      "id": "snap-nodes-miss",
+      "fn": "snapToNodes",
+      "input": {
+        "query": { "x": 2.5, "y": 2.8, "z": 2.5 },
+        "nodes": [
+          { "id": "n1", "x": 0, "y": 2.8, "z": 0 },
+          { "id": "n2", "x": 5, "y": 2.8, "z": 5 }
+        ],
+        "tolerance": 0.25
+      },
+      "expected": null
+    },
+    {
+      "id": "snap-segments-midpoint",
+      "fn": "snapToSegments",
+      "input": {
+        "query": { "x": 4.95, "y": 2.85, "z": 0.05 },
+        "segments": [
+          {
+            "id": "s1",
+            "start": { "x": 0, "y": 2.8, "z": 0 },
+            "end": { "x": 10, "y": 2.8, "z": 0 }
+          }
+        ],
+        "tolerance": 0.25
+      },
+      "expected": { "snapType": "midpoint", "targetId": "s1", "point": { "x": 5.0, "y": 2.8, "z": 0 } },
+      "tol": 1e-4
+    },
+    {
+      "id": "snap-segments-segment",
+      "fn": "snapToSegments",
+      "input": {
+        "query": { "x": 2.0, "y": 2.85, "z": 0.05 },
+        "segments": [
+          {
+            "id": "s1",
+            "start": { "x": 0, "y": 2.8, "z": 0 },
+            "end": { "x": 10, "y": 2.8, "z": 0 }
+          }
+        ],
+        "tolerance": 0.25
+      },
+      "expected": { "snapType": "segment", "targetId": "s1", "point": { "x": 2.0, "y": 2.8, "z": 0 } },
+      "tol": 1e-4
+    },
+    {
+      "id": "polar-snaps-44-to-45",
+      "fn": "snapPolarAngle",
+      "input": {
+        "from": { "x": 0, "y": 2.8, "z": 0 },
+        "to": { "x": 3.59669903089038, "y": 2.8, "z": 3.473290233548544 },
+        "options": { "toleranceDeg": 5.0, "upAxis": "Y" }
+      },
+      "expected": {
+        "snapType": "polar_angle",
+        "angleDeg": 45,
+        "point": { "x": 3.5355339059327378, "y": 2.8, "z": 3.5355339059327373 }
+      },
+      "tol": 1e-4
+    },
+    {
+      "id": "polar-rejects-30-deg",
+      "fn": "snapPolarAngle",
+      "input": {
+        "from": { "x": 0, "y": 2.8, "z": 0 },
+        "to": { "x": 4.330126018922193, "y": 2.8, "z": 2.5 },
+        "options": { "allowedAnglesDeg": [0, 45, 90], "toleranceDeg": 4.0, "upAxis": "Y" }
+      },
+      "expected": null
+    },
+    {
+      "id": "ortho-dominant-x",
+      "fn": "snapOrtho3D",
+      "input": { "from": { "x": 1, "y": 2, "z": 3 }, "to": { "x": 5, "y": 2.1, "z": 3.05 } },
+      "expected": { "snapType": "ortho", "guideAxis": "X", "point": { "x": 5, "y": 2, "z": 3 } },
+      "tol": 1e-9
+    },
+    {
+      "id": "ortho-dominant-y-riser",
+      "fn": "snapOrtho3D",
+      "input": { "from": { "x": 1, "y": 2, "z": 3 }, "to": { "x": 1.05, "y": 6.5, "z": 2.95 } },
+      "expected": { "snapType": "ortho", "guideAxis": "Y", "point": { "x": 1, "y": 6.5, "z": 3 } },
+      "tol": 1e-9
+    },
+    {
+      "id": "ortho-dominant-z",
+      "fn": "snapOrtho3D",
+      "input": { "from": { "x": 1, "y": 2, "z": 3 }, "to": { "x": 0.95, "y": 2.05, "z": 9 } },
+      "expected": { "snapType": "ortho", "guideAxis": "Z", "point": { "x": 1, "y": 2, "z": 9 } },
+      "tol": 1e-9
+    },
+    {
+      "id": "raycast-elevation-hit",
+      "fn": "raycastElevationPlane",
+      "input": {
+        "origin": { "x": 0, "y": 10, "z": 0 },
+        "dir": { "x": 0, "y": -1, "z": 0 },
+        "elevation": 2.8,
+        "upAxis": "Y"
+      },
+      "expected": { "x": 0, "y": 2.8, "z": 0 },
+      "tol": 1e-9
+    },
+    {
+      "id": "engine-endpoint-wins",
+      "fn": "SnapEngine.resolve",
+      "input": {
+        "config": { "toleranceMetres": 0.3, "angularToleranceDeg": 5, "polarEnabled": true, "orthoEnabled": false },
+        "raw": { "x": 2.05, "y": 2.8, "z": 1.95 },
+        "context": {
+          "lastPoint": { "x": 0, "y": 2.8, "z": 0 },
+          "nodes": [{ "id": "node_target", "x": 2, "y": 2.8, "z": 2 }],
+          "segments": [
+            { "id": "seg_target", "start": { "x": 0, "y": 2.8, "z": 10 }, "end": { "x": 10, "y": 2.8, "z": 10 } }
+          ]
+        }
+      },
+      "expected": { "snapType": "endpoint", "targetId": "node_target" }
+    },
+    {
+      "id": "engine-midpoint-wins",
+      "fn": "SnapEngine.resolve",
+      "input": {
+        "config": { "toleranceMetres": 0.3, "angularToleranceDeg": 5, "polarEnabled": true, "orthoEnabled": false },
+        "raw": { "x": 5.02, "y": 2.8, "z": 9.98 },
+        "context": {
+          "lastPoint": { "x": 0, "y": 2.8, "z": 0 },
+          "nodes": [{ "id": "node_target", "x": 2, "y": 2.8, "z": 2 }],
+          "segments": [
+            { "id": "seg_target", "start": { "x": 0, "y": 2.8, "z": 10 }, "end": { "x": 10, "y": 2.8, "z": 10 } }
+          ]
+        }
+      },
+      "expected": { "snapType": "midpoint", "targetId": "seg_target" }
+    },
+    {
+      "id": "engine-polar-fallback",
+      "fn": "SnapEngine.resolve",
+      "input": {
+        "config": { "toleranceMetres": 0.3, "angularToleranceDeg": 5, "polarEnabled": true, "orthoEnabled": false },
+        "raw": { "x": 0.1, "y": 2.8, "z": 4.0 },
+        "context": {
+          "lastPoint": { "x": 0, "y": 2.8, "z": 0 },
+          "nodes": [{ "id": "node_target", "x": 2, "y": 2.8, "z": 2 }],
+          "segments": [
+            { "id": "seg_target", "start": { "x": 0, "y": 2.8, "z": 10 }, "end": { "x": 10, "y": 2.8, "z": 10 } }
+          ]
+        }
+      },
+      "expected": {
+        "snapType": "polar_angle",
+        "angleDeg": 90,
+        "guideAxis": "Z",
+        "point": { "x": 0.0, "y": 2.8, "z": 4.001249804748512 }
+      },
+      "tol": 1e-4
+    },
+    {
+      "id": "engine-workplane-raw",
+      "fn": "SnapEngine.resolve",
+      "input": {
+        "config": { "polarEnabled": false, "orthoEnabled": false },
+        "raw": { "x": 12.34, "y": 2.8, "z": 56.78 },
+        "context": { "lastPoint": { "x": 0, "y": 2.8, "z": 0 } }
+      },
+      "expected": {
+        "snapType": "workplane",
+        "point": { "x": 12.34, "y": 2.8, "z": 56.78 }
+      },
+      "tol": 1e-9
+    }
+  ]
+}

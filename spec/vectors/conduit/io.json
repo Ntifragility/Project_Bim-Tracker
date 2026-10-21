@@ -1,0 +1,152 @@
+{
+  "module": "conduit",
+  "feature": "io",
+  "source": "legacy/packages/conduit-core/test/conduit-modules.test.js (ProjectIO, SHA, CSV, IFC Exporter sections) + src/project-io.js + src/csv-export.js + src/ifc-exporter.js",
+  "units": "metres",
+  "notes": "Rust-pure decision (owner-approved): CommandStack (undo/redo with closures), MarkerStore (Date.now/Math.random ids), computeSha256/verifySourceHash (WebCrypto), generateContractorBomCsv / exportRunsCsv / exportSummaryCsv / exportCompleteCsv (string rendering), exportOverlayIfc (STEP text + Date.now) do NOT port to conduit-core. They stay TS-side (apps/viewer-core/ifc-io text layer). This file pins their legacy behaviour as runnable JS vectors so the TS side stays compatible; _io.json vectors run against legacy JS only (marked jsOnly). Only shape-stable facts (headers, section markers, STEP entity names, defaults) are asserted, never timestamps or full strings.",
+  "cases": [
+    {
+      "id": "command-stack-sequence",
+      "fn": "createCommandStack.execute/undo/redo",
+      "input": { "maxDepth": 5, "ops": ["exec(+10)", "exec(+5)", "undo", "redo", "undo", "undo"] },
+      "expected": { "states": [10, 15, 10, 15, 10, 0], "canUndoEnd": false },
+      "jsOnly": true
+    },
+    {
+      "id": "command-stack-max-depth",
+      "fn": "createCommandStack.maxDepth",
+      "input": { "maxDepth": 3, "execCount": 5 },
+      "expected": { "undoCount": 3 },
+      "jsOnly": true
+    },
+    {
+      "id": "marker-store-counts",
+      "fn": "createMarkerStore",
+      "input": {
+        "add": [
+          { "type": "Support", "position": { "x": 1, "y": 2, "z": 3 } },
+          { "type": "Support", "position": { "x": 4, "y": 5, "z": 6 } },
+          { "type": "Junction Box", "position": { "x": 7, "y": 8, "z": 9 } }
+        ],
+        "move": { "index": 0, "to": { "x": 10, "y": 20, "z": 30 } },
+        "remove": { "index": 1 }
+      },
+      "expected": {
+        "countAfterAdd": 3,
+        "counts": { "Support": 2, "Junction Box": 1 },
+        "movedX": 10,
+        "countAfterRemove": 2,
+        "supportCountAfterRemove": 1
+      },
+      "jsOnly": true
+    },
+    {
+      "id": "project-roundtrip",
+      "fn": "serializeProject/deserializeProject",
+      "input": {
+        "sourceModel": { "name": "building.ifc", "size": 1048576, "sha256": "deadbeef1234", "unit": "METRE", "schema": "IFC4" },
+        "settings": { "stickLengthM": 3.048, "wasteFactor": 0.1, "unit": "METRE" },
+        "diameters": [{ "id": "d1", "label": "¾\"", "mm": 19.05, "color": "#f59e0b" }],
+        "network": { "nodes": { "n1": { "id": "n1", "x": 0, "y": 0, "z": 0 } }, "runs": { "r1": { "id": "r1", "size": "¾\"", "nodeIds": ["n1"] } } },
+        "markers": [{ "id": "m1", "type": "Support", "position": { "x": 0, "y": 0, "z": 0 } }]
+      },
+      "expected": {
+        "isString": true,
+        "name": "building.ifc",
+        "wasteFactor": 0.1,
+        "runSize": "¾\"",
+        "markerCount": 1
+      },
+      "jsOnly": true
+    },
+    {
+      "id": "project-defaults",
+      "fn": "deserializeProject",
+      "input": { "json": "{}" },
+      "expected": { "version": "1.0", "stickLengthM": 3.048, "wasteFactor": 0, "unit": "METRE" },
+      "jsOnly": true
+    },
+    {
+      "id": "sha256-known",
+      "fn": "computeSha256",
+      "input": { "utf8": "Hello BIM Tracker" },
+      "expected": "32f1ad1bbef10a6ffc1dfa7bf8415deef5a7c3fa5059213440f1b30ad091b5f1",
+      "jsOnly": true
+    },
+    {
+      "id": "sha256-verify",
+      "fn": "verifySourceHash",
+      "input": { "utf8": "Hello BIM Tracker", "match": true, "wrong": "0000000000000000000000000000000000000000000000000000000000000000" },
+      "expected": { "valid": true, "invalid": false, "emptyExpected": true },
+      "jsOnly": true
+    },
+    {
+      "id": "csv-runs-shape",
+      "fn": "exportRunsCsv",
+      "input": {
+        "runs": [{ "id": "run-1", "size": "¾\"", "system": "Power", "length": 10, "lengthM": 10, "sticks": 4, "pointsCount": 3, "notes": "Overhead" }],
+        "unit": "METRE"
+      },
+      "expected": {
+        "text": "Run ID,Diameter,System,Length (METRE),Sticks (10ft),Points Count,Notes\r\nrun-1,\"¾\"\"\",Power,10.000,4,3,Overhead"
+      },
+      "jsOnly": true
+    },
+    {
+      "id": "csv-summary-shape",
+      "fn": "exportSummaryCsv",
+      "input": {
+        "summary": [{ "size": "¾\"", "runCount": 1, "length": 10, "lengthM": 10, "sticks": 4 }],
+        "markersSummary": { "Support": 2 },
+        "unit": "METRE",
+        "wasteFactor": 0.05
+      },
+      "expected": {
+        "text": "=== CONDUIT TAKEOFF SUMMARY ===\r\nDiameter,Run Count,Base Length (METRE),Waste %,Order Length (METRE),Total Sticks\r\n\"¾\"\"\",1,10.000,5%,10.500,4\r\n\r\n=== FITTING & SUPPORT MARKERS ===\r\nMarker Type,Quantity\r\nSupport,2"
+      },
+      "jsOnly": true
+    },
+    {
+      "id": "csv-complete-sections",
+      "fn": "exportCompleteCsv",
+      "input": {
+        "runs": [{ "id": "run-1", "size": "¾\"", "system": "Power", "length": 10, "lengthM": 10, "sticks": 4, "pointsCount": 3, "notes": "Overhead" }],
+        "summary": [{ "size": "¾\"", "runCount": 1, "length": 10, "lengthM": 10, "sticks": 4 }],
+        "markers": [{ "type": "Support" }, { "type": "Support" }],
+        "unit": "METRE",
+        "wasteFactor": 0.05
+      },
+      "expected": { "contains": ["=== CONDUIT TAKEOFF SUMMARY ===", "=== RUN DETAILS ==="] },
+      "jsOnly": true
+    },
+    {
+      "id": "ifc-overlay-bom-run",
+      "fn": "generateContractorBomCsv(computeDetailedBom)",
+      "input": {
+        "network": { "stickLength": 3.048, "runs": [{ "size": "½\"", "system": "Lighting", "points": [[0, 0, 0], [10, 0, 0]] }] }
+      },
+      "expected": {
+        "contains": ["### SECTION 1: CONDUIT STICKS SCHEDULE", "### SECTION 2: FITTINGS & HARDWARE SCHEDULE", "### SECTION 3: PULL BOXES & CODE COMPLIANCE", "### SECTION 4: RUN-BY-RUN DETAIL", "½\""]
+      },
+      "jsOnly": true
+    },
+    {
+      "id": "ifc-overlay-step-shape",
+      "fn": "exportOverlayIfc",
+      "input": {
+        "runs": [{ "id": "r1", "name": "Main Feed", "size": "¾\"", "system": "Power", "length": 6.096, "nodeIds": ["n1", "n2"] }],
+        "nodes": { "n1": { "x": 0, "y": 0, "z": 2.5 }, "n2": { "x": 6.096, "y": 0, "z": 2.5 } },
+        "schema": "IFC4"
+      },
+      "expected": {
+        "startsWith": "ISO-10303-21;",
+        "endsWith": "END-ISO-10303-21;",
+        "contains": ["FILE_SCHEMA(('IFC4'));", "IFCPOLYLINE", "Pset_ConduitRun", "IFCANNOTATION"],
+        "cartesianPoint": "#=IFCCARTESIANPOINT((0.0000,0.0000,2.5000));",
+        "runLengthProp": "IFCPROPERTYSINGLEVALUE('Length',$,IFCLENGTHMEASURE(6.096),$);"
+      },
+      "jsOnly": true,
+      "note": "STEP line numbers and GUIDs vary run to run (Date.now/seeded counter); assert shape, not exact text. GUID determinism is an ifc-io (3.2) decision; Rust port takes an injected guid fn."
+    }
+  ]
+}
