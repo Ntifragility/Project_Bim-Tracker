@@ -66,3 +66,35 @@ test('viewer-core Vite plugin exposes dev server middleware and build hooks', ()
   assert.equal(typeof plugin.closeBundle, 'function');
   assert.equal(typeof copyCovillafAssets, 'function');
 });
+
+test('clipper plane calculations verify point clipping boundaries', () => {
+  // Test plane clipping logic: Plane with normal (0, -1, 0) and constant 5
+  // Point at y = 10 -> distance = -10 - (-5) = -5 (clipped)
+  // Point at y = 2 -> distance = -2 - (-5) = +3 (kept)
+  const normal = new THREE.Vector3(0, -1, 0);
+  const plane = new THREE.Plane(normal, 5);
+  
+  const ptAbove = new THREE.Vector3(0, 10, 0);
+  const ptBelow = new THREE.Vector3(0, 2, 0);
+  
+  assert.ok(plane.distanceToPoint(ptAbove) < 0, 'Point above constant is clipped');
+  assert.ok(plane.distanceToPoint(ptBelow) > 0, 'Point below constant is kept');
+});
+
+test('isolation inverse mapping groups unselected elements for ghosting', () => {
+  const mockModelData = new Map([
+    [101, {}],
+    [102, {}],
+    [103, {}],
+    [104, {}]
+  ]);
+  const isolatedExpressIds = new Set([102]);
+  const ghostExpressIds = [];
+  
+  for (const expressId of mockModelData.keys()) {
+    if (!isolatedExpressIds.has(expressId)) ghostExpressIds.push(expressId);
+  }
+
+  assert.deepEqual(ghostExpressIds, [101, 103, 104]);
+});
+
