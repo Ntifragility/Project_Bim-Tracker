@@ -23,6 +23,9 @@ Read `ARCHITECTURE.md` first. It defines the modules, allowed dependencies and m
 - Commit after each completed task in the checklist; small, one purpose each.
 - Open a pull request per branch; list: spec implemented, folders touched, test commands run, any `[UNVERIFIED]` item you resolved or could not.
 
+## PR & Merge Policy
+- Never merge your own PR. Open it, report, and stop. Only the owner merges.
+
 ## Running unattended
 - Work through `docs/specs/<module>/<feature>.md` and its checklist in order; tick items as they pass.
 - If blocked for more than two attempts, stop, write the blocker and what you tried in `NOTES.md`, and end your turn.
