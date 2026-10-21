@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IFC Viewer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <div id="app">
+      <!-- 3D Viewport Canvas Container -->
+      <div id="viewer-container"></div>
+      <div id="viewer-context-menu" class="viewer-context-menu" role="menu" hidden>
+        <button id="context-focus-item" type="button" role="menuitem">
+          <span aria-hidden="true">◎</span>
+          Focus on Item
+        </button>
+        <button id="context-isolate-item" type="button" role="menuitem">
+          <span aria-hidden="true">◌</span>
+          Isolate Selected
+        </button>
+        <div id="context-color-control" class="viewer-context-color" role="group" aria-label="Selected element appearance color" hidden>
+          <label for="context-selection-color">
+            <span aria-hidden="true">▣</span>
+            Appearance Color
+          </label>
+          <div class="viewer-context-color-controls">
+            <input id="context-selection-color" type="color" value="#f54242" aria-label="Selected element appearance RGB color" />
+            <input id="context-color-hex" type="text" value="#F54242" aria-label="Selected element appearance HEX color" maxlength="7" />
+          </div>
+        </div>
+        <button id="context-show-all" type="button" role="menuitem" hidden>
+          <span aria-hidden="true">●</span>
+          Show All
+        </button>
+      </div>
+
+      <!-- Glassmorphic Sidebar Controls -->
+      <aside id="sidebar">
+        <button id="sidebar-toggle" class="sidebar-toggle" title="Toggle Sidebar">
+          <span>◀</span>
+        </button>
+        <header class="sidebar-header">
+          <div class="logo">
+            <span class="logo-icon">🏗️</span>
+            <h1>IFC Viewer</h1>
+          </div>
+        </header>
+
+        <!-- Sidebar Navigation Tabs -->
+        <nav class="sidebar-nav-tabs" role="tablist" aria-label="Sidebar section navigation">
+          <button class="sidebar-tab-btn active" data-tab-target="models" role="tab" aria-selected="true" type="button">
+            <span>🏠</span> Models
+          </button>
+          <button class="sidebar-tab-btn" data-tab-target="controls" role="tab" aria-selected="false" type="button">
+            <span>⚙️</span> Controls
+          </button>
+          <button class="sidebar-tab-btn" data-tab-target="routing" role="tab" aria-selected="false" type="button">
+            <span>🔌</span> Routing
+          </button>
+          <button class="sidebar-tab-btn" data-tab-target="loaded" role="tab" aria-selected="false" type="button">
+            <span>📦</span> Loaded
+          </button>
+        </nav>
+
+        <div class="sidebar-content">
+          <!-- Model Loader Section -->
+          <section class="control-group active" data-sidebar-panel="models">
+            <h3>Models</h3>
+            <div class="loader-buttons">
+              <button id="btn-load-sample" class="btn btn-primary">
+                <span class="btn-icon">🏠</span> Load Sample Model
+              </button>
+              
+              <div class="file-upload-wrapper">
+                <input type="file" id="file-input" accept=".ifc" multiple style="display: none;" />
+                <button id="btn-upload" class="btn btn-secondary">
+                  <span class="btn-icon">📁</span> Upload Local IFC
+                </button>
+              </div>
+
+              <div class="file-upload-wrapper">
+                <input type="file" id="excel-file-input" accept=".xlsx,.xls,.csv" style="display: none;" />
+                <button id="btn-upload-excel" class="btn btn-secondary">
+                  <span class="btn-icon">📊</span> Link Excel File
+                </button>
+              </div>
+
+              <button id="btn-export-all-ifc" class="btn btn-primary" title="Export IFC with all property edits, colors, and tag assignments combined">
+                <span class="btn-icon">💾</span> Export Edited IFC
+              </button>
+            </div>
+          </section>
+
+          <!-- Viewer Settings Section -->
+          <section class="control-group" data-sidebar-panel="controls">
+            <h3>Controls</h3>
+            <div class="control-options">
+              <button id="btn-reset-camera" class="btn btn-action">
+                <span>🔄</span> Reset Camera
+              </button>
+
+              <button id="btn-viewer-settings" class="btn btn-secondary" type="button" aria-expanded="false" aria-controls="viewer-settings-panel">
+                Settings
+              </button>
+
+              <div id="viewer-settings-panel" class="viewer-settings-panel" hidden>
+                <label for="selection-highlight-color">Selection Highlight Color</label>
+                <div class="viewer-settings-color-controls">
+                  <input id="selection-highlight-color" type="color" value="#6366f1" aria-label="Selection highlight RGB color" />
+                  <input id="selection-highlight-hex" type="text" value="#6366F1" aria-label="Selection highlight HEX color" maxlength="7" />
+                </div>
+                <p>Color used when you click/select IFC elements.</p>
+              </div>
+
+              <div class="toggle-option">
+                <label for="toggle-grid">
+                  <input type="checkbox" id="toggle-grid" checked />
+                  <span class="custom-checkbox"></span>
+                  Show Grid Floor
+                </label>
+              </div>
+
+              <div class="toggle-option">
+                <label for="toggle-wireframe">
+                  <input type="checkbox" id="toggle-wireframe" />
+                  <span class="custom-checkbox"></span>
+                  Wireframe Mode
+                </label>
+              </div>
+
+              <div class="toggle-option">
+                <label for="toggle-darkmode">
+                  <input type="checkbox" id="toggle-darkmode" checked />
+                  <span class="custom-checkbox"></span>
+                  Dark Background
+                </label>
+              </div>
+
+              <div class="toggle-option">
+                <label for="toggle-highlight-tagged-sidebar">
+                  <input type="checkbox" id="toggle-highlight-tagged-sidebar" />
+                  <span class="custom-checkbox"></span>
+                  Highlight Tagged Trays
+                </label>
+              </div>
+
+              <div class="toggle-option">
+                <label for="toggle-floating-labels-sidebar">
+                  <input type="checkbox" id="toggle-floating-labels-sidebar" />
+                  <span class="custom-checkbox"></span>
+                  🏷️ 3D Floating Tags
+                </label>
+              </div>
+
+            </div>
+          </section>
+
+          <!-- Cable Routing Section -->
+          <section class="control-group routing-group" data-sidebar-panel="routing">
+            <h3>Cable Routing</h3>
+            <div class="routing-controls">
+              <label for="routing-tolerance">Connection tolerance (mm)</label>
+              <input id="routing-tolerance" type="number" min="1" step="10" value="100" />
+              <div class="routing-button-grid">
+                <button id="btn-build-routing-graph" class="btn btn-primary">Build Graph</button>
+                <button id="btn-clear-routing-graph" class="btn btn-secondary">Clear</button>
+                <button id="btn-route-start" class="btn btn-secondary" disabled>Set Start</button>
+                <button id="btn-route-end" class="btn btn-secondary" disabled>Set End</button>
+                <button id="btn-calculate-route" class="btn btn-action" disabled>Calculate Route</button>
+              </div>
+              <div id="routing-status" class="routing-status">Load an IFC and build its tray graph.</div>
+              <div id="routing-summary" class="routing-summary">No graph built</div>
+              <div class="routing-legend">
+                <span><i class="legend-line connected"></i>Centerline</span>
+                <span><i class="legend-line uncertain"></i>Low confidence</span>
+                <span><i class="legend-dot open"></i>Open end</span>
+                <span><i class="legend-line route"></i>Route</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- Loaded Models Section -->
+          <section class="control-group" data-sidebar-panel="loaded">
+            <h3>Loaded Models</h3>
+            <div id="loaded-models-container" class="loaded-models-list-panel">
+              <div class="models-placeholder">No models loaded.</div>
+              <ul id="loaded-models-list" class="loaded-models-list" style="display: none;"></ul>
+            </div>
+          </section>
+
+          <!-- Element Properties Panel -->
+          <section class="control-group element-props-group">
+            <h3>Element Properties</h3>
+            <div id="element-props-panel" class="element-props-panel empty">
+              <div class="element-props-placeholder">
+                <span class="placeholder-icon">🔍</span>
+                <span>Click an element in the 3D viewer to inspect its properties.</span>
+              </div>
+              <div class="element-props-content" style="display: none;">
+                <!-- Multi-Selection Navigation Bar -->
+                <div id="multi-select-header" class="multi-select-header" style="display: none;">
+                  <div class="multi-select-badge-row">
+                    <span id="multi-select-badge" class="multi-select-badge">0 Elements Selected</span>
+                  </div>
+                  <div id="multi-select-type-breakdown" class="multi-select-type-breakdown"></div>
+                  <div class="multi-select-switcher">
+                    <button id="btn-multi-combined" class="multi-switcher-btn active" type="button">Combined View</button>
+                    <div class="multi-switcher-nav">
+                      <button id="btn-multi-prev" type="button" class="multi-nav-btn" disabled>◄</button>
+                      <span id="multi-select-index" class="multi-select-index-label">1 of 1</span>
+                      <button id="btn-multi-next" type="button" class="multi-nav-btn">►</button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Element Identity -->
+                <div class="element-identity">
+                  <div class="element-type-badge" id="prop-type-badge">IfcElement</div>
+                  <div class="prop-row">
+                    <span class="prop-label">Name</span>
+                    <span id="prop-name" class="prop-value" title="">-</span>
+                  </div>
+                  <div class="prop-row">
+                    <span class="prop-label">GlobalId</span>
+                    <span id="prop-globalid" class="prop-value mono" title="">-</span>
+                  </div>
+                  <div class="prop-row">
+                    <span class="prop-label">System Tag</span>
+                    <span id="prop-tag" class="prop-value mono" title="">-</span>
+                  </div>
+                  <div class="prop-row">
+                    <span class="prop-label">Express ID</span>
+                    <span id="prop-expressid" class="prop-value mono" title="">-</span>
+                  </div>
+                  <div class="prop-row">
+                    <span class="prop-label">Model</span>
+                    <span id="prop-model" class="prop-value" title="">-</span>
+                  </div>
+                </div>
+                <!-- Dynamic Property Sets -->
+                <div id="prop-psets-container" class="prop-psets-container"></div>
+                <section class="ifc-edit-panel" aria-labelledby="ifc-edit-title">
+                  <div class="ifc-edit-heading">
+                    <strong id="ifc-edit-title">Safe IFC Editor</strong>
+                    <span id="ifc-edit-count">0 pending</span>
+                  </div>
+                  <section class="metadata-editor" aria-labelledby="metadata-editor-title">
+                    <strong id="metadata-editor-title">Manual Metadata</strong>
+                    <p class="ifc-edit-help">Add WBS, SOP, or other non-geometric metadata to the selected element.</p>
+                    <label for="metadata-pset">Custom property set</label>
+                    <input id="metadata-pset" type="text" value="COSAPI_CONSTRUCTION" list="metadata-pset-suggestions" />
+                    <datalist id="metadata-pset-suggestions">
+                      <option value="COSAPI_CONSTRUCTION"></option>
+                      <option value="COSAPI_PLANNING"></option>
+                      <option value="COSAPI_QA"></option>
+                      <option value="BIM_TRACKER_EDIT"></option>
+                    </datalist>
+                    <div class="metadata-table-heading">
+                      <span>Property</span>
+                      <span>Type</span>
+                      <span>Value</span>
+                      <span></span>
+                    </div>
+                    <div id="metadata-rows" class="metadata-rows"></div>
+                    <div class="metadata-actions">
+                      <button id="btn-add-metadata-row" class="btn btn-secondary" type="button">+ Add Property</button>
+                      <button id="btn-copy-previous-metadata" class="btn btn-secondary" type="button" disabled>Copy Previous</button>
+                      <button id="btn-stage-metadata" class="btn btn-primary" type="button">Stage Metadata</button>
+                    </div>
+                  </section>
+                  <details class="existing-property-editor">
+                    <summary>Edit an existing property</summary>
+                    <p class="ifc-edit-help">Select an existing non-quantity property above to load it here.</p>
+                  <label for="ifc-edit-pset">Property set</label>
+                  <input id="ifc-edit-pset" type="text" value="BIM_TRACKER_EDIT" />
+                  <label for="ifc-edit-property">Property</label>
+                  <input id="ifc-edit-property" type="text" placeholder="ReviewStatus" />
+                  <label for="ifc-edit-value">New value</label>
+                  <input id="ifc-edit-value" type="text" placeholder="Approved" />
+                  <button id="btn-stage-property-edit" class="btn btn-secondary" type="button">Stage Property Change</button>
+                  </details>
+                  <div class="ifc-edit-color-row">
+                    <label for="ifc-edit-color">Saved color</label>
+                    <input id="ifc-edit-color" type="color" value="#f54242" />
+                    <label for="ifc-edit-transparency">Transparency</label>
+                    <input id="ifc-edit-transparency" type="number" min="0" max="100" step="5" value="0" />
+                    <span>%</span>
+                  </div>
+                  <button id="btn-stage-color-edit" class="btn btn-secondary" type="button">Stage Selected Color</button>
+                  <div id="ifc-edit-status" class="ifc-edit-status">Select an element to begin.</div>
+                  <div id="ifc-edit-pending-list" class="ifc-edit-pending-list"></div>
+                  <div class="ifc-edit-actions">
+                    <button id="btn-clear-ifc-edits" class="btn btn-secondary" type="button" disabled>Clear Pending</button>
+                    <button id="btn-export-edited-ifc" class="btn btn-primary" type="button" disabled>Export Edited IFC</button>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <footer class="sidebar-footer">
+          <p>Powered by That Open Engine & Three.js</p>
+        </footer>
+      </aside>
+
+      <!-- Floating Right-side Excel Linkage Panel -->
+      <aside id="excel-panel" class="collapsed">
+        <button id="excel-panel-close" class="excel-panel-close" title="Toggle Excel Panel">
+          <span>◀</span>
+        </button>
+        <header class="excel-panel-header">
+          <div class="excel-logo">
+            <span class="excel-logo-icon">🏷️</span>
+            <h2>Tray Systems</h2>
+          </div>
+          <p id="excel-file-name" class="excel-subtitle">No Excel file linked</p>
+        </header>
+        
+        <div class="excel-panel-content">
+          <!-- Selection & Configuration -->
+          <div class="excel-config-group">
+            <!-- Tagged Tray Highlight Toolbar -->
+            <div class="tagged-highlight-toolbar">
+              <div class="tagged-highlight-main">
+                <label class="tagged-highlight-label" for="toggle-highlight-tagged">
+                  <input type="checkbox" id="toggle-highlight-tagged" />
+                  <span class="custom-checkbox"></span>
+                  <span class="tagged-highlight-title">Highlight Tagged Trays</span>
+                </label>
+                <span id="tagged-highlight-count" class="tagged-highlight-count">0 tagged</span>
+              </div>
+              <div class="tagged-highlight-controls">
+                <input id="tagged-highlight-color" type="color" value="#10b981" aria-label="Tagged tray highlight color" />
+                <input id="tagged-highlight-hex" type="text" value="#10B981" aria-label="Tagged tray highlight hex color" maxlength="7" />
+              </div>
+            </div>
+
+            <!-- Floating 3D Labels Toolbar -->
+            <div class="tagged-highlight-toolbar" style="margin-top: 6px;">
+              <div class="tagged-highlight-main">
+                <label class="tagged-highlight-label" for="toggle-floating-labels">
+                  <input type="checkbox" id="toggle-floating-labels" />
+                  <span class="custom-checkbox"></span>
+                  <span class="tagged-highlight-title">🏷️ Show 3D Floating Tags</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="tagging-mode-tabs" role="tablist" aria-label="Tagging workflow">
+              <button id="tagging-tab-assign" class="tagging-mode-tab active" type="button" role="tab" aria-selected="true" aria-controls="batch-tagging-pane">Assign Tags</button>
+              <button id="tagging-tab-manage" class="tagging-mode-tab" type="button" role="tab" aria-selected="false" aria-controls="tag-management-pane">Manage Tags</button>
+            </div>
+
+            <section id="batch-tagging-pane" class="batch-tagging-workbench" role="tabpanel" aria-labelledby="tagging-tab-assign">
+              <div class="batch-heading">
+                <div>
+                  <span class="batch-kicker">Batch tagging</span>
+                  <h3>Build element tags</h3>
+                </div>
+                <span id="batch-selection-count" class="batch-count">0 selected</span>
+              </div>
+              <p class="batch-help">Select elements in the viewer, choose their kind, and review the numbering before applying it.</p>
+
+              <div class="batch-form-grid">
+                <label class="batch-field batch-field-wide">
+                  <span>Prefix</span>
+                  <input id="batch-prefix" class="excel-search-input" type="text" value="PT" autocomplete="off" />
+                </label>
+                <label class="batch-field">
+                  <span>System / Run</span>
+                  <input id="batch-system" class="excel-search-input" type="text" value="1" autocomplete="off" />
+                </label>
+                <label class="batch-field">
+                  <span>Element kind</span>
+                  <select id="batch-element-kind" class="excel-select">
+                    <option value="tray">Cable Tray</option>
+                    <option value="fitting">Cable Fitting</option>
+                    <option value="auto">Auto classify</option>
+                  </select>
+                </label>
+                <label class="batch-field">
+                  <span>Tray code</span>
+                  <input id="batch-tray-code" class="excel-search-input" type="text" value="01" inputmode="numeric" />
+                </label>
+                <label class="batch-field">
+                  <span>Fitting code</span>
+                  <input id="batch-fitting-code" class="excel-search-input" type="text" value="02" inputmode="numeric" />
+                </label>
+                <label class="batch-field">
+                  <span>Start at</span>
+                  <input id="batch-start-sequence" class="excel-search-input" type="number" value="1" min="1" />
+                </label>
+                <label class="batch-field">
+                  <span>Digits</span>
+                  <select id="batch-sequence-digits" class="excel-select">
+                    <option value="2" selected>2 digits</option>
+                    <option value="3">3 digits</option>
+                    <option value="4">4 digits</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="batch-pattern-preview" aria-live="polite">
+                <span>Pattern</span>
+                <strong id="batch-pattern-example">PT1.01.01</strong>
+              </div>
+
+              <div class="batch-primary-actions">
+                <button id="btn-preview-batch-tags" class="btn btn-secondary" type="button" disabled>Preview selected</button>
+                <button id="btn-apply-batch-tags" class="btn btn-primary" type="button" disabled>Apply tags</button>
+              </div>
+
+              <label id="batch-replace-conflicts-row" class="batch-conflict-control" hidden>
+                <input id="batch-replace-conflicts" type="checkbox" />
+                <span>Replace existing assignments shown as conflicts</span>
+              </label>
+
+              <div id="batch-status" class="tag-assignment-status">Select one or more IFC elements to begin.</div>
+              <div id="batch-preview-panel" class="batch-preview-panel" hidden>
+                <div class="batch-preview-heading">
+                  <strong>Assignment preview</strong>
+                  <button id="btn-undo-batch-tags" class="tray-system-mini-action" type="button" disabled>Undo last batch</button>
+                </div>
+                <ol id="batch-preview-list" class="batch-preview-list"></ol>
+              </div>
+            </section>
+
+            <section id="tag-management-pane" role="tabpanel" aria-labelledby="tagging-tab-manage" hidden>
+            <div class="excel-field">
+              <label for="system-tag-input">System Tag</label>
+              <input type="text" id="system-tag-input" class="excel-search-input" placeholder="Example: 140ST-900-001" autocomplete="off" list="system-tag-suggestions" />
+              <datalist id="system-tag-suggestions"></datalist>
+            </div>
+            <div class="excel-field excel-only-field" hidden>
+              <label for="excel-id-column">Optional Navigation Column</label>
+              <select id="excel-id-column" class="excel-select">
+                <option value="">(Select tag column)</option>
+              </select>
+            </div>
+            <div class="excel-field excel-only-field" hidden>
+              <input type="text" id="excel-search" class="excel-search-input" placeholder="Search rows..." />
+            </div>
+            <div id="tag-assignment-status" class="tag-assignment-status">
+              Type a system tag and select one or more IFC elements.
+            </div>
+            <div class="tray-system-summary-row">
+              <div id="tray-selection-summary" class="tag-assignment-summary">0 elements selected</div>
+              <div id="tag-assignment-summary" class="tag-assignment-summary">0 assignments</div>
+            </div>
+            <section class="tray-system-manager" aria-label="Tray System Manager">
+              <div class="tray-system-manager-heading">
+                <div>
+                  <h3>Tray System Manager</h3>
+                  <p id="tray-system-manager-summary">No tray systems loaded.</p>
+                </div>
+                <button id="btn-refresh-tray-systems" class="btn btn-secondary" type="button">Refresh</button>
+              </div>
+              <div class="tray-system-manager-controls">
+                <input type="text" id="tray-system-filter" class="excel-search-input" placeholder="Search systems..." />
+                <select id="tray-system-sort" class="excel-select" aria-label="Sort tray systems">
+                  <option value="tag">Sort by tag</option>
+                  <option value="count-desc">Most components first</option>
+                  <option value="status">Sort by status</option>
+                </select>
+              </div>
+              <div id="tray-system-list" class="tray-system-list">
+                <div class="tray-system-empty">Assign or load tray-system tags to manage them here.</div>
+              </div>
+              <div class="tray-system-components-panel">
+                <div class="tray-system-components-heading">
+                  <span>Components</span>
+                  <span id="tray-system-sequence-status">Select a system</span>
+                </div>
+                <div id="tray-system-component-list" class="tray-system-component-list">
+                  <div class="tray-system-empty">Select a tray system to inspect its components.</div>
+                </div>
+              </div>
+              <div id="tray-system-continuity-panel" class="tray-system-continuity-panel" hidden>
+                <div class="tray-system-components-heading">
+                  <span>Continuity report</span>
+                  <span class="tray-system-continuity-heading-actions">
+                    <span id="tray-system-continuity-status">Not checked</span>
+                    <button id="btn-clear-continuity-colors" class="tray-system-mini-action" type="button">Clear colors</button>
+                  </span>
+                </div>
+                <div id="tray-system-continuity-body" class="tray-system-continuity-body"></div>
+              </div>
+              <div id="tray-system-deletions-panel" class="tray-system-deletions-panel" hidden>
+                <div class="tray-system-components-heading">
+                  <span>Pending deletions</span>
+                  <button id="btn-restore-all-deletions" class="tray-system-mini-action" type="button">Restore all</button>
+                </div>
+                <div id="tray-system-deletion-list" class="tray-system-deletion-list"></div>
+              </div>
+              <div class="tray-system-manager-actions">
+                <button id="btn-manager-highlight" class="btn btn-secondary" disabled>Highlight</button>
+                <button id="btn-manager-isolate" class="btn btn-secondary" disabled>Isolate</button>
+                <button id="btn-manager-add-selection" class="btn btn-secondary" disabled>Add Selection</button>
+                <button id="btn-manager-remove-selection" class="btn btn-secondary" disabled>Remove Selection</button>
+                <button id="btn-manager-check-continuity" class="btn btn-secondary" disabled>Check Continuity</button>
+                <button id="btn-manager-regenerate-sequence" class="btn btn-secondary" disabled>Regenerate Sequence</button>
+                <button id="btn-manager-rename" class="btn btn-secondary" disabled>Rename Selected System</button>
+              </div>
+            </section>
+            <div class="tag-assignment-actions">
+              <div class="tag-action-group tag-action-group-primary">
+                <button id="btn-assign-tag" class="btn btn-primary" disabled>Assign System Tag</button>
+              </div>
+              <div class="tag-action-group">
+                <span class="tag-action-heading">System tools</span>
+                <button id="btn-highlight-system" class="btn btn-secondary" disabled>Highlight System</button>
+              </div>
+              <div class="tag-action-group">
+                <span class="tag-action-heading">Export</span>
+                <button id="btn-export-tags" class="btn btn-secondary" disabled>Export Mapping</button>
+                <button id="btn-export-tagged-ifc" class="btn btn-secondary" disabled>Export Tagged IFC</button>
+              </div>
+              <details class="tag-action-group tag-advanced-actions">
+                <summary>Advanced</summary>
+                <button id="btn-add-tray-selection" class="btn btn-secondary" disabled>Add Current Element</button>
+                <button id="btn-unassign-tag" class="btn btn-secondary" disabled>Unassign Selected Element</button>
+                <button id="btn-validate-tags" class="btn btn-secondary" disabled>Validate Tags</button>
+              </details>
+            </div>
+            <section id="tag-validation-report" class="tag-validation-report" hidden aria-live="polite">
+              <div class="tag-validation-heading">
+                <strong>Tag validation</strong>
+                <span id="tag-validation-badge"></span>
+              </div>
+              <div id="tag-validation-counts" class="tag-validation-counts"></div>
+              <ul id="tag-validation-issues" class="tag-validation-issues"></ul>
+            </section>
+            </section>
+          </div>
+          
+          <!-- Excel Table Container -->
+          <div class="excel-table-container">
+            <div class="excel-placeholder">Upload an Excel file to display data table here.</div>
+            <table id="excel-data-table" class="excel-table" style="display: none;">
+              <colgroup id="excel-table-colgroup"></colgroup>
+              <thead>
+                <tr id="excel-table-header"></tr>
+              </thead>
+              <tbody id="excel-table-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Glassmorphic Loading Overlay -->
+      <div id="loading-overlay" class="overlay" style="display: none;">
+        <div class="loader-card">
+          <div class="spinner"></div>
+          <h2 id="loader-title">Loading Model</h2>
+          <p id="loader-status">Initializing WASM engine...</p>
+          <div class="progress-bar-container">
+            <div id="loader-progress" class="progress-bar" style="width: 0%;"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="tag-replace-dialog" class="viewer-dialog-backdrop" hidden>
+        <section class="viewer-dialog" role="alertdialog" aria-modal="true" aria-labelledby="tag-replace-title" aria-describedby="tag-replace-message">
+          <div class="viewer-dialog-icon" aria-hidden="true">!</div>
+          <div class="viewer-dialog-content">
+            <h2 id="tag-replace-title">Replace existing tray-system assignment?</h2>
+            <p id="tag-replace-message"></p>
+            <div class="viewer-dialog-actions">
+              <button id="tag-replace-cancel" class="btn btn-secondary" type="button">Cancel</button>
+              <button id="tag-replace-confirm" class="btn viewer-dialog-confirm" type="button">Replace tag</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Auto-Orbit Notification Badge -->
+      <div id="orbit-indicator" class="orbit-indicator" style="display: none;">
+        <span>🔄</span> Auto-Orbit Active (Click canvas to stop)
+      </div>
+    </div>
+    
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

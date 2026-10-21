@@ -1,0 +1,12 @@
+[package]
+name = "ifc-io"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+geom-core = { path = "../geom-core" }
+
+[lib]
+name = "ifc_io"
+path = "src/lib.rs"

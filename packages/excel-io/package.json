@@ -1,0 +1,7 @@
+{
+  "name": "excel-io",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Optional Excel plugin for apps (scaffold, task 1.1)"
+}

@@ -1,0 +1,7 @@
+{
+  "name": "viewer-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Improved engine layer over That Open libraries (scaffold, task 1.1)"
+}

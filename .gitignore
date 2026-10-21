@@ -10,6 +10,7 @@ lerna-debug.log*
 node_modules
 dist
 packages/viewport-core/target
+target/
 dist-ssr
 *.local
 

@@ -1,0 +1,12 @@
+[package]
+name = "tray-routing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+geom-core = { path = "../geom-core" }
+
+[lib]
+name = "tray_routing"
+path = "src/lib.rs"
