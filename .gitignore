@@ -17,6 +17,14 @@ dist-ssr
 *.ifc
 *.IFC
 
+# Navisworks cache + IFC parser logs (local validation artifacts, never committed)
+*.nwc
+*.log.html
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
