@@ -1,4 +1,4 @@
-name: ci-baseline
+name: ci
 
 on:
   pull_request:
@@ -19,3 +19,19 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run build:conduit
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      - uses: jetli/wasm-pack-action@v0.4.0
+      - run: cargo fmt --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - run: wasm-pack build bindings/conduit-wasm --target bundler
+      - run: wasm-pack build bindings/tray-wasm --target bundler
+      - run: python3 scripts/check-boundaries.py
