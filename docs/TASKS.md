@@ -66,7 +66,7 @@ Phases and dependencies come from `ARCHITECTURE.md` section 7. Only one agent at
 | 7.1 | Split `src/main.js` into feature modules (tray app) | `app/split-main-js` | 1.1 | antigravity | done |
 | 7.2 | Split conduit app UI modules | `app/conduit-ui-split` | 1.1 | antigravity | done |
 | 7.3 | `packages/excel-io` optional package (workbook upload, mapping export). The live Excel bridge stays frozen | `app/excel-io` | 7.1 | antigravity | done |
-| 7.4 | Safe IFC Editor and manual metadata (port last) | `app/safe-ifc-editor` | 3.2, 7.1 | | todo |
+| 7.4 | Safe IFC Editor and manual metadata (port last) | `app/safe-ifc-editor` | 3.2, 7.1 | antigravity | blocked on 3.2 |
 | 7.5 | Optional UI items kept for owner's decision: wireframe (viewer-core), dark-mode toggle (app UI), Basic House sample (`samples/`) | `app/optional-ui` | 6.1, 7.1 | antigravity | done |
 
 ## Phase 8: Parity gate
