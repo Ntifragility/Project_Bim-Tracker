@@ -1,0 +1,322 @@
+{
+  "cases": [
+    {
+      "expected": {
+        "nodeCount": 1,
+        "stickLength": 3.0,
+        "version": 1
+      },
+      "fn": "create/addNode",
+      "id": "create-add-node",
+      "input": {
+        "point": [
+          1,
+          2,
+          3
+        ],
+        "stickLength": 3.0
+      }
+    },
+    {
+      "expected": {
+        "nodeCount": 2,
+        "namePattern": "^R[0-9]+$"
+      },
+      "fn": "startRun",
+      "id": "start-run",
+      "input": {
+        "size": "3/4\"",
+        "system": "Power"
+      }
+    },
+    {
+      "expected": {
+        "errorContains": "Unknown node"
+      },
+      "fn": "startRun",
+      "id": "start-run-unknown-node",
+      "input": {
+        "badNode": "n99",
+        "size": "3/4\""
+      }
+    },
+    {
+      "expected": {
+        "nodeIds": 3
+      },
+      "fn": "appendToRun",
+      "id": "append-to-run",
+      "input": {
+        "points": [
+          [
+            0,
+            0,
+            0
+          ],
+          [
+            1,
+            0,
+            0
+          ]
+        ]
+      }
+    },
+    {
+      "expected": {
+        "nodeIds": 2,
+        "sameObject": true
+      },
+      "fn": "appendToRun",
+      "id": "append-dup-last-noop",
+      "input": {
+        "dupLast": true,
+        "points": [
+          [
+            0,
+            0,
+            0
+          ],
+          [
+            1,
+            0,
+            0
+          ]
+        ]
+      }
+    },
+    {
+      "expected": {
+        "errorContains": "Unknown run"
+      },
+      "fn": "appendToRun",
+      "id": "append-unknown-run",
+      "input": {
+        "badRun": true
+      }
+    },
+    {
+      "expected": {
+        "errorContains": "Unknown node"
+      },
+      "fn": "appendToRun",
+      "id": "append-unknown-node",
+      "input": {
+        "badNode": true
+      }
+    },
+    {
+      "expected": {
+        "length": 10,
+        "nodeCount": 3
+      },
+      "fn": "splitSegment",
+      "id": "split-segment",
+      "input": {
+        "points": [
+          [
+            0,
+            0,
+            0
+          ],
+          [
+            10,
+            0,
+            0
+          ]
+        ],
+        "split": {
+          "index": 0,
+          "point": [
+            5,
+            0,
+            0
+          ]
+        }
+      },
+      "tol": 1e-09
+    },
+    {
+      "expected": {
+        "errorContains": "no segment"
+      },
+      "fn": "splitSegment",
+      "id": "split-segment-bad-index",
+      "input": {
+        "badIndex": 5,
+        "points": [
+          [
+            0,
+            0,
+            0
+          ],
+          [
+            10,
+            0,
+            0
+          ]
+        ]
+      }
+    },
+    {
+      "expected": {
+        "nodesAfterDelete": 0,
+        "nodesAfterRemove": 2,
+        "runsAfterDelete": 0
+      },
+      "fn": "removeLastPoint+deleteRun",
+      "id": "remove-delete-prune",
+      "input": {
+        "points": [
+          [
+            0,
+            0,
+            0
+          ],
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            2,
+            0,
+            0
+          ]
+        ]
+      }
+    },
+    {
+      "expected": {
+        "nodeCountAfterDrop": 0,
+        "runCountAfterDrop": 0
+      },
+      "fn": "dropIncompleteRuns",
+      "id": "drop-incomplete",
+      "input": {
+        "singlePoint": true
+      }
+    },
+    {
+      "expected": {
+        "name": "New",
+        "size": "1\"",
+        "system": "S"
+      },
+      "fn": "updateRun",
+      "id": "update-run",
+      "input": {
+        "changes": {
+          "name": "New",
+          "size": "1\"",
+          "system": "S"
+        }
+      }
+    },
+    {
+      "expected": {
+        "otherRunUnchanged": true
+      },
+      "fn": "updateRun",
+      "id": "update-run-unknown-noop",
+      "input": {
+        "badRun": true,
+        "changes": {
+          "name": "X"
+        }
+      }
+    },
+    {
+      "expected": {
+        "stickLength": 4.0
+      },
+      "fn": "setStickLength",
+      "id": "set-stick-length",
+      "input": {
+        "stickLength": 4.0
+      }
+    },
+    {
+      "expected": {
+        "errorContains": "positive"
+      },
+      "fn": "setStickLength",
+      "id": "set-stick-length-invalid",
+      "input": {
+        "stickLength": 0
+      }
+    },
+    {
+      "expected": {
+        "length": 10,
+        "sticks": 4
+      },
+      "fn": "validateNetwork(computeTakeoff)",
+      "id": "validate-roundtrip",
+      "input": {
+        "points": [
+          [
+            0,
+            0,
+            0
+          ],
+          [
+            10,
+            0,
+            0
+          ]
+        ],
+        "stickLength": 3
+      },
+      "tol": 1e-09
+    },
+    {
+      "expected": {
+        "errorContains": "version"
+      },
+      "fn": "validateNetwork",
+      "id": "validate-bad-version",
+      "input": {
+        "badVersion": 99
+      }
+    },
+    {
+      "expected": {
+        "errorContains": "missing node"
+      },
+      "fn": "validateNetwork",
+      "id": "validate-dangling-ref",
+      "input": {
+        "dangling": true
+      }
+    },
+    {
+      "expected": {
+        "length": 5,
+        "sticks": 2,
+        "nextIdMin": 3
+      },
+      "fn": "validateNetwork(computeTakeoff)",
+      "id": "validate-nextid-cursor",
+      "input": {
+        "points": [
+          [
+            0,
+            0,
+            0
+          ],
+          [
+            5,
+            0,
+            0
+          ]
+        ],
+        "stickLength": 3,
+        "nextId": 2
+      }
+    }
+  ],
+  "feature": "network",
+  "module": "conduit",
+  "notes": "R1-R6 + R11: network CRUD, validation cursor, error messages. Legacy parity via legacy/src network.js.",
+  "source": "legacy/packages/conduit-core/src/network.js"
+}

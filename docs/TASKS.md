@@ -38,7 +38,7 @@ Phases and dependencies come from `ARCHITECTURE.md` section 7. Only one agent at
 ## Phase 4: Conduit
 | ID | Task | Branch | Depends on | Owner | Status |
 |---|---|---|---|---|---|
-| 4.1 | `conduit-core` network, command stack, registries | `rust/conduit-network` | 3.1 | | todo |
+| 4.1 | `conduit-core` network, command stack, registries | `rust/conduit-network` | 3.1 | opencode | review |
 | 4.2 | Snap engine | `rust/conduit-snap` | 4.1 | | todo |
 | 4.3 | Fitting solver (NEC bends) | `rust/conduit-fitting` | 4.1 | | todo |
 | 4.4 | BOM and stick optimizer | `rust/conduit-bom` | 4.1 | | todo |
