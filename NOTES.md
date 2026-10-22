@@ -24,3 +24,21 @@
   here as commit 1586a6a instead of its own infra/* branch, under the same
   waiver. The policy itself is honoured: agent never merges; owner merges the
   final PR.
+
+## 2026-10-22: PR #13 (rust/geom-core) verified but NOT self-merged (policy conflict)
+- PR #13 (task 3.1, branch `rust/geom-core`) is green (CI `baseline` + `rust`
+  SUCCESS, mergeable) and DoD checks re-ran clean in `/workspaces/wt-geom-core`:
+  `cargo test -p geom-core` 35 pass, `cargo fmt --check`, `cargo clippy
+  --workspace --all-targets -- -D warnings`, `node scripts/run-geom-vectors.mjs`
+  54 pass, `scripts/check-boundaries.py` OK. Branch is 3 ahead / 0 behind
+  `origin/main`; scope is owned folders (`crates/geom-core/`, vectors, spec)
+  plus the vectors runner script and the TASKS claim line.
+- Conflict: this checkout (`infra/agent-autonomy`, PR #14) carries a new tiered
+  merge policy that would allow self-merging `rust/*` PRs, but PR #14 is itself
+  high-risk (edits the AGENTS.md policy section) and UNMERGED. `origin/main`
+  still says "Never merge your own PR. ... Only the owner merges."
+- Per the in-force policy: agent does NOT merge #13; PR left open, reported.
+- PR #5 closed 2026-10-22 per the 2026-10-21 waiver above (cherry-picked as
+  5cd2d83; accumulation PR #6 already merged).
+- Stale board-sync PRs #9 (superseded by #12) and #12 (stale vs #13's TASKS.md
+  line) left untouched for the owner: after #13 merges, rebase/close as needed.

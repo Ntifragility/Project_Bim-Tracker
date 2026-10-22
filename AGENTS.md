@@ -23,8 +23,35 @@ Read `ARCHITECTURE.md` first. It defines the modules, allowed dependencies and m
 - Commit after each completed task in the checklist; small, one purpose each.
 - Open a pull request per branch; list: spec implemented, folders touched, test commands run, any `[UNVERIFIED]` item you resolved or could not.
 
-## PR & Merge Policy
-- Never merge your own PR. Open it, report, and stop. Only the owner merges.
+## PR & Merge Policy (tiered autonomy)
+
+Low-risk branches — agent MAY merge its own PR when all safeguards below pass:
+`fix/*`, `rust/*`, `viewer/*`, `app/*`, `spec/*`.
+
+High-risk — agent MUST NOT merge; open the PR, report, and stop. Owner merges:
+`infra/*`, `legacy/` deletion (`infra/remove-legacy`), history rewrite,
+`ThatOpenEngine/` move, changes to `AGENTS.md` / `ARCHITECTURE.md` policy
+sections themselves, secrets/licenses/public-hygiene decisions.
+
+Safeguards (all required before an autonomous merge):
+- All Definition-of-Done checks pass locally AND CI is green on the PR
+  (`cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`,
+  `wasm-pack build` for any binding touched, `npm test` + build of any app
+  touched, the boundary check from CI).
+- Branch rebased cleanly on `origin/main` (`git pull --rebase`), no conflicts.
+- No destructive commands in the branch (`rm -rf`, force-push, history
+  rewrite, branch deletion) unless explicitly tasked.
+- Single task/branch scope respected; owned folders only.
+
+Merge procedure:
+1. `gh pr create` with spec implemented, folders touched, test commands run,
+   any `[UNVERIFIED]` item resolved or not.
+2. Wait for CI green; fix and push if red (max 2 attempts, else write the
+   blocker in `NOTES.md` and stop).
+3. `gh pr merge --squash` (keeps `main` linear; per-task commits stay in the PR).
+4. Report: PR number, merge SHA, and the `git revert <SHA>` one-liner
+   (= owner revert window).
+5. `git pull --rebase origin main` after the merge; delete the worktree branch.
 
 ## Running unattended
 - Work through `docs/specs/<module>/<feature>.md` and its checklist in order; tick items as they pass.
@@ -36,7 +63,7 @@ Read `ARCHITECTURE.md` first. It defines the modules, allowed dependencies and m
 - Before starting, open `docs/TASKS.md` and claim ONE task by writing your agent name in Owner and `in progress` in Status; commit that one-line change to `main` first.
 - Never start a task claimed by another agent. Never edit another agent's owned folders.
 - Each agent works in its own git worktree and branch.
-- Before opening a PR: `git pull --rebase origin main`, then rerun all checks from the definition of done.
+- Before opening/merging a PR: `git pull --rebase origin main`, then rerun all checks from the definition of done.
 - Only one agent at a time works on `infra/*` branches (root configs, CI, workspace manifests).
 - Units: all quantities are metres internally; imperial values (10 ft sticks, NEC inches) are constants converted at the edges.
 
