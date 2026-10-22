@@ -1,5 +1,16 @@
 # NOTES: deviations, blockers, open questions
 
+## 2026-10-22: PR #17 (rust/conduit-network) merged by agent (4.1 done)
+- PR #17 self-merged as `15f9d3b` under the tiered policy (low-risk `rust/*`).
+  Revert: `git revert 15f9d3b`.
+- Safeguards met: rebased clean; full DoD re-ran green (fmt, clippy
+  `-D warnings`, `cargo test --workspace`: conduit-core 19 + geom-core 35 +
+  ifc-io 32 pass, `run-conduit-network-vectors.mjs` 23 pass, both wasm builds,
+  `npm test` 84 pass after `npm install` in the fresh worktree, both app
+  builds, `check-boundaries.py` OK); CI `baseline` + `rust` SUCCESS;
+  `MERGEABLE`; owned-folders scope; no destructive commands.
+- Worktree branch `rust/conduit-network` deleted after merge.
+
 ## Waiver 2026-10-21: suspend per-task PRs for 0.3 -> 1.1 (owner-approved)
 - Owner instruction (chat, 2026-10-21): proceed with one accumulation branch
   `infra/stabilize-to-workspaces`; open a single Draft PR for CI; mark ready
