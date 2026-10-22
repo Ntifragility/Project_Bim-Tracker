@@ -2,15 +2,16 @@
 //! snap, fitting (NEC bends), BOM stick optimizer, takeoff, CSV export,
 //! project I/O.
 //!
-//! Task 4.1 (`rust/conduit-network`): network CRUD, minimal takeoff, history
-//! model, registry seed. Depends on `geom-core` / `ifc-io` only; never on
-//! `tray-*`, the DOM, Three.js or viewer code (ARCHITECTURE section 2).
-//! See `docs/specs/conduit/network.md`; vectors in
-//! `spec/vectors/conduit/network*.json`.
+//! Tasks 4.1 (`rust/conduit-network`) + 4.2 (`rust/conduit-snap`).
+//! Depends on `geom-core` / `ifc-io` only; never on `tray-*`, the DOM,
+//! Three.js or viewer code (ARCHITECTURE section 2).
+//! See `docs/specs/conduit/network.md` + `docs/specs/conduit/snap.md`;
+//! vectors in `spec/vectors/conduit/network*.json` + `snap-engine.json`.
 
 pub mod history;
 pub mod network;
 pub mod registry;
+pub mod snap;
 pub mod takeoff;
 
 pub use history::{
@@ -24,6 +25,10 @@ pub use network::{
 pub use registry::{
     default_diameters, find_diameter, palette_color, registry_color, sort_diameters, Diameter,
     DEFAULT_SELECTED_LABEL, DEFAULT_STICK_LENGTH_M, DIAMETER_PALETTE, PALETTE, UNKNOWN_COLOR,
+};
+pub use snap::{
+    closest_on_segment, raycast_elevation_plane, resolve, snap_ortho_3d, snap_polar_angle,
+    snap_to_nodes, snap_to_segments, SnapCandidate, SnapConfig, SnapNode, SnapSegment, SnapType,
 };
 pub use takeoff::{
     compute_run_takeoff, compute_takeoff, size_to_mm, RunTakeoff, Takeoff, TakeoffRun, TakeoffSize,
