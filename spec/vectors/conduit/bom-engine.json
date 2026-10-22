@@ -1,0 +1,249 @@
+{
+  "cases": [
+    {
+      "expected": {
+        "sticks": [
+          {
+            "cuts": [
+              1.4,
+              1.4
+            ],
+            "stickNumber": 1,
+            "wasteM": 0.245
+          }
+        ],
+        "sticksNeeded": 1,
+        "totalLengthM": 2.8,
+        "totalWasteM": 0.245
+      },
+      "fn": "optimizeStickCutting",
+      "id": "ffd-two-one",
+      "input": {
+        "cuts": [
+          1.4,
+          1.4
+        ],
+        "stockLengthM": 3.048
+      },
+      "tol": 0.001
+    },
+    {
+      "expected": {
+        "sticksNeeded": 3,
+        "totalLengthM": 4.8,
+        "totalWasteM": 4.344
+      },
+      "fn": "optimizeStickCutting",
+      "id": "ffd-three-three",
+      "input": {
+        "cuts": [
+          1.6,
+          1.6,
+          1.6
+        ],
+        "stockLengthM": 3.048
+      },
+      "tol": 0.001
+    },
+    {
+      "expected": {
+        "sticksNeeded": 3,
+        "totalLengthM": 7.0,
+        "totalWasteM": 2.144
+      },
+      "fn": "optimizeStickCutting",
+      "id": "ffd-oversize",
+      "input": {
+        "cuts": [
+          7.0
+        ],
+        "stockLengthM": 3.048
+      },
+      "tol": 0.001
+    },
+    {
+      "expected": {
+        "sticks": [],
+        "sticksNeeded": 0,
+        "totalLengthM": 0,
+        "totalWasteM": 0,
+        "wastePercentage": 0
+      },
+      "fn": "optimizeStickCutting",
+      "id": "ffd-empty",
+      "input": {
+        "cuts": [],
+        "stockLengthM": 3.048
+      },
+      "tol": 0
+    },
+    {
+      "expected": {
+        "totals": {
+          "boxConnectors": 2,
+          "couplings": 2,
+          "elbows90": 1,
+          "lengthM": 8.0,
+          "pullBoxes": 0,
+          "runs": 1,
+          "sticks": 3
+        }
+      },
+      "fn": "computeDetailedBom",
+      "id": "bom-l-run",
+      "input": {
+        "runs": [
+          {
+            "points": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                3,
+                0,
+                0
+              ],
+              [
+                3,
+                5,
+                0
+              ]
+            ],
+            "size": "3/4\"",
+            "system": "Power"
+          }
+        ],
+        "stockLengthM": 3.048
+      },
+      "tol": 0.01
+    },
+    {
+      "expected": {
+        "runs": [
+          {
+            "cumulativeBendsDegGt": 360,
+            "isNecCompliant": false
+          }
+        ],
+        "totals": {
+          "pullBoxesGte": 1
+        }
+      },
+      "fn": "computeDetailedBom",
+      "id": "bom-violation",
+      "input": {
+        "runs": [
+          {
+            "points": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                2,
+                0,
+                0
+              ],
+              [
+                2,
+                2,
+                0
+              ],
+              [
+                4,
+                2,
+                0
+              ],
+              [
+                4,
+                0,
+                0
+              ],
+              [
+                6,
+                0,
+                0
+              ],
+              [
+                6,
+                2,
+                0
+              ]
+            ],
+            "size": "1\"",
+            "system": "Data"
+          }
+        ],
+        "stockLengthM": 3.048
+      }
+    },
+    {
+      "expected": {
+        "totals": {
+          "straps": 3
+        }
+      },
+      "fn": "computeDetailedBom",
+      "id": "bom-straps",
+      "input": {
+        "runs": [
+          {
+            "points": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                6,
+                0,
+                0
+              ]
+            ],
+            "size": "1\"",
+            "system": "Power"
+          }
+        ],
+        "stockLengthM": 3.048
+      }
+    },
+    {
+      "expected": {
+        "totals": {
+          "sticks": 4
+        }
+      },
+      "fn": "computeDetailedBom",
+      "id": "bom-waste-factor",
+      "input": {
+        "runs": [
+          {
+            "points": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                8,
+                0,
+                0
+              ]
+            ],
+            "size": "3/4\"",
+            "system": "Power"
+          }
+        ],
+        "stockLengthM": 3.048,
+        "wasteFactorPct": 25
+      }
+    }
+  ],
+  "feature": "bom",
+  "module": "conduit",
+  "notes": "R1-R8: FFD exact discipline + hardware rules. straps case: len 6 / stick 3.048 -> max(2, 2+floor(1.96)) = 3? legacy says max(2, 2+1)=3... vector pins legacy value. waste case: raw 3 sticks (8m/3.048) FFD -> ceil(3*1.25)=4.",
+  "source": "legacy/packages/conduit-core/test/bom-calculator.test.js + src/bom-calculator.js"
+}
