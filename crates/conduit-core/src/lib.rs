@@ -2,18 +2,25 @@
 //! snap, fitting (NEC bends), BOM stick optimizer, takeoff, CSV export,
 //! project I/O.
 //!
-//! Tasks 4.1 (`rust/conduit-network`) + 4.2 (`rust/conduit-snap`).
-//! Depends on `geom-core` / `ifc-io` only; never on `tray-*`, the DOM,
-//! Three.js or viewer code (ARCHITECTURE section 2).
-//! See `docs/specs/conduit/network.md` + `docs/specs/conduit/snap.md`;
-//! vectors in `spec/vectors/conduit/network*.json` + `snap-engine.json`.
+//! Tasks 4.1 (`rust/conduit-network`) + 4.2 (`rust/conduit-snap`) + 4.3
+//! (`rust/conduit-fitting`). Depends on `geom-core` / `ifc-io` only; never
+//! on `tray-*`, the DOM, Three.js or viewer code (ARCHITECTURE section 2).
+//! See `docs/specs/conduit/network.md` + `snap.md` + `fitting.md`; vectors
+//! in `spec/vectors/conduit/network*.json` + `snap-engine.json` +
+//! `fitting-engine.json`.
 
+pub mod fitting;
 pub mod history;
 pub mod network;
 pub mod registry;
 pub mod snap;
 pub mod takeoff;
 
+pub use fitting::{
+    analyze_run_bends, bend_angle, nec_bend_radius_m, solve_auto_riser, solve_elbow, BendInfo,
+    ElbowSolution, NecBendRow, NecQuery, RiserNode, RunBends, DEFAULT_BEND_RADIUS_M,
+    NEC_BEND_TABLE,
+};
 pub use history::{
     history_clear, history_execute, history_redo, history_undo, History, MAX_UNDO_DEPTH,
 };
