@@ -1,0 +1,150 @@
+{
+ "cases": [
+  {
+   "expected": {
+    "x": 1.5,
+    "y": -2.25,
+    "z": 0.75
+   },
+   "fn": "toOriginal",
+   "id": "identity-roundtrip",
+   "input": {
+    "base": "identity",
+    "scene": {
+     "x": 1.5,
+     "y": 0.75,
+     "z": 2.25
+    }
+   },
+   "tol": 1e-12
+  },
+  {
+   "expected": {
+    "x": 11,
+    "y": 3,
+    "z": -7
+   },
+   "fn": "toScene",
+   "id": "translated-to-scene",
+   "input": {
+    "base": "translate-10-0--5",
+    "original": {
+     "x": 1,
+     "y": 2,
+     "z": 3
+    }
+   },
+   "tol": 1e-09
+  },
+  {
+   "expected": {
+    "x": 1,
+    "y": 2,
+    "z": 3
+   },
+   "fn": "toOriginal",
+   "id": "translated-to-original",
+   "input": {
+    "base": "translate-10-0--5",
+    "scene": {
+     "x": 11,
+     "y": 3,
+     "z": -7
+    }
+   },
+   "tol": 1e-09
+  },
+  {
+   "expected": {
+    "x": 1,
+    "y": 3,
+    "z": -2
+   },
+   "fn": "toScene",
+   "id": "axis-swap-ifc-to-three",
+   "input": {
+    "base": "identity",
+    "original": {
+     "x": 1,
+     "y": 2,
+     "z": 3
+    }
+   },
+   "tol": 1e-12
+  },
+  {
+   "expected": {
+    "x": 1,
+    "y": 2,
+    "z": 3
+   },
+   "fn": "toOriginal",
+   "id": "axis-swap-three-to-ifc",
+   "input": {
+    "base": "identity",
+    "scene": {
+     "x": 1,
+     "y": 3,
+     "z": -2
+    }
+   },
+   "tol": 1e-12
+  },
+  {
+   "expected": {
+    "x": -4,
+    "y": 0.5,
+    "z": 12
+   },
+   "fn": "roundtrip",
+   "id": "roundtrip-translated",
+   "input": {
+    "base": "translate-10-0--5",
+    "original": {
+     "x": -4,
+     "y": 0.5,
+     "z": 12
+    }
+   },
+   "tol": 1e-09
+  },
+  {
+   "expected": {
+    "ok": false
+   },
+   "fn": "toOriginal",
+   "id": "singular-base",
+   "input": {
+    "base": "zero",
+    "scene": {
+     "x": 1,
+     "y": 2,
+     "z": 3
+    }
+   }
+  },
+  {
+   "expected": {
+    "x": 2,
+    "y": 2,
+    "z": 2
+   },
+   "fn": "toOriginal",
+   "id": "diagonal-scale-base",
+   "input": {
+    "base": "scale-2",
+    "scene": {
+     "x": 4,
+     "y": 4,
+     "z": -4
+    }
+   },
+   "tol": 1e-09
+  }
+ ],
+ "feature": "frames",
+ "module": "geom",
+ "notes": "Bases by name: identity = no shift; translate-10-0--5 = row-major three Matrix4().set(1,0,0,10, 0,1,0,0, 0,0,1,-5, 0,0,0,1); scale-2 = diag(2); zero = singular. toScene(original): three=(x, z, -y) then base*. toOriginal(scene): base^-1 then (x, -z, y). Verified numerically against three.js r184 (translate + identity cases).",
+ "source": "legacy/src/covillaf/coordinates.js (createCoordinateFrame toOriginal/toScene)",
+ "units": "metres; IFC Z-up <-> scene Y-up"
+}
