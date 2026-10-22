@@ -32,7 +32,7 @@ Phases and dependencies come from `ARCHITECTURE.md` section 7. Only one agent at
 ## Phase 3: Base crates (parallel)
 | ID | Task | Branch | Depends on | Owner | Status |
 |---|---|---|---|---|---|
-| 3.1 | `geom-core` (vector, transform, units in metres, coordinate frames) | `rust/geom-core` | 2.1, 2.2 | opencode | in progress |
+| 3.1 | `geom-core` (vector, transform, units in metres, coordinate frames) | `rust/geom-core` | 2.1, 2.2 | opencode | review |
 | 3.2 | `ifc-io` (safe edits, tag extraction, export naming); first confirm tray/conduit overlap in its spec | `rust/ifc-io` | 3.1 | | todo |
 
 ## Phase 4: Conduit
