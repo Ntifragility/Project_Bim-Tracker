@@ -1,0 +1,242 @@
+{
+ "cases": [
+  {
+   "expected": 90,
+   "fn": "angleBetween",
+   "id": "angle-right",
+   "input": {
+    "a": {
+     "x": 1,
+     "y": 0,
+     "z": 0
+    },
+    "b": {
+     "x": 0,
+     "y": 1,
+     "z": 0
+    }
+   },
+   "tol": 1e-09
+  },
+  {
+   "expected": 180,
+   "fn": "angleBetween",
+   "id": "angle-opposite",
+   "input": {
+    "a": {
+     "x": 1,
+     "y": 0,
+     "z": 0
+    },
+    "b": {
+     "x": -1,
+     "y": 0,
+     "z": 0
+    }
+   },
+   "tol": 1e-09
+  },
+  {
+   "expected": 0,
+   "fn": "angleBetween",
+   "id": "angle-same",
+   "input": {
+    "a": {
+     "x": 0,
+     "y": 0,
+     "z": 1
+    },
+    "b": {
+     "x": 0,
+     "y": 0,
+     "z": 1
+    }
+   },
+   "tol": 1e-09
+  },
+  {
+   "expected": 0,
+   "fn": "angleBetween",
+   "id": "angle-zero-vector",
+   "input": {
+    "a": {
+     "x": 0,
+     "y": 0,
+     "z": 0
+    },
+    "b": {
+     "x": 1,
+     "y": 0,
+     "z": 0
+    }
+   },
+   "tol": 0
+  },
+  {
+   "expected": {
+    "x": 1,
+    "y": 0,
+    "z": 5
+   },
+   "fn": "constrainOrtho",
+   "id": "ortho-tie-xy-keeps-x",
+   "input": {
+    "from": {
+     "x": 0,
+     "y": 0,
+     "z": 5
+    },
+    "to": {
+     "x": 1,
+     "y": 1,
+     "z": 5
+    }
+   },
+   "tol": 1e-09
+  },
+  {
+   "expected": {
+    "x": 2.0000000000000004,
+    "y": 2,
+    "z": 0
+   },
+   "fn": "constrainOrtho",
+   "id": "ortho-rotated-grid-45",
+   "input": {
+    "from": {
+     "x": 0,
+     "y": 0,
+     "z": 0
+    },
+    "planAngle": 45,
+    "to": {
+     "x": 3,
+     "y": 1,
+     "z": 0
+    }
+   },
+   "tol": 1e-09
+  },
+  {
+   "expected": {
+    "x": 3,
+    "y": 0,
+    "z": 0
+   },
+   "fn": "constrainOrtho",
+   "id": "constrain-ortho-axis",
+   "input": {
+    "from": {
+     "x": 0,
+     "y": 0,
+     "z": 0
+    },
+    "planAngle": 0,
+    "to": {
+     "x": 3,
+     "y": 1,
+     "z": 0
+    }
+   },
+   "tol": 1e-09
+  },
+  {
+   "expected": 45,
+   "fn": "planAngleOf",
+   "id": "plan-angle-diagonal",
+   "input": {
+    "a": {
+     "x": 0,
+     "y": 0,
+     "z": 0
+    },
+    "b": {
+     "x": 1,
+     "y": 1,
+     "z": 0
+    }
+   },
+   "tol": 1e-09
+  },
+  {
+   "expected": 0,
+   "fn": "planAngleOf",
+   "id": "plan-angle-vertical",
+   "input": {
+    "a": {
+     "x": 0,
+     "y": 0,
+     "z": 0
+    },
+    "b": {
+     "x": 0,
+     "y": 0,
+     "z": 5
+    }
+   },
+   "tol": 0
+  },
+  {
+   "expected": true,
+   "fn": "isVertical",
+   "id": "is-vertical-true",
+   "input": {
+    "a": {
+     "x": 0,
+     "y": 0,
+     "z": 0
+    },
+    "b": {
+     "x": 0.01,
+     "y": 0.01,
+     "z": 10
+    },
+    "toleranceDeg": 10
+   },
+   "tol": 0
+  },
+  {
+   "expected": false,
+   "fn": "isVertical",
+   "id": "is-vertical-false",
+   "input": {
+    "a": {
+     "x": 0,
+     "y": 0,
+     "z": 0
+    },
+    "b": {
+     "x": 10,
+     "y": 0,
+     "z": 0.01
+    },
+    "toleranceDeg": 10
+   },
+   "tol": 0
+  },
+  {
+   "expected": false,
+   "fn": "isVertical",
+   "id": "is-vertical-degenerate",
+   "input": {
+    "a": {
+     "x": 1,
+     "y": 1,
+     "z": 1
+    },
+    "b": {
+     "x": 1,
+     "y": 1,
+     "z": 1
+    },
+    "toleranceDeg": 10
+   },
+   "tol": 0
+  }
+ ],
+ "feature": "segment",
+ "module": "geom",
+ "notes": "constrain-ortho-axis mirrors conduit takeoff.json's case; ortho-tie-xy-keeps-x pins indexOf(max) tie-breaking. ortho-dominant-* mirror conduit snap.json's snapOrtho3D expectations (IFC Z-up axis order).",
+ "source": "legacy/packages/conduit-core/src/geometry.js (angleBetween, constrainOrtho, planAngleOf, isVertical) + legacy/packages/conduit-core/test/conduit-core.test.js (ortho cases) + legacy/packages/conduit-core/test/snap-engine.test.js (ortho snap expectations)",
+ "units": "metres"
+}
