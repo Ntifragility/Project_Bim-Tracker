@@ -33,6 +33,7 @@ ALLOWED_PATH_DEPS: dict[str, set[str]] = {
     "conduit-core": {"geom-core", "ifc-io"},
     "conduit-wasm": {"conduit-core"},
     "tray-wasm": {"tray-tagging", "tray-routing"},
+    "viewport-core": set(),
 }
 
 # Crates that must stay pure: direct deps on these fail the check (R2).

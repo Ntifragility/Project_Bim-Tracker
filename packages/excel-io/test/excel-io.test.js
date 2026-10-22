@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readWorkbook, writeWorkbookBytes } from '../src/index.js';
+import { readWorkbook, writeWorkbookBytes } from 'excel-io';
 
 test('excel-io: writes and reads workbook sheets roundtrip', () => {
   const sampleRows = [
