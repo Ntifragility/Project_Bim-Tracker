@@ -78,8 +78,10 @@ shape remains readable via scheme v2 (`ComponentId == ElementTag`).
 ## Open questions
 
 1. GUID determinism: Rust `ifc-io` will take an injected guid function —
-   confirmed pattern OK? (default: owner-approved pure.)
+**APPROVED by owner 2026-10-22.**
 2. `vec` helpers are duplicated here and in conduit `snap.json` until
-   `geom-core` (3.1) deduplicates them. Acceptable?
+`geom-core` (3.1) deduplicates them. **APPROVED by owner 2026-10-22**
+(cleanup in 3.1).
 3. Extractor contract: TS adapter passes plain vertex arrays across
-   Wasm; coordinate frame (IFC Z-up, f64) declared in 3.1/5.2 specs.
+Wasm; coordinate frame (IFC Z-up, f64) declared in 3.1/5.2 specs.
+**APPROVED by owner 2026-10-22.**
