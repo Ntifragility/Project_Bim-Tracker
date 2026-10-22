@@ -1,0 +1,285 @@
+{
+  "module": "tray",
+  "feature": "routing",
+  "source": "legacy/packages/routing-core/src/*.js (tests: legacy/packages/routing-core/test/routing-core.test.js)",
+  "units": "metres",
+  "notes": "Pure graph core: vec helpers (duplicated from conduit snap.json until geom-core 3.1), PCA centerline, tolerance clustering, diagnostics, Dijkstra shortest path. Node ids are insertion-ordered (node-N); vectors assert topology (counts, membership) not exact ids except where deterministic single-graph. ifc-extractor.js and routing-controller.js stay TS-side (three/DOM) per ARCHITECTURE section 2.",
+  "cases": [
+    {
+      "id": "vec-add",
+      "fn": "vec.add",
+      "input": { "a": { "x": 1, "y": 2, "z": 3 }, "b": { "x": 4, "y": 5, "z": 6 } },
+      "expected": { "x": 5, "y": 7, "z": 9 },
+      "tol": 0
+    },
+    {
+      "id": "vec-sub",
+      "fn": "vec.sub",
+      "input": { "a": { "x": 4, "y": 5, "z": 6 }, "b": { "x": 1, "y": 2, "z": 3 } },
+      "expected": { "x": 3, "y": 3, "z": 3 },
+      "tol": 0
+    },
+    {
+      "id": "vec-dot",
+      "fn": "vec.dot",
+      "input": { "a": { "x": 1, "y": 2, "z": 3 }, "b": { "x": 4, "y": 5, "z": 6 } },
+      "expected": 32,
+      "tol": 1e-12
+    },
+    {
+      "id": "vec-distance-3-4-0",
+      "fn": "vec.distance",
+      "input": { "a": { "x": 0, "y": 0, "z": 0 }, "b": { "x": 3, "y": 4, "z": 0 } },
+      "expected": 5.0,
+      "tol": 1e-12
+    },
+    {
+      "id": "vec-normalize-zero",
+      "fn": "vec.normalize",
+      "input": { "a": { "x": 0, "y": 0, "z": 0 } },
+      "expected": { "x": 0, "y": 0, "z": 0 },
+      "tol": 0
+    },
+    {
+      "id": "vec-mean",
+      "fn": "vec.mean",
+      "input": { "points": [{ "x": 1, "y": 2, "z": 3 }, { "x": 3, "y": 4, "z": 5 }] },
+      "expected": { "x": 2, "y": 3, "z": 4 },
+      "tol": 1e-12
+    },
+    {
+      "id": "vec-mean-empty",
+      "fn": "vec.mean",
+      "input": { "points": [] },
+      "expected": { "x": 0, "y": 0, "z": 0 },
+      "tol": 0
+    },
+    {
+      "id": "centerline-rotated-cloud",
+      "fn": "deriveCenterline",
+      "input": {
+        "points": [
+          { "x": -1.75, "y": -2.25, "z": -0.1 }, { "x": -1.75, "y": -2.25, "z": 0.1 },
+          { "x": -2.25, "y": -1.75, "z": -0.1 }, { "x": -2.25, "y": -1.75, "z": 0.1 },
+          { "x": 1.75, "y": 2.25, "z": -0.1 }, { "x": 1.75, "y": 2.25, "z": 0.1 },
+          { "x": 2.25, "y": 1.75, "z": -0.1 }, { "x": 2.25, "y": 1.75, "z": 0.1 }
+        ]
+      },
+      "expected": { "valid": true, "length": 5.656854249492381, "confidenceGt": 0.95, "centroid": { "x": 0, "y": 0, "z": 0 } },
+      "tol": 0.05
+    },
+    {
+      "id": "centerline-two-point",
+      "fn": "deriveCenterline",
+      "input": { "points": [{ "x": 0, "y": 0, "z": 0 }, { "x": 4, "y": 0, "z": 0 }] },
+      "expected": {
+        "valid": true,
+        "length": 4,
+        "confidence": 1,
+        "centroid": { "x": 2, "y": 0, "z": 0 },
+        "start": { "x": 0, "y": 0, "z": 0 },
+        "end": { "x": 4, "y": 0, "z": 0 }
+      },
+      "tol": 1e-9
+    },
+    {
+      "id": "centerline-vertical",
+      "fn": "deriveCenterline",
+      "input": { "points": [{ "x": 0, "y": 0, "z": 0 }, { "x": 0, "y": 0, "z": 5 }] },
+      "expected": {
+        "valid": true,
+        "length": 5,
+        "confidence": 1,
+        "start": { "x": 0, "y": 0, "z": 0 },
+        "end": { "x": 0, "y": 0, "z": 5 }
+      },
+      "tol": 1e-9
+    },
+    {
+      "id": "centerline-empty",
+      "fn": "deriveCenterline",
+      "input": { "points": [] },
+      "expected": { "valid": false, "reason": "insufficient-vertices" }
+    },
+    {
+      "id": "centerline-single-point",
+      "fn": "deriveCenterline",
+      "input": { "points": [{ "x": 1, "y": 2, "z": 3 }] },
+      "expected": { "valid": false, "reason": "insufficient-vertices" }
+    },
+    {
+      "id": "centerline-coincident",
+      "fn": "deriveCenterline",
+      "input": { "points": [{ "x": 1, "y": 1, "z": 1 }, { "x": 1, "y": 1, "z": 1 }] },
+      "expected": { "valid": false, "reason": "centerline-too-short", "length": 0 },
+      "tol": 1e-12
+    },
+    {
+      "id": "centerline-minimum-length-option",
+      "fn": "deriveCenterline",
+      "input": { "points": [{ "x": 0, "y": 0, "z": 0 }, { "x": 4, "y": 0, "z": 0 }], "options": { "minimumLength": 10 } },
+      "expected": { "valid": false, "reason": "centerline-too-short", "length": 4 },
+      "tol": 1e-12
+    },
+    {
+      "id": "graph-clusters-nearby-endpoints",
+      "fn": "buildConnectivityGraph",
+      "input": {
+        "segments": [
+          { "id": "a", "start": { "x": 0, "y": 0, "z": 0 }, "end": { "x": 2, "y": 0, "z": 0 }, "length": 2, "confidence": 1 },
+          { "id": "b", "start": { "x": 2.04, "y": 0, "z": 0 }, "end": { "x": 5, "y": 0, "z": 0 }, "length": 2.96, "confidence": 1 }
+        ],
+        "options": { "tolerance": 0.05 }
+      },
+      "expected": { "nodeCount": 3, "edgeCount": 2, "edgeA": { "fromNodeIndex": 0, "toNodeIndex": 1 } },
+      "tol": 1e-9
+    },
+    {
+      "id": "graph-gap-beyond-tolerance-splits",
+      "fn": "buildConnectivityGraph",
+      "input": {
+        "segments": [
+          { "id": "a", "start": { "x": 0, "y": 0, "z": 0 }, "end": { "x": 2, "y": 0, "z": 0 }, "length": 2, "confidence": 1 },
+          { "id": "b", "start": { "x": 2.2, "y": 0, "z": 0 }, "end": { "x": 5, "y": 0, "z": 0 }, "length": 2.8, "confidence": 1 }
+        ],
+        "options": { "tolerance": 0.05 }
+      },
+      "expected": { "nodeCount": 4, "edgeCount": 2 }
+    },
+    {
+      "id": "graph-default-tolerance",
+      "fn": "buildConnectivityGraph",
+      "input": {
+        "segments": [
+          { "id": "a", "start": { "x": 0, "y": 0, "z": 0 }, "end": { "x": 2, "y": 0, "z": 0 }, "length": 2, "confidence": 1 },
+          { "id": "b", "start": { "x": 2.04, "y": 0, "z": 0 }, "end": { "x": 5, "y": 0, "z": 0 }, "length": 2.96, "confidence": 1 }
+        ]
+      },
+      "expected": { "nodeCount": 3, "edgeCount": 2, "tolerance": 0.1 }
+    },
+    {
+      "id": "diagnose-single-chain",
+      "fn": "diagnoseGraph",
+      "input": {
+        "segments": [
+          { "id": "a", "start": { "x": 0, "y": 0, "z": 0 }, "end": { "x": 2, "y": 0, "z": 0 }, "length": 2, "confidence": 1 },
+          { "id": "b", "start": { "x": 2.04, "y": 0, "z": 0 }, "end": { "x": 5, "y": 0, "z": 0 }, "length": 2.96, "confidence": 1 }
+        ],
+        "options": { "tolerance": 0.05 }
+      },
+      "expected": { "segmentCount": 2, "nodeCount": 3, "componentCount": 1, "danglingCount": 2, "ambiguousCount": 0, "lowConfidenceEdges": [], "isConnected": true }
+    },
+    {
+      "id": "diagnose-disconnected-low-confidence",
+      "fn": "diagnoseGraph",
+      "input": {
+        "segments": [
+          { "id": "a", "start": { "x": 0, "y": 0, "z": 0 }, "end": { "x": 1, "y": 0, "z": 0 }, "length": 1, "confidence": 0.4 },
+          { "id": "b", "start": { "x": 10, "y": 0, "z": 0 }, "end": { "x": 11, "y": 0, "z": 0 }, "length": 1, "confidence": 1 }
+        ]
+      },
+      "expected": { "componentCount": 2, "lowConfidenceEdges": ["a"], "isConnected": false }
+    },
+    {
+      "id": "diagnose-ambiguous-star",
+      "fn": "diagnoseGraph",
+      "input": {
+        "segments": [
+          { "id": "e0", "start": { "x": 0, "y": 0, "z": 0 }, "end": { "x": 1, "y": 0, "z": 0 }, "length": 1, "confidence": 1 },
+          { "id": "e1", "start": { "x": 0, "y": 0, "z": 0 }, "end": { "x": 2, "y": 0, "z": 0 }, "length": 2, "confidence": 1 },
+          { "id": "e2", "start": { "x": 0, "y": 0, "z": 0 }, "end": { "x": 3, "y": 0, "z": 0 }, "length": 3, "confidence": 1 },
+          { "id": "e3", "start": { "x": 0, "y": 0, "z": 0 }, "end": { "x": 4, "y": 0, "z": 0 }, "length": 4, "confidence": 1 },
+          { "id": "e4", "start": { "x": 0, "y": 0, "z": 0 }, "end": { "x": 5, "y": 0, "z": 0 }, "length": 5, "confidence": 1 }
+        ],
+        "options": { "tolerance": 0.001 }
+      },
+      "expected": { "nodeCount": 6, "segmentCount": 5, "componentCount": 1, "ambiguousCount": 1, "isConnected": true }
+    },
+    {
+      "id": "diagnose-custom-confidence-threshold",
+      "fn": "diagnoseGraph",
+      "input": {
+        "segments": [
+          { "id": "a", "start": { "x": 0, "y": 0, "z": 0 }, "end": { "x": 2, "y": 0, "z": 0 }, "length": 2, "confidence": 1 },
+          { "id": "b", "start": { "x": 2.04, "y": 0, "z": 0 }, "end": { "x": 5, "y": 0, "z": 0 }, "length": 2.96, "confidence": 1 }
+        ],
+        "options": { "minimumConfidence": 0.99 }
+      },
+      "expected": { "lowConfidenceEdges": [] }
+    },
+    {
+      "id": "components-sorted-by-edge-size",
+      "fn": "connectedComponents",
+      "input": {
+        "segments": [
+          { "id": "a", "start": { "x": 0, "y": 0, "z": 0 }, "end": { "x": 1, "y": 0, "z": 0 }, "length": 1 },
+          { "id": "b", "start": { "x": 1, "y": 0, "z": 0 }, "end": { "x": 2, "y": 0, "z": 0 }, "length": 1 },
+          { "id": "c", "start": { "x": 9, "y": 0, "z": 0 }, "end": { "x": 10, "y": 0, "z": 0 }, "length": 5 }
+        ],
+        "options": { "tolerance": 0.001 }
+      },
+      "expected": { "componentCount": 2, "edgeSizes": [2, 1] }
+    },
+    {
+      "id": "shortest-weighted-path",
+      "fn": "shortestPath",
+      "input": {
+        "segments": [
+          { "id": "a", "start": { "x": 0, "y": 0, "z": 0 }, "end": { "x": 1, "y": 0, "z": 0 }, "length": 1 },
+          { "id": "b", "start": { "x": 1, "y": 0, "z": 0 }, "end": { "x": 2, "y": 0, "z": 0 }, "length": 1 },
+          { "id": "c", "start": { "x": 0, "y": 0, "z": 0 }, "end": { "x": 2, "y": 0, "z": 0 }, "length": 5 }
+        ],
+        "options": { "tolerance": 0.001 },
+        "from": "edge-start:a",
+        "to": "edge-end:b"
+      },
+      "expected": { "found": true, "edgeIds": ["a", "b"], "length": 2 },
+      "tol": 1e-9
+    },
+    {
+      "id": "shortest-exclude-endpoint-edges",
+      "fn": "shortestPath",
+      "input": {
+        "segments": [
+          { "id": "start", "start": { "x": 0, "y": 0, "z": 0 }, "end": { "x": 1, "y": 0, "z": 0 }, "length": 1 },
+          { "id": "middle", "start": { "x": 1, "y": 0, "z": 0 }, "end": { "x": 2, "y": 0, "z": 0 }, "length": 1 },
+          { "id": "end", "start": { "x": 2, "y": 0, "z": 0 }, "end": { "x": 3, "y": 0, "z": 0 }, "length": 1 }
+        ],
+        "options": { "tolerance": 0.001 },
+        "from": "edge-end:start",
+        "to": "edge-start:end",
+        "excludeEdgeIds": ["start", "end"]
+      },
+      "expected": { "found": true, "edgeIds": ["middle"], "length": 1 },
+      "tol": 1e-9
+    },
+    {
+      "id": "shortest-disconnected",
+      "fn": "shortestPath",
+      "input": {
+        "segments": [
+          { "id": "a", "start": { "x": 0, "y": 0, "z": 0 }, "end": { "x": 1, "y": 0, "z": 0 }, "length": 1 },
+          { "id": "b", "start": { "x": 9, "y": 0, "z": 0 }, "end": { "x": 10, "y": 0, "z": 0 }, "length": 1 }
+        ],
+        "options": { "tolerance": 0.001 },
+        "from": "edge-start:a",
+        "to": "edge-end:b"
+      },
+      "expected": { "found": false, "reason": "disconnected" }
+    },
+    {
+      "id": "shortest-unknown-node",
+      "fn": "shortestPath",
+      "input": {
+        "segments": [
+          { "id": "a", "start": { "x": 0, "y": 0, "z": 0 }, "end": { "x": 1, "y": 0, "z": 0 }, "length": 1 },
+          { "id": "b", "start": { "x": 9, "y": 0, "z": 0 }, "end": { "x": 10, "y": 0, "z": 0 }, "length": 1 }
+        ],
+        "options": { "tolerance": 0.001 },
+        "from": "unknown-node",
+        "to": "edge-end:b"
+      },
+      "expected": { "found": false, "reason": "unknown-node" }
+    }
+  ]
+}

@@ -27,7 +27,7 @@ Phases and dependencies come from `ARCHITECTURE.md` section 7. Only one agent at
 | ID | Task | Branch | Depends on | Owner | Status |
 |---|---|---|---|---|---|
 | 2.1 | Conduit vectors from existing and branch tests (snap, fitting, BOM, takeoff) | `spec/vectors-conduit` | 1.1 | | todo |
-| 2.2 | Tray vectors from the 67 existing tests (tagging, validator, routing) | `spec/vectors-tray` | 1.1 | | todo |
+| 2.2 | Tray vectors from the 67 existing tests (tagging, validator, routing) | `spec/vectors-tray` | 1.1 | opencode | review |
 
 ## Phase 3: Base crates (parallel)
 | ID | Task | Branch | Depends on | Owner | Status |

@@ -1,0 +1,264 @@
+{
+  "module": "tray",
+  "feature": "ifc-io",
+  "source": "legacy/src/ifc/ifc-tag-exporter.js + legacy/src/ifc/ifc-safe-editor.js (tests: legacy/packages/routing-core/test/ifc-tag-exporter.test.js)",
+  "units": "metres",
+  "notes": "Rust-pure boundary (same as conduit io.json): createIfcGuid (Math.random/crypto), STEP text rendering, entity-id allocation, color/style entities stay TS-side (ifc-io text layer / viewer-core). This file pins their legacy behaviour as runnable JS vectors so the TS side stays compatible; _io vectors are jsOnly, never ported to Rust. Only shape-stable facts (property names, pset names, deterministic entity ids from fixture #1/#10, error messages) are asserted, never GUIDs, timestamps, or full strings.",
+  "cases": [
+    {
+      "id": "guid-shape",
+      "fn": "createIfcGuid.shape",
+      "input": {},
+      "expected": { "pattern": "^[0-3][0-9A-Za-z_$]{21}$" },
+      "jsOnly": true
+    },
+    {
+      "id": "tagged-filename",
+      "fn": "taggedIfcFileName",
+      "input": { "queries": ["CableTray.ifc", "model.IFC", "plain"] },
+      "expected": ["CableTray_tagged.ifc", "model_tagged.ifc", "plain_tagged.ifc"],
+      "jsOnly": true
+    },
+    {
+      "id": "edited-filename",
+      "fn": "editedIfcFileName",
+      "input": { "queries": ["Cable Tray.ifc", "a.IFC", "noext"] },
+      "expected": ["Cable Tray_edited.ifc", "a_edited.ifc", "noext_edited.ifc"],
+      "jsOnly": true
+    },
+    {
+      "id": "project-tag-created-entity-ids",
+      "fn": "addProjectTagsToIfc.created",
+      "input": { "assignments": [{ "localId": 10, "tag": "CT-001" }] },
+      "expected": {
+        "applied": [{ "localId": 10, "tag": "CT-001", "action": "created", "propertyId": 11 }],
+        "propertyLine": "#11=IFCPROPERTYSINGLEVALUE('Tag',$,IFCLABEL('CT-001'),$);",
+        "psetName": "'CCP_TAG'",
+        "relationPattern": "IFCRELDEFINESBYPROPERTIES\\('[0-3][0-9A-Za-z_$]{21}',\\$,\\$,\\$,\\(#10\\),#12\\)"
+      },
+      "jsOnly": true
+    },
+    {
+      "id": "project-tag-update-no-duplicate-pset",
+      "fn": "addProjectTagsToIfc.update",
+      "input": { "first": "CT-001", "second": "CT-002", "localId": 10 },
+      "expected": { "firstAction": "created", "secondAction": "updated", "tagAfter": "CT-002", "ccpTagCount": 1 },
+      "jsOnly": true
+    },
+    {
+      "id": "project-tag-quote-escape-roundtrip",
+      "fn": "addProjectTagsToIfc.quote",
+      "input": { "assignments": [{ "localId": 10, "tag": "CT-'01" }] },
+      "expected": { "stepContains": "IFCLABEL('CT-''01')", "tagAfter": "CT-'01" },
+      "jsOnly": true
+    },
+    {
+      "id": "project-tag-empty-skipped",
+      "fn": "addProjectTagsToIfc.empty",
+      "input": { "assignments": [{ "localId": 10, "tag": "" }, { "localId": 10, "tag": "A-1" }] },
+      "expected": { "skippedReasons": ["empty-tag"], "appliedAction": "created", "tagAfter": "A-1" },
+      "jsOnly": true
+    },
+    {
+      "id": "project-tag-missing-element-throws",
+      "fn": "addProjectTagsToIfc.missing",
+      "input": { "assignments": [{ "localId": 999, "tag": "CT-999" }] },
+      "expected": { "throwsPattern": "No tag assignments matched" },
+      "jsOnly": true
+    },
+    {
+      "id": "tray-assignment-created-entity-lines",
+      "fn": "addTraySystemAssignmentsToIfc.created",
+      "input": {
+        "assignments": [{ "localId": 10, "systemTag": "PT1", "elementTag": "PT1.01.01", "componentId": "PT1.01.01", "elementKind": "tray", "typeCode": "01", "sequenceNumber": "01", "schemeVersion": "2" }]
+      },
+      "expected": {
+        "action": "created",
+        "propertyLines": [
+          "#11=IFCPROPERTYSINGLEVALUE('SystemTag',$,IFCLABEL('PT1'),$);",
+          "#12=IFCPROPERTYSINGLEVALUE('ElementTag',$,IFCLABEL('PT1.01.01'),$);",
+          "#13=IFCPROPERTYSINGLEVALUE('ComponentId',$,IFCLABEL('PT1.01.01'),$);",
+          "#17=IFCPROPERTYSINGLEVALUE('SchemeVersion',$,IFCLABEL('2'),$);"
+        ],
+        "psetName": "'CCP_TRAY_SYSTEM'",
+        "psetRef": "(#11,#12,#13,#14,#15,#16,#17)",
+        "nativeTagLine": "#10=IFCBUILDINGELEMENTPART('1aaaaaaaaaaaaaaaaaaaaa',$,'Tray',$,$,$,$,'PT1.01.01',$);"
+      },
+      "jsOnly": true
+    },
+    {
+      "id": "tray-assignment-roundtrip-fields",
+      "fn": "addTraySystemAssignmentsToIfc.roundtrip",
+      "input": {
+        "assignments": [{ "localId": 10, "systemTag": "PT1", "elementTag": "PT1.01.01", "componentId": "PT1.01.01", "elementKind": "tray", "typeCode": "01", "sequenceNumber": "01", "schemeVersion": "2" }]
+      },
+      "expected": {
+        "systemTag": "PT1", "elementTag": "PT1.01.01", "componentId": "PT1.01.01",
+        "elementKind": "tray", "typeCode": "01", "sequenceNumber": "01", "schemeVersion": "2"
+      },
+      "jsOnly": true
+    },
+    {
+      "id": "tray-assignment-update-no-duplicate-pset",
+      "fn": "addTraySystemAssignmentsToIfc.update",
+      "input": {
+        "first": [{ "localId": 10, "systemTag": "SYS-A", "componentId": "SYS-A-C001", "sequenceNumber": "001" }],
+        "second": [{ "localId": 10, "systemTag": "SYS-B", "componentId": "SYS-B-C004", "sequenceNumber": "004" }]
+      },
+      "expected": { "secondAction": "updated", "systemTag": "SYS-B", "componentId": "SYS-B-C004", "ccpTraySystemCount": 1 },
+      "jsOnly": true
+    },
+    {
+      "id": "tray-assignment-delete-clears-values",
+      "fn": "addTraySystemAssignmentsToIfc.delete",
+      "input": {
+        "first": [{ "localId": 10, "systemTag": "SYS-A", "componentId": "SYS-A-C001", "sequenceNumber": "001" }],
+        "second": [{ "localId": 10, "delete": true }]
+      },
+      "expected": {
+        "action": "deleted",
+        "stillAssigned": false,
+        "stepContains": ["IFCPROPERTYSINGLEVALUE('SystemTag',$,IFCLABEL(''),$)", "#10=IFCBUILDINGELEMENTPART('1aaaaaaaaaaaaaaaaaaaaa',$,'Tray',$,$,$,$,'',$);"],
+        "ccpTraySystemCount": 1
+      },
+      "jsOnly": true
+    },
+    {
+      "id": "tray-assignment-incomplete-throws",
+      "fn": "addTraySystemAssignmentsToIfc.incomplete",
+      "input": { "assignments": [{ "localId": 10, "systemTag": "S" }] },
+      "expected": { "throwsPattern": "No tray-system assignments matched" },
+      "jsOnly": true
+    },
+    {
+      "id": "tray-assignment-missing-element-skipped",
+      "fn": "addTraySystemAssignmentsToIfc.missing",
+      "input": {
+        "assignments": [
+          { "localId": 10, "systemTag": "S", "componentId": "S-C001", "sequenceNumber": "001" },
+          { "localId": 999, "systemTag": "X", "componentId": "X-C1", "sequenceNumber": "001" }
+        ]
+      },
+      "expected": { "skippedReasons": ["element-not-found-in-source-ifc"], "appliedAction": "created" },
+      "jsOnly": true
+    },
+    {
+      "id": "tray-assignment-original-ifc-tag",
+      "fn": "addTraySystemAssignmentsToIfc.originalTag",
+      "input": {
+        "assignments": [{ "localId": 10, "systemTag": "S", "elementTag": "S.01.01", "componentId": "S.01.01", "elementKind": "tray", "typeCode": "01", "sequenceNumber": "01", "schemeVersion": "2", "originalIfcTag": "OLD-9" }]
+      },
+      "expected": { "stepContains": ["'OriginalIfcTag'", "IFCLABEL('OLD-9')"] },
+      "jsOnly": true
+    },
+    {
+      "id": "safe-editor-update-property-escape",
+      "fn": "applySafeIfcEdits.update",
+      "input": { "propertyEdits": [{ "localId": 10, "propertySet": "Pset_Test", "property": "Status", "value": "Ready's" }] },
+      "expected": { "appliedKind": "property", "action": "updated", "stepContains": "IFCLABEL('Ready''s')" },
+      "jsOnly": true
+    },
+    {
+      "id": "safe-editor-new-property-deterministic-ids",
+      "fn": "applySafeIfcEdits.newProperty",
+      "input": { "propertyEdits": [{ "localId": 10, "propertySet": "BIM_TRACKER_EDIT", "property": "ReviewStatus", "value": "Approved" }] },
+      "expected": {
+        "appliedKind": "property",
+        "action": "created",
+        "valueType": "IFCLABEL",
+        "propertyLine": "#43=IFCPROPERTYSINGLEVALUE('ReviewStatus',$,IFCLABEL('Approved'),$);",
+        "psetPattern": "IFCPROPERTYSET\\('[0-3][0-9A-Za-z_$]{21}',\\$,'BIM_TRACKER_EDIT',\\$,\\(#43\\)\\)",
+        "relationPattern": "IFCRELDEFINESBYPROPERTIES\\('[0-3][0-9A-Za-z_$]{21}',\\$,\\$,\\$,\\(#10\\),#44\\)"
+      },
+      "jsOnly": true
+    },
+    {
+      "id": "safe-editor-create-color-style-deterministic-ids",
+      "fn": "applySafeIfcEdits.color",
+      "input": { "colorEdits": [{ "localId": 10, "color": "#ff0000", "transparency": 0.25 }] },
+      "expected": {
+        "appliedKind": "color",
+        "action": "created",
+        "itemCount": 1,
+        "stepContains": [
+          "#43=IFCCOLOURRGB($,1.000000,0.000000,0.000000);",
+          "#44=IFCSURFACESTYLESHADING(#43,0.250000);",
+          "#45=IFCSURFACESTYLE('BIM Tracker #FF0000',.BOTH.,(#44));",
+          "#46=IFCPRESENTATIONSTYLEASSIGNMENT((#45));",
+          "#47=IFCSTYLEDITEM(#22,(#46),$);"
+        ]
+      },
+      "jsOnly": true
+    },
+    {
+      "id": "safe-editor-update-existing-style",
+      "fn": "applySafeIfcEdits.updateStyle",
+      "input": { "colorEdits": [{ "localId": 10, "color": "#00ff00", "transparency": 0.4 }] },
+      "expected": {
+        "action": "updated",
+        "stepContains": ["#36=IFCCOLOURRGB($,0.000000,1.000000,0.000000);", "#35=IFCSURFACESTYLERENDERING(#36,0.400000,#36,"],
+        "styledItemCount": 1
+      },
+      "jsOnly": true
+    },
+    {
+      "id": "safe-editor-invalid-boolean-throws",
+      "fn": "applySafeIfcEdits.invalidBoolean",
+      "input": { "propertyEdits": [{ "localId": 10, "propertySet": "Pset_Test", "property": "Status", "value": "maybe" }], "booleanFixture": true },
+      "expected": { "throwsPattern": "No safe IFC edits could be applied" },
+      "jsOnly": true
+    },
+    {
+      "id": "safe-editor-invalid-integer-skipped",
+      "fn": "applySafeIfcEdits.invalidInteger",
+      "input": {
+        "propertyEdits": [
+          { "localId": 10, "propertySet": "Pset_Test", "property": "Status", "value": "Good" },
+          { "localId": 10, "propertySet": "BIM_TRACKER_EDIT", "property": "Count", "value": "abc", "valueType": "IFCINTEGER" }
+        ]
+      },
+      "expected": { "appliedCount": 1, "skippedPattern": "not a valid IFC integer" },
+      "jsOnly": true
+    },
+    {
+      "id": "safe-editor-noncuston-pset-rejected",
+      "fn": "applySafeIfcEdits.nonCustomPset",
+      "input": { "propertyEdits": [{ "localId": 10, "propertySet": "Pset_X", "property": "P", "value": "v" }] },
+      "expected": { "throwsPattern": "No safe IFC edits could be applied" },
+      "jsOnly": true
+    },
+    {
+      "id": "safe-editor-invalid-color-skipped",
+      "fn": "applySafeIfcEdits.invalidColor",
+      "input": {
+        "propertyEdits": [{ "localId": 10, "propertySet": "Pset_Test", "property": "Status", "value": "New" }],
+        "colorEdits": [{ "localId": 10, "color": "not-a-color" }]
+      },
+      "expected": { "appliedKinds": ["property"], "skippedPattern": "not a valid six-digit RGB color" },
+      "jsOnly": true
+    },
+    {
+      "id": "safe-editor-typed-metadata",
+      "fn": "applySafeIfcEdits.typedMetadata",
+      "input": {
+        "propertyEdits": [
+          { "localId": 10, "propertySet": "COSAPI_CONSTRUCTION", "property": "WBS", "value": "03.02.015", "valueType": "IFCIDENTIFIER" },
+          { "localId": 10, "propertySet": "COSAPI_CONSTRUCTION", "property": "Progress", "value": "35.5", "valueType": "IFCREAL" },
+          { "localId": 10, "propertySet": "COSAPI_CONSTRUCTION", "property": "PlannedDate", "value": "2026-08-15", "valueType": "IFCDATE" }
+        ]
+      },
+      "expected": {
+        "appliedCount": 3,
+        "stepContains": ["IFCIDENTIFIER('03.02.015')", "IFCREAL(35.5)", "IFCDATE('2026-08-15')", "'COSAPI_CONSTRUCTION'"]
+      },
+      "jsOnly": true
+    },
+    {
+      "id": "safe-editor-invalid-localid-throws",
+      "fn": "applySafeIfcEdits.invalidLocalId",
+      "input": { "propertyEdits": [{ "localId": 9999, "propertySet": "Pset_Test", "property": "Status", "value": "X" }] },
+      "expected": { "throwsPattern": "No safe IFC edits could be applied" },
+      "jsOnly": true
+    }
+  ]
+}

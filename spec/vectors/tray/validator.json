@@ -1,0 +1,81 @@
+{
+  "module": "tray",
+  "feature": "validator",
+  "source": "legacy/src/ifc/tag-validator.js (tests: legacy/packages/routing-core/test/tag-validator.test.js)",
+  "units": "metres (validation is unit-free)",
+  "notes": "Case-insensitive integrity checks: duplicate/missing component IDs (errors), duplicate/blank Excel tags (errors), unassigned Excel tags and IFC tags missing from Excel (non-blocking warnings). System tags repeat across elements; component IDs must not.",
+  "cases": [
+    {
+      "id": "accept-unique-matched",
+      "fn": "validateTagIntegrity",
+      "input": {
+        "elements": [{ "localId": 1, "systemTag": " CT-001 ", "componentId": "CT-001-C001" }],
+        "excelTags": [{ "rowNumber": 2, "tag": "ct-001" }]
+      },
+      "expected": { "valid": true, "errors": [], "warnings": [], "counts": { "ifcTags": 1, "excelTags": 1, "matchedTags": 1, "errors": 0, "warnings": 0 } }
+    },
+    {
+      "id": "duplicates-and-blanks",
+      "fn": "validateTagIntegrity",
+      "input": {
+        "elements": [
+          { "localId": 1, "systemTag": "CT-001", "componentId": "CT-001-C001" },
+          { "localId": 2, "systemTag": "ct-001", "componentId": "ct-001-c001" }
+        ],
+        "excelTags": [
+          { "rowNumber": 2, "tag": "CT-001" },
+          { "rowNumber": 3, "tag": " ct-001 " },
+          { "rowNumber": 4, "tag": " " }
+        ]
+      },
+      "expected": {
+        "valid": false,
+        "errorCodes": ["duplicate-component-id", "duplicate-excel-tag", "blank-excel-tag"],
+        "counts": { "ifcTags": 1, "excelTags": 3, "matchedTags": 2, "errors": 3, "warnings": 0 }
+      }
+    },
+    {
+      "id": "duplicate-component-message",
+      "fn": "validateTagIntegrity",
+      "input": {
+        "elements": [
+          { "localId": 1, "systemTag": "CT-001", "componentId": "CT-001-C001" },
+          { "localId": 2, "systemTag": "ct-001", "componentId": "ct-001-c001" }
+        ],
+        "excelTags": [{ "rowNumber": 2, "tag": "CT-001" }]
+      },
+      "expected": { "valid": false, "firstErrorCode": "duplicate-component-id", "firstErrorMessageContains": "used by 2 IFC elements" }
+    },
+    {
+      "id": "missing-component-id",
+      "fn": "validateTagIntegrity",
+      "input": { "elements": [{ "localId": 1, "systemTag": "SYS", "componentId": "" }] },
+      "expected": { "valid": false, "errorCodes": ["missing-component-id"] }
+    },
+    {
+      "id": "unmatched-are-warnings",
+      "fn": "validateTagIntegrity",
+      "input": {
+        "elements": [{ "localId": 1, "systemTag": "IFC-ONLY", "componentId": "IFC-ONLY-C001" }],
+        "excelTags": [{ "rowNumber": 2, "tag": "EXCEL-ONLY" }]
+      },
+      "expected": {
+        "valid": true,
+        "warningCodes": ["unassigned-excel-tags", "ifc-tags-missing-from-excel"],
+        "counts": { "ifcTags": 1, "excelTags": 1, "matchedTags": 0, "errors": 0, "warnings": 2 }
+      }
+    },
+    {
+      "id": "no-excel-list-ok",
+      "fn": "validateTagIntegrity",
+      "input": { "elements": [{ "localId": 1, "systemTag": "SYS-001", "componentId": "SYS-001-C001" }] },
+      "expected": { "valid": true, "counts": { "ifcTags": 1, "excelTags": 0, "matchedTags": 0, "errors": 0, "warnings": 0 } }
+    },
+    {
+      "id": "empty-input-ok",
+      "fn": "validateTagIntegrity",
+      "input": {},
+      "expected": { "valid": true, "counts": { "ifcTags": 0, "excelTags": 0, "matchedTags": 0, "errors": 0, "warnings": 0 } }
+    }
+  ]
+}
