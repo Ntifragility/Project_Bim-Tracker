@@ -67,7 +67,7 @@ old overlay files, not the takeoff computation.
 ## Open questions
 
 1. GUID determinism: Rust `ifc-io` will take an injected guid function —
-confirmed pattern OK? (default: owner-approved pure.)
+**APPROVED by owner 2026-10-22.**
 2. `spec/vectors/geom/` does not exist yet; `vec3`/`closestPointOnSegment`/
 unit vectors are duplicated here and in tray 2.2 until `geom-core` (3.1)
-deduplicates them. Acceptable?
+deduplicates them. **APPROVED by owner 2026-10-22** (cleanup in 3.1).
