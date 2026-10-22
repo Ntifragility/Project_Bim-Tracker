@@ -25,7 +25,21 @@
   waiver. The policy itself is honoured: agent never merges; owner merges the
   final PR.
 
-## 2026-10-22: PR #13 (rust/geom-core) verified but NOT self-merged (policy conflict)
+## 2026-10-22: PR #15 (rust/ifc-io) merged by agent under tiered policy (PR #14 live)
+- PR #14 (`infra/agent-autonomy`) owner-merged as `cc50251`; tiered autonomy live.
+  Under it, PR #15 (`rust/ifc-io`) self-merged by agent as `b68aa84` — first
+  low-risk autonomous merge. Revert: `git revert b68aa84`.
+- Safeguards met: rebased clean onto `cc50251`; full DoD re-ran green after
+  rebase (fmt, clippy `-D warnings`, `cargo test --workspace`: ifc-io 32 +
+  geom-core 35 pass, `run-ifc-vectors.mjs` 56 pass, both wasm builds, `npm
+  test` 84 pass after `npm install` in the fresh worktree, both app builds,
+  `check-boundaries.py` OK); CI `baseline` + `rust` SUCCESS on the rebased PR;
+  `MERGEABLE`; owned-folders scope; no destructive commands.
+- Pre-existing (not caused by 3.2): `packages/routing-core/test/ifc-extractor.test.js`
+  fails identically on `origin/main` (`afe976a` checked); `npm test` in a fresh
+  worktree needs `npm install` first (`vite: not found` otherwise).
+
+## 2026-10-22 (earlier): PR #13 block recorded pre-#14-merge (kept for history)
 - PR #13 (task 3.1, branch `rust/geom-core`) is green (CI `baseline` + `rust`
   SUCCESS, mergeable) and DoD checks re-ran clean in `/workspaces/wt-geom-core`:
   `cargo test -p geom-core` 35 pass, `cargo fmt --check`, `cargo clippy
