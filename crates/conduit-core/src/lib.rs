@@ -3,12 +3,14 @@
 //! project I/O.
 //!
 //! Tasks 4.1 (`rust/conduit-network`) + 4.2 (`rust/conduit-snap`) + 4.3
-//! (`rust/conduit-fitting`). Depends on `geom-core` / `ifc-io` only; never
-//! on `tray-*`, the DOM, Three.js or viewer code (ARCHITECTURE section 2).
-//! See `docs/specs/conduit/network.md` + `snap.md` + `fitting.md`; vectors
-//! in `spec/vectors/conduit/network*.json` + `snap-engine.json` +
-//! `fitting-engine.json`.
+//! (`rust/conduit-fitting`) + 4.4 (`rust/conduit-bom`). Depends on
+//! `geom-core` / `ifc-io` only; never on `tray-*`, the DOM, Three.js or
+//! viewer code (ARCHITECTURE section 2).
+//! See `docs/specs/conduit/network.md` + `snap.md` + `fitting.md` +
+//! `bom.md`; vectors in `spec/vectors/conduit/network*.json` +
+//! `snap-engine.json` + `fitting-engine.json` + `bom-engine.json`.
 
+pub mod bom;
 pub mod fitting;
 pub mod history;
 pub mod network;
@@ -16,6 +18,11 @@ pub mod registry;
 pub mod snap;
 pub mod takeoff;
 
+pub use bom::{
+    compute_detailed_bom, optimize_stick_cutting, BomOptions, BomTotals, CuttingPlan, DetailedBom,
+    RunBom, SizeBom, StickPlan, DEFAULT_STICK_LENGTH_M as BOM_DEFAULT_STICK_M, KERF_WASTE_M,
+    MAX_PULL_DISTANCE_M,
+};
 pub use fitting::{
     analyze_run_bends, bend_angle, nec_bend_radius_m, solve_auto_riser, solve_elbow, BendInfo,
     ElbowSolution, NecBendRow, NecQuery, RiserNode, RunBends, DEFAULT_BEND_RADIUS_M,
