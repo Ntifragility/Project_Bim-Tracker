@@ -1,0 +1,442 @@
+{
+  "cases": [
+    {
+      "expected": [
+        0.1016,
+        0.1016,
+        0.1143,
+        0.1143,
+        0.146,
+        0.2413,
+        0.4064,
+        0.1143,
+        0.1143,
+        0.2095
+      ],
+      "fn": "getNecBendRadiusM",
+      "id": "table-lookup",
+      "input": {
+        "queries": [
+          "1/2\"",
+          "\u00bd\"",
+          "3/4\"",
+          "\u00be\"",
+          "1\"",
+          "2\"",
+          "4\"",
+          19.05,
+          "5\"",
+          "1-1/2\""
+        ]
+      },
+      "tol": 0.0001
+    },
+    {
+      "expected": {
+        "count": 10,
+        "first": "1/2\"",
+        "last": "4\""
+      },
+      "fn": "NEC_BEND_TABLE.shape",
+      "id": "table-shape",
+      "input": {}
+    },
+    {
+      "expected": 0.0,
+      "fn": "calculateBendAngle",
+      "id": "angle-straight",
+      "input": {
+        "corner": {
+          "x": 5,
+          "y": 0,
+          "z": 0
+        },
+        "p1": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "p2": {
+          "x": 10,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "tol": 1e-09
+    },
+    {
+      "expected": 90.0,
+      "fn": "calculateBendAngle",
+      "id": "angle-90",
+      "input": {
+        "corner": {
+          "x": 5,
+          "y": 0,
+          "z": 0
+        },
+        "p1": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "p2": {
+          "x": 5,
+          "y": 0,
+          "z": 5
+        }
+      },
+      "tol": 1e-09
+    },
+    {
+      "expected": 45.0,
+      "fn": "calculateBendAngle",
+      "id": "angle-45",
+      "input": {
+        "corner": {
+          "x": 5,
+          "y": 0,
+          "z": 0
+        },
+        "p1": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "p2": {
+          "x": 8.535533905932738,
+          "y": 0,
+          "z": 3.5355339059327373
+        }
+      },
+      "tol": 0.01
+    },
+    {
+      "expected": 0.0,
+      "fn": "calculateBendAngle",
+      "id": "angle-degenerate",
+      "input": {
+        "corner": {
+          "x": 5,
+          "y": 0,
+          "z": 0
+        },
+        "p1": {
+          "x": 5,
+          "y": 0,
+          "z": 0
+        },
+        "p2": {
+          "x": 5,
+          "y": 0,
+          "z": 5
+        }
+      },
+      "tol": 0
+    },
+    {
+      "expected": {
+        "arcPointCount": 9,
+        "bendAngleDeg": 90.0,
+        "center": {
+          "x": 4.8857,
+          "y": 2.8,
+          "z": 0.1143
+        },
+        "isStraight": false,
+        "isValid": true,
+        "tangentDistance": 0.1143,
+        "tangentEnd": {
+          "x": 5,
+          "y": 2.8,
+          "z": 0.1143
+        },
+        "tangentStart": {
+          "x": 4.8857,
+          "y": 2.8,
+          "z": 0
+        }
+      },
+      "fn": "solveElbowFitting",
+      "id": "elbow-90",
+      "input": {
+        "arcSegments": 8,
+        "corner": {
+          "x": 5,
+          "y": 2.8,
+          "z": 0
+        },
+        "p1": {
+          "x": 0,
+          "y": 2.8,
+          "z": 0
+        },
+        "p2": {
+          "x": 5,
+          "y": 2.8,
+          "z": 5
+        },
+        "radiusM": 0.1143
+      },
+      "tol": 0.0001
+    },
+    {
+      "expected": {
+        "bendAngleDeg": 0,
+        "isStraight": true,
+        "isValid": false
+      },
+      "fn": "solveElbowFitting",
+      "id": "elbow-straight",
+      "input": {
+        "arcSegments": 8,
+        "corner": {
+          "x": 5,
+          "y": 0,
+          "z": 0
+        },
+        "p1": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "p2": {
+          "x": 10,
+          "y": 0,
+          "z": 0
+        },
+        "radiusM": 0.1143
+      },
+      "tol": 0
+    },
+    {
+      "expected": {
+        "isValid": true,
+        "isStraight": false,
+        "bendAngleDeg": 90.0,
+        "tangentDistance": 0.0475,
+        "clamped": true
+      },
+      "fn": "solveElbowFitting",
+      "id": "elbow-clamped",
+      "input": {
+        "arcSegments": 8,
+        "corner": {
+          "x": 0.05,
+          "y": 0,
+          "z": 0
+        },
+        "p1": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "p2": {
+          "x": 0.05,
+          "y": 0,
+          "z": 1
+        },
+        "radiusM": 0.5
+      },
+      "tol": 0.0001
+    },
+    {
+      "expected": {
+        "exceedsNec360": false,
+        "fittingsCount": 2,
+        "totalDegrees": 180.0,
+        "warning": null
+      },
+      "fn": "analyzeRunBends",
+      "id": "run-compliant",
+      "input": {
+        "points": [
+          {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          {
+            "x": 5,
+            "y": 0,
+            "z": 0
+          },
+          {
+            "x": 5,
+            "y": 0,
+            "z": 5
+          },
+          {
+            "x": 10,
+            "y": 0,
+            "z": 5
+          }
+        ]
+      },
+      "tol": 1e-09
+    },
+    {
+      "expected": {
+        "exceedsNec360": true,
+        "fittingsCount": 5,
+        "totalDegrees": 450.0,
+        "warningContains": "exceeds NEC 360\u00b0"
+      },
+      "fn": "analyzeRunBends",
+      "id": "run-exceeds",
+      "input": {
+        "points": [
+          {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          {
+            "x": 5,
+            "y": 0,
+            "z": 0
+          },
+          {
+            "x": 5,
+            "y": 0,
+            "z": 5
+          },
+          {
+            "x": 10,
+            "y": 0,
+            "z": 5
+          },
+          {
+            "x": 10,
+            "y": 0,
+            "z": 0
+          },
+          {
+            "x": 15,
+            "y": 0,
+            "z": 0
+          },
+          {
+            "x": 15,
+            "y": 0,
+            "z": 5
+          }
+        ]
+      },
+      "tol": 1e-09
+    },
+    {
+      "expected": {
+        "exceedsNec360": false,
+        "fittingsCount": 0,
+        "totalDegrees": 0,
+        "warning": null
+      },
+      "fn": "analyzeRunBends",
+      "id": "run-short",
+      "input": {
+        "points": [
+          {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          {
+            "x": 5,
+            "y": 0,
+            "z": 0
+          }
+        ]
+      },
+      "tol": 0
+    },
+    {
+      "expected": [
+        {
+          "heightDelta": null,
+          "isRiser": null,
+          "x": 3.0,
+          "y": 2.8,
+          "z": 4.0
+        },
+        {
+          "heightDelta": 1.4,
+          "isRiser": true,
+          "x": 3.0,
+          "y": 4.2,
+          "z": 4.0
+        }
+      ],
+      "fn": "solveAutoRiser",
+      "id": "riser-yup",
+      "input": {
+        "options": {
+          "upAxis": "Y"
+        },
+        "start": {
+          "x": 3.0,
+          "y": 2.8,
+          "z": 4.0
+        },
+        "targetElevation": 4.2
+      },
+      "tol": 1e-09
+    },
+    {
+      "expected": [
+        {
+          "x": 1.0,
+          "y": 2.0,
+          "z": 3.0
+        },
+        {
+          "heightDelta": 2.0,
+          "isRiser": true,
+          "x": 1.0,
+          "y": 2.0,
+          "z": 5.0
+        }
+      ],
+      "fn": "solveAutoRiser",
+      "id": "riser-zup",
+      "input": {
+        "options": {
+          "upAxis": "Z"
+        },
+        "start": {
+          "x": 1.0,
+          "y": 2.0,
+          "z": 3.0
+        },
+        "targetElevation": 5.0
+      },
+      "tol": 1e-09
+    },
+    {
+      "expected": [
+        {
+          "x": 3.0,
+          "y": 2.8,
+          "z": 4.0
+        }
+      ],
+      "fn": "solveAutoRiser",
+      "id": "riser-noop",
+      "input": {
+        "options": {
+          "upAxis": "Y"
+        },
+        "start": {
+          "x": 3.0,
+          "y": 2.8,
+          "z": 4.0
+        },
+        "targetElevation": 2.805
+      },
+      "tol": 1e-09
+    }
+  ],
+  "feature": "fitting",
+  "module": "conduit",
+  "notes": "R1-R8: NEC table exact data, bend/elbow/run-bends/riser parity. clamped case pins effectiveTangent < requested (short legs).",
+  "source": "legacy/packages/conduit-core/test/fitting-solver.test.js + src/fitting-solver.js"
+}
