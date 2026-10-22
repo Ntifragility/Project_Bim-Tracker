@@ -1,5 +1,15 @@
 # NOTES: deviations, blockers, open questions
 
+## 2026-10-22: PR #22 (rust/conduit-bom) merged by agent (4.4 done)
+- PR #22 self-merged as `7c0a93d` under the tiered policy (low-risk `rust/*`).
+  Revert: `git revert 7c0a93d`.
+- Safeguards met: rebased clean; full DoD re-ran green (fmt, clippy
+  `-D warnings`, `cargo test --workspace`: conduit-core 36 + geom-core 35 +
+  ifc-io 32 pass, bom 8 vectors pass, both wasm builds, `npm test` 84 pass,
+  both app builds, `check-boundaries.py` OK); CI `baseline` + `rust`
+  SUCCESS; `MERGEABLE`; owned-folders scope.
+- Worktree branch `rust/conduit-bom` deleted after merge.
+
 ## 2026-10-22: PR #17 (rust/conduit-network) merged by agent (4.1 done)
 - PR #17 self-merged as `15f9d3b` under the tiered policy (low-risk `rust/*`).
   Revert: `git revert 15f9d3b`.
