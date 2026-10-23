@@ -1,236 +1,244 @@
-# Parallel-Agent Architecture: 5 fully independent lanes
+# Parallel-Agent Architecture: lanes with disjoint files
 
-Status: **v0.2**, 2026-10-23. Companion to `ARCHITECTURE.md` (product
-design) and `docs/THINKING_SPECS.md` (goals + Revit/Navisworks parity
-analysis). This file designs **how 5 agents work at the same time with
-zero shared files** — no claim races, no blocker-log conflicts, no
-overlapping edits.
+Status: **v0.3**, 2026-10-23. Companion to `ARCHITECTURE.md` (product design)
+and `docs/THINKING_SPECS.md` (goals + parity analysis). This file defines
+**how several agents work at the same time without touching the same file**.
 
-Branch: `spec/parallel-docs`
-Owner folders: `docs/THINKING_SPECS.md`, `docs/ARCHITECTURE-PARALLEL-AGENTS.md`
-(this file), `docs/claims/`, `docs/blockers/`.
-Non-goals: changing product code, changing CI. `AGENTS.md` ownership +
-claim protocol changes are in this branch under explicit owner approval
-(chat 2026-10-23) — owner merges.
+Branch: `spec/parallel-docs-v03`
+Owner folders: `docs/ARCHITECTURE-PARALLEL-AGENTS.md`, `docs/claims/README.md`,
+`docs/blockers/README.md`.
+Non-goals: product code, CI, `AGENTS.md` (the `AGENTS.md` edits in §9 are a
+separate high-risk PR; the owner merges).
 
-## Changelog v0.1 -> v0.2 (owner decisions, chat 2026-10-23)
+## Changelog v0.2 -> v0.3 (review of v0.2 against `origin/main@e6d597e`)
 
-| # | Decision | Effect on this doc |
+| # | Finding in v0.2 | Fix in v0.3 |
 |---|---|---|
-| O1 | `AGENTS.md` change approved | §2 protocol + ownership table below now normative; `AGENTS.md` edited in this branch (owner merges per high-risk rule) |
-| O2 | Ownership: "proceed as you need" | §1 lane split + §2.3 ownership deltas are authoritative pending `AGENTS.md` merge |
-| O3d | Routing frame: up = Z | Lane C builds in **IFC Z-up** metres; legacy Y-up scene values converted at the edge (`viewer-core/coordinates.js`). `ARCHITECTURE.md:247` OPEN item closed |
-| O3a | Couplings formula (owner asked for recommendation) | **Recommended + adopted as interim:** BOM governs quantities with `couplings = max(0, sticks-1)` per `bom-calculator.js:172`. The overlay spec's `ceil(len/stick)+elbows` overcounts a straight 10 ft stick as 1 coupling vs 0 — treated as a bug in the Python-spec copy until the owner says otherwise. `takeoff.js:10` "out of scope" is outdated. Lane A pins the BOM formula in `docs/specs/conduit/wasm-switch.md`; the [OPEN] below tracks final owner sign-off |
-| O3e | 7.1–7.3 status: "build it if you need it" | `docs/TASKS.md:66-68` marks 7.1/7.2/7.3 `done`, but `apps/*` on `main` are scaffold READMEs and `src/main.js` is still 4,559 lines. Lane D treats them as **[UNVERIFIED]**: if the split modules it needs are missing, it rebuilds the minimum inside its owned files and records it in the spec |
-| O4-base | Base = `origin/main@01452fe`, reuse branches OK, `Cargo.lock` at agent discretion | §3 pins base to `01452fe` (or newer `origin/main`). Lane A reuses the existing `rust/conduit-wasm` branch (currently at `c0da00c`). This branch reverted its own dirty `Cargo.lock` to stay docs-only; lanes follow §2.6 |
+| 1 | Lane A "165 vectors pass through the binding" is impossible: 12 are `jsOnly`; the legacy runner exits 1 on `main` (140 pass / 25 fail) | §1 lane A uses the non-`jsOnly` set; §2 wave-0 task **P1** makes the legacy runner green by tagging Rust-only cases |
+| 2 | Lane A owned `apps/conduit-takeoff/` (README only); the real app is root `conduit-takeoff/`; `rust/conduit-wasm@c0da00c` is not on the remote | Lane A owns root `conduit-takeoff/`; wave-0 **P0** pushes or replaces the branch |
+| 3 | Lane C owned `ifc-io.json`, which pins tag-exporter and safe-editor shapes, not routing | `ifc-io.json` is frozen (nobody in wave 1); see §1 |
+| 4 | Lane B owned `validator.json`, already read by `crates/ifc-io` tests (task 3.2) | Validator stays in `ifc-io`; lane B reads it, never edits it |
+| 5 | Runner flag written `--file x`; the script parses `--file=x` (space form silently runs all 91 tray cases) | All commands use `--file=<name>` |
+| 6 | Lane D needed `main.js` and a wasm home that `check-boundaries.py` forbids | Lane D deferred to wave 2, spec-only (§1, §7) |
+| 7 | `spec/*` row owned `docs/specs/**` and `spec/vectors/**`, overlapping lanes A/B/C | `spec/*` owns only files it creates (§3) |
+| 8 | Claim protocol: any push to `main` triggers full CI; collision leaves a half-done rebase; only `in progress` counted as taken; sync tasks unscheduled | Claims protocol v3 (§4), CI `paths-ignore` (**P2**), owner-run sync at wave end (§8) |
+| 9 | Couplings decision framed as open; sticks epsilon mismatch unnoticed | §6: interim per BOM formula (owner sign-off pending); epsilon difference recorded as a known legacy divergence |
+| 10 | Base pinned to `01452fe`; stale counts (`36` tests) | Base = `origin/main` at wave start, SHA recorded in each claim |
 
-## 0. Answers to the owner's questions
+## 0. Principles
 
-**Q1 — totally independent lanes.** Yes. §1 defines 5 lanes whose owned
-folders, vector files, and spec files are pairwise disjoint. Two agents
-never `git add` the same path. The only shared touchpoints
-(`docs/TASKS.md` board, `NOTES.md` blockers, `main`) are removed from the
-write path by §2.
+1. **One lane = one task = one branch = one worktree = one agent.**
+2. **Owned paths are exclusive.** A path appears in at most one lane row.
+   Everything not in a lane row is *frozen* for that wave.
+3. **Shared state is reduced to files nobody else writes** (claim files,
+   blocker files), never to a shared table or log.
+4. **Rules are checked by tools**, not by trust (`check-ownership.py`,
+   `check-boundaries.py`, CI).
+5. **No new features** (D3). Known legacy bugs are documented with a vector,
+   not fixed, until the parity gate (task 8.1) has passed.
 
-**Q2 — claim mechanism: per-task claim files on `main` (approved).**
-Editing the `docs/TASKS.md` table is a shared-write hotspot: 5 agents
-committing one-line changes to the same table means rebase conflicts on
-nearly every claim. Claim files (`docs/claims/<task-id>.json`, one file
-per task — see `docs/claims/README.md`) mean two agents only ever touch
-the same file when they claim the *same* task — and then git flags it.
-Protocol (v2, §2.1): claims commit **directly to `main`**, not to lane
-branches, so every agent sees every claim with a plain `git fetch`.
-Disjoint filenames rebase cleanly; same filename = someone was first.
+## 1. Wave 1 lanes
 
-**Q3 — rebase first, then independent lanes.** Every agent starts from
-`origin/main@01452fe` (or newer), each in their own worktree + branch —
-never from a stale checkout. The board on `main` is the source of truth.
+Dependency direction is unchanged (`ARCHITECTURE.md` §2): apps use
+`viewer-core` and bindings side by side; `viewer-core` never depends on
+product cores.
 
-## 1. Lane map (5 lanes, zero file overlap)
+| Lane | Task | Branch | Owned paths (exclusive) | Read-only for this lane | Done when |
+|---|---|---|---|---|---|
+| E | 8.1 dry run | `spec/parity-harness` | `scripts/parity-*`, `docs/specs/parity.md` | everything | Harness prints pass/fail per parity-gate item (`ARCHITECTURE.md` §7) and the baseline is committed in `docs/specs/parity.md`. Failing items are expected at this stage; nothing is deleted |
+| B | 5.1 `tray-tagging` | `rust/tray-tagging` | `crates/tray-tagging/`, `spec/vectors/tray/tagging.json`, `docs/specs/tray/tagging.md` | `crates/ifc-io/`, `spec/vectors/tray/validator.json`, `scripts/run-tray-vectors.mjs` | `node scripts/run-tray-vectors.mjs --file=tagging` (legacy, 33 cases) and `cargo test -p tray-tagging` (same 33 cases) pass. Validator behaviour comes from the `ifc-io` crate (allowed edge `tray-tagging -> ifc-io`); lane B does not re-implement it |
+| C | 5.2 `tray-routing` | `rust/tray-routing` | `crates/tray-routing/`, `spec/vectors/tray/routing.json`, `docs/specs/tray/routing.md` | `scripts/run-tray-vectors.mjs`, `crates/geom-core/` | `node scripts/run-tray-vectors.mjs --file=routing` (26 cases) and `cargo test -p tray-routing` pass. **Frame: IFC Z-up metres** (owner decision O3d). Legacy vectors are in scene space (Y-up), so the test loader converts with the mapping in `geom-core` (`spec/vectors/geom/frames.json`), never a hand-written one. `routing.json` stays valid for the legacy runner unchanged |
+| A | 4.6 `conduit-wasm` | `rust/conduit-wasm` (after **P0**) | `bindings/conduit-wasm/`, `conduit-takeoff/` (the real app, root folder), `docs/specs/conduit/wasm-switch.md` | `spec/vectors/conduit/*`, `crates/conduit-core/` | `wasm-pack build bindings/conduit-wasm` green; `npm run build:conduit` green with the flag off **and** on; a JS test calls the binding on every non-`jsOnly` conduit case (at most 165 - 12 = 153; the spec lists any further exclusion such as TS-only `units.json` cases **[UNVERIFIED]**); couplings follow §6 |
 
-Dependency direction stays downward-only (`ARCHITECTURE.md` §2, rule 6:
-apps use `viewer-core` and bindings **side by side**; `viewer-core`
-never depends on product cores).
+Not in wave 1:
 
-```
-Lane A ── bindings/conduit-wasm/  apps/conduit-takeoff/   (4.6)
-Lane B ── crates/tray-tagging/    tray tagging vectors    (5.1)
-Lane C ── crates/tray-routing/    tray routing vectors    (5.2)
-Lane D ── src/ safe-editor only   tray safe-editor spec   (7.4)
-Lane E ── scripts/parity-*        parity harness spec     (8.1 dry run, read-only)
-```
+* **D, 7.4 Safe IFC Editor** — deferred to wave 2 and **spec-only** until 5.3
+  exists (§7). Reasons: wiring the editor needs `src/main.js` (frozen),
+  and `applySafeEdits` has no binding home (`check-boundaries.py` does not
+  allow `tray-wasm -> ifc-io`, and there is no `ifc-wasm`).
+* `spec/vectors/tray/ifc-io.json` (25 `jsOnly` shape pins of the tag
+  exporter and safe editor) — frozen for everyone in wave 1; lane D takes it
+  in wave 2.
+* 5.3 `tray-wasm`, real 8.1 (`legacy/` deletion), any `infra/*`.
 
-| Lane | Task | Branch (reuse OK) | Owned folders/files (exclusive) | Done when |
-|---|---|---|---|---|
-| A | 4.6 `conduit-wasm` binding + app flag | `rust/conduit-wasm` (exists at `c0da00c`, rebase onto `01452fe`) | `bindings/conduit-wasm/`, `apps/conduit-takeoff/`, `docs/specs/conduit/wasm-switch.md` (new, lane-local). Reads (never writes): `spec/vectors/conduit/*` | `wasm-pack build` green; app builds behind flag; all **165** conduit vector cases pass through the binding (per-file: `bom-engine 8`, `bom 6`, `fitting-engine 15`, `fitting 11`, `io 12`, `network-history 2`, `network-registry 2`, `network 19`, `snap-engine 24`, `snap 22`, `takeoff-io-engine 6`, `takeoff 20`, `units 18`); couplings pinned to BOM formula per O3a |
-| B | 5.1 `tray-tagging` | `rust/tray-tagging` | `crates/tray-tagging/`, `spec/vectors/tray/tagging.json` (33 cases), `spec/vectors/tray/validator.json` (7 cases), `docs/specs/tray/tagging.md`. Runner (read-only): `scripts/run-tray-vectors.mjs --file tagging\|validator` | tagging + validator vectors pass in Rust (`cargo test -p tray-tagging`) |
-| C | 5.2 `tray-routing` | `rust/tray-routing` | `crates/tray-routing/`, `spec/vectors/tray/routing.json` (26 cases), `spec/vectors/tray/ifc-io.json` (25 cases), `docs/specs/tray/routing.md`. Runner (read-only): `scripts/run-tray-vectors.mjs --file routing\|ifc-io` | routing vectors pass in Rust (`cargo test -p tray-routing`); **frame declared Z-up per O3d**, legacy Y-up converted at edge |
-| D | 7.4 Safe IFC Editor (port last) | `app/safe-ifc-editor` | `src/ifc/ifc-safe-editor.*` and its UI modules only (never `src/main.js`), `docs/specs/tray/safe-ifc-editor.md`. Reuses `ifc-io` (read-only). Per O3e: if 7.1–7.3 split modules are missing, rebuild the minimum inside owned files and record it | editor modules split out; behaviour unchanged (`npm test` green, same `-edited.ifc` output on fixture); spec documents the `applySafeEdits` Wasm contract |
-| E | 8.1 parity harness (dry run) | `spec/parity-harness` | `scripts/parity-*` (new), `docs/specs/parity.md` (new) — **reads everything, writes only its own files** | harness runs the parity checklist (`ARCHITECTURE.md:193`: all golden vectors pass in Rust, both apps build + smoke test, tag round-trip matches, no `legacy/` imports) end-to-end and reports pass/fail without deleting anything |
+Why the split holds: B and C own different vector files; lane A reads the
+vectors but owns no vector file; E writes only files it creates.
 
-Split rationale:
+## 2. Wave 0: prerequisites (single agent each, merged before lanes start)
 
-* B/C split the tray vectors **by file**: B owns `tagging.json` +
-  `validator.json`, C owns `routing.json` + `ifc-io.json`. No shared
-  vector file, no merge conflict. Shared runner `scripts/run-tray-vectors.mjs`
-  is **read-only** (it already takes `--file`); lane-local helpers go in
-  lane-owned spec dirs.
-* D never touches `src/main.js` (4,559 lines, single-writer hazard);
-  only the safe-editor modules. `main.js` stays frozen until lanes B–D
-  land.
-* E is read-only against product code: it may `Read`/`cargo test`/
-  run vector runners anywhere, but may only **write** inside
-  `scripts/parity-*` and `docs/specs/parity.md`.
+These touch shared or frozen files, so they run **one at a time**, in order,
+before any lane claims work. Each is its own small branch.
 
-Deferred (not lanes — they depend on lanes above):
+| ID | Branch | Task | Why it is blocking |
+|---|---|---|---|
+| P0 | `fix/conduit-wasm-branch` | Push `rust/conduit-wasm` (local-only today) or declare "fresh branch from `main`" in this doc | Lane A cannot rebase a branch nobody else can see |
+| P1 | `spec/conduit-vector-tags` | Tag the Rust-only cases in `spec/vectors/conduit/*` (`"rustOnly": true`, e.g. `snap-engine:config-defaults`, `takeoff-io-engine:findsnap-dangling-ref-skipped`) and make `run-conduit-vectors.mjs` skip them and exit 0 on `main` (today: 140 pass, 25 fail, exit 1). Do the same check for `run-tray-vectors.mjs`. Fix its usage comment to `--file=<name>` | The pre-push gate is unpassable otherwise, and ARCHITECTURE §6 requires the legacy JS to pass the vectors it can run |
+| P2 | `infra/ci-claims` | (a) `ci.yml`: `paths-ignore: ['docs/claims/**', 'docs/blockers/**']` on `push` to `main`. (b) Add `scripts/check-ownership.py` (§3). (c) Wire it into `ci.yml` for pull requests | Claim commits otherwise start a full Rust + wasm build each; ownership is otherwise unenforced |
+| P3 | `spec/bom-known-divergence` | In `docs/specs/conduit/bom.md`, add **KD-1** (§6) and one vector flagged `"knownDivergence"` | Keeps parity and records the bug |
 
-* 5.3 `tray-wasm` — blocked on B + C.
-* 8.1 real (`infra/remove-legacy`, `legacy/` deletion) — high-risk,
-  owner merges; blocked on A + 5.3 + 6.2 + 7.1 + 7.2.
-* Any `infra/*` (root configs, CI, workspace manifests) — one agent at
-  a time per `AGENTS.md`; none scheduled while 5 lanes run.
+P0 and P1 can run in parallel with each other; P2 and P3 after P1. Wave 1
+starts when all four are merged.
 
-## 2. Zero-shared-file protocol (v2 — normative pending AGENTS.md merge)
+## 3. Ownership rules
 
-1. **Claims (v2 — fixed):** one file per task in `docs/claims/` (see
-   `docs/claims/README.md`), committed **directly to `main`**, not to
-   the lane branch. Never edit `docs/TASKS.md` to claim.
-   `TASKS.md` remains the human-readable board; a periodic infra task
-   syncs claim files back into it (see §2.7).
-   Why `main`: lane branches are invisible to other agents until PR;
-   `main` is the one ref everyone fetches. Disjoint filenames rebase
-   without conflicts; identical filename = claim race, loser picks
-   another lane (§6).
-2. **Blockers:** one file per branch in `docs/blockers/` (see
-   `docs/blockers/README.md`). Never append to `NOTES.md` from a lane;
-   a periodic infra task rolls blocker files up into `NOTES.md`.
-   Blocker files commit on the lane branch (they are read at PR time,
-   so no shared ref needed).
-3. **Owned folders only:** `AGENTS.md` ownership table applies as amended
-   for this design (see §2.3 deltas): `spec/*` owns `docs/specs/**`,
-   `spec/vectors/**`, `docs/claims/`, `docs/blockers/` templates. Lane E
-   additionally owns `scripts/parity-*`.
-4. **`legacy/` is frozen:** run it, read it, never edit it (until 8.1).
-5. **Shared-file need?** If a lane needs a workspace-config or CI
-   change: stop, file it in your blocker file, do not touch it.
-   Shared changes get their own small `infra/*` branch, merged first,
-   one agent at a time.
-6. **`Cargo.lock` rule:** never commit `Cargo.lock` changes unless you
-   add/remove a dependency. `cargo test`/`wasm-pack build` may dirty it
-   locally — run `git checkout -- Cargo.lock` before every commit unless
-   the diff is intentional. This branch follows the rule (reverted its
-   own `Cargo.lock` churn to stay docs-only).
-7. **Sync tasks (infra, owner-scheduled):** `infra/claims-sync` rolls
-   `docs/claims/*.json` into `docs/TASKS.md` Owner/Status columns;
-   `infra/blockers-rollup` appends `docs/blockers/*.md` into `NOTES.md`.
-   Lanes never do this themselves.
+* An owned path is a file or folder in exactly one lane row at a time.
+* **`spec/*` branches** own only files they **create** (`docs/specs/parity.md`,
+  templates, harness scripts). They never own an existing spec or vector
+  file; those belong to the lane that implements the feature. This replaces
+  the v0.2 row that gave `spec/*` all of `docs/specs/**` and `spec/vectors/**`.
+* `scripts/check-ownership.py <branch> <base>` (added in **P2**): maps the
+  branch prefix and the lane table to allowed paths, lists
+  `git diff --name-only <base>...<branch>`, and fails on any path outside the
+  lane or inside the frozen list (`Cargo.toml`, `Cargo.lock` unless a
+  dependency changed, `package.json`, `.github/`, `scripts/run-*-vectors.mjs`,
+  `scripts/check-boundaries.py`, `legacy/`, `src/main.js`).
+* `legacy/` is frozen: run and read it, never edit it.
+* A lane that needs a frozen file stops and files a blocker (§5).
 
-### 2.3 Ownership deltas vs AGENTS.md (applied in this branch per O1/O2)
+## 4. Claims (protocol v3)
 
-* New row `spec/*`: owns `docs/specs/**`, `spec/vectors/**`,
-  `docs/claims/`, `docs/blockers/` templates; lane E (`spec/parity-harness`)
-  additionally owns `scripts/parity-*`.
-* `rust/tray-*` split for lanes B/C: `rust/tray-tagging` owns
-  `crates/tray-tagging/` + `tagging.json` + `validator.json` +
-  `docs/specs/tray/tagging.md`; `rust/tray-routing` owns
-  `crates/tray-routing/` + `routing.json` + `ifc-io.json` +
-  `docs/specs/tray/routing.md`. Neither touches the other's vector files.
-* `app/safe-ifc-editor` (only): may edit `src/ifc/ifc-safe-editor.*`
-  and its UI modules, never `src/main.js`. No other `app/*` branch
-  touches `src/`.
-* Shared vector runners (`scripts/run-*-vectors.mjs`),
-  `Cargo.toml`, `.github/`, `package.json` stay frozen for lanes.
+Full protocol in `docs/claims/README.md`. Summary of changes from v0.2:
 
-## 3. Worktree bootstrap (each agent, copy-paste)
+1. **Taken = a claim file exists**, whatever its status. Never overwrite one.
+2. **Claim from a dedicated claims worktree** so a lost race cannot damage a
+   lane checkout.
+3. **Check before you commit**: `git fetch origin` then
+   `git cat-file -e origin/main:docs/claims/<id>.json`. If it exists, pick
+   another task.
+4. **Record the base**: each claim stores the `origin/main` SHA the lane
+   started from.
+5. Claim and "done" commits touch only `docs/claims/` and are ignored by CI
+   (P2). Claims are direct pushes to `main` by design; if `main` gets branch
+   protection that forbids this, the owner must exempt `docs/claims/**` or
+   the protocol must move to a `claims` branch **[OPEN, owner]**.
 
-Base is `origin/main@01452fe` or newer. Reusing an existing branch name
-(e.g. `rust/conduit-wasm`) is allowed — rebase it, do not fork it.
+## 5. Blockers
+
+* One file per branch, `docs/blockers/<branch-with-dashes>.md`, committed on
+  the lane branch and **pushed**.
+* Also set your claim file on `main` to `"status": "blocked"` with
+  `"blocker": "<branch>"`, so the owner sees the blocker without opening
+  every branch. (v0.2 left a blocked agent invisible until a PR existed.)
+* Never append to `NOTES.md` from a lane.
+
+## 6. Decisions recorded
+
+**Couplings (interim — owner sign-off pending).** The JS exporter writes three `Pset_ConduitRun`
+properties (`Size`, `System`, `Length`). The Rust overlay reader
+(`ifc-io`) returns a stored `Couplings` value and computes nothing. So no
+current code needs the overlay's `ceil(len/stick)+elbows` rule; adding it
+would be a new feature (D3). Rule for this rewrite: **BOM governs**,
+`couplings = max(0, sticks - 1)`. The Python overlay spec's formula is
+documented as superseded. `takeoff.js:10` ("couplings out of scope") is
+correct and intentional: takeoff is the minimal quantity, BOM is the
+schedule.
+
+**KD-1: sticks epsilon (known legacy divergence).** `bom-calculator.js:171`
+computes `ceil(len / stock)` with no tolerance; `takeoff.js:47` computes
+`ceil(len / stock - 1e-7)`. A 3.048 m run plus 1e-12 gives 2 sticks and 1
+coupling in the BOM but 1 stick in takeoff. Keep legacy parity until the
+parity gate; document it in `bom.md`; fix afterwards by applying the takeoff
+tolerance everywhere (owner to confirm).
+
+**Routing frame:** Z-up (O3d), converted at the edge.
+
+**7.1–7.3:** `TASKS.md` says done, but `apps/*` hold only READMEs and
+`src/main.js` is still 4,559 lines (also on the unmerged `app/split-main-js`
+and `app/modular-tray-ui` branches). Treat as **not done** and re-open in
+`TASKS.md` (owner).
+
+**Open for the owner:** (a) NEC Table 2: the 10 rows are the one-shot /
+full-shoe column; confirm against your edition and add the 5" and 6" rows
+(from memory 24 in and 30 in, **verify**); name the column in `fitting.md`.
+(b) Keep or drop the 30.48 m "100 ft pull" heuristic; never label it NEC.
+(c) Remove the two tracked `P22115-*` shared-parameter files at the repo
+root (`ARCHITECTURE.md` §9). (d) Branch protection vs direct claim pushes
+(§4). (e) Re-open 7.1–7.3.
+
+## 7. Wave 2 (after wave 1)
+
+* **D, 7.4:** `spec/safe-editor-wasm` first. It decides the binding home
+  (either allow `tray-wasm -> ifc-io` in `check-boundaries.py` via an infra
+  branch, or add `ifc-wasm`). Only then `app/safe-ifc-editor`, and only after
+  the tray app split exists (re-opened 7.1).
+* **5.3 `tray-wasm`:** after B and C.
+* **Real 8.1:** `infra/remove-legacy`, owner merges, after A, 5.3, 6.2, 7.1,
+  7.2.
+
+## 8. Wave rhythm and owner tasks
+
+1. Wave 0 (P0–P3), then wave 1 lanes in parallel.
+2. At the end of each wave the **owner** (or one infra agent) runs
+   `infra/claims-sync` (`docs/claims/*.json` -> `docs/TASKS.md`) and
+   `infra/blockers-rollup` (`docs/blockers/*.md` -> `NOTES.md`). Lanes never
+   do this.
+3. Lane E re-runs the parity harness after every wave and commits the new
+   baseline.
+
+## 9. `AGENTS.md` edits (separate high-risk PR, owner merges)
+
+* Point the claim section at `docs/claims/README.md` v3.
+* Allow one narrow exception to "no destructive commands": inside the
+  dedicated claims worktree only, `git reset --hard origin/main` after a lost
+  claim race.
+* Replace the `spec/*` ownership row with the §3 wording.
+* Add the `check-ownership.py` step to "Definition of done".
+
+## 10. Worktree bootstrap
 
 ```bash
 git fetch origin --prune
-# 1. claim on main (shared ref — everyone sees it):
-git checkout main && git pull --rebase origin main
-printf '{"owner":"<agent>","status":"in progress","branch":"<branch>","updated":"<date>"}' \
-  > docs/claims/<task-id>.json
-git add docs/claims/<task-id>.json && git commit -m "claim <task-id>" \
-  && git pull --rebase origin main && git push origin main
-# same filename appeared first = someone claimed it → pick another lane.
-# 2. lane worktree (reuse or create the branch):
-git worktree add ../wt-<lane> -b <branch> origin/main  # or: git checkout <branch> && git rebase origin/main
-cd ../wt-<lane>
+# Claim (dedicated worktree; see docs/claims/README.md v3):
+git worktree add ../wt-claims -B claims-<agent> origin/main   # first time only
+cd ../wt-claims && git fetch origin && git reset --hard origin/main
+git cat-file -e origin/main:docs/claims/<task-id>.json 2>/dev/null \
+  && { echo "taken"; exit 1; }
+printf '{"owner":"<agent>","status":"in progress","branch":"<branch>","base":"%s","updated":"<date>"}\n' \
+  "$(git rev-parse origin/main)" > docs/claims/<task-id>.json
+git add docs/claims/<task-id>.json && git commit -m "claim <task-id>"
+git push origin HEAD:main || { git fetch origin; git reset --hard origin/main; echo "lost race, pick another task"; }
+# Lane worktree (reuse the branch name if it exists on the remote):
+cd .. && git worktree add ../wt-<lane> -b <branch> origin/main
 ```
 
-## 4. Local pre-push gate (each agent, copy-paste)
-
-Run inside your worktree before every push. Boundary violations then
-fail locally, not in CI. Keep the branch docs/code-only per §2.6
-(`git checkout -- Cargo.lock` unless the dep change is intentional).
+## 11. Pre-push gate (inside your lane worktree)
 
 ```bash
+git checkout -- Cargo.lock   # unless you changed a dependency
 cargo fmt --check \
 && cargo clippy --workspace --all-targets -- -D warnings \
 && cargo test --workspace \
 && python3 scripts/check-boundaries.py \
+&& python3 scripts/check-ownership.py <branch> origin/main \
 && npm test \
 && npm run build && npm run build:conduit
-# plus, for your lane: the lane's vector runner, e.g.
-# B: node scripts/run-tray-vectors.mjs --file tagging && node scripts/run-tray-vectors.mjs --file validator
-# C: node scripts/run-tray-vectors.mjs --file routing && node scripts/run-tray-vectors.mjs --file ifc-io
-# A: node scripts/run-conduit-vectors.mjs (all 13 files, 165 cases) && wasm-pack build bindings/conduit-wasm
-# and wasm-pack build for any binding touched
 ```
 
-## 5. Merge flow (tiered autonomy, unchanged from AGENTS.md)
+Plus your lane's own commands:
 
-1. `git pull --rebase origin main`, re-run the full §4 gate.
-2. `gh pr create` listing: spec implemented, folders touched, test
-   commands run, any `[UNVERIFIED]` item resolved or not.
-3. Low-risk (`rust/*`, `viewer/*`, `app/*`, `spec/*`, `fix/*`): self-merge
-   when CI is green (max 2 red-fix attempts, else blocker file + stop).
-   High-risk (`infra/*`, `legacy/` deletion, history/policy changes):
-   open PR, report, stop — owner merges.
-   Note: **this** branch (`spec/parallel-docs`) becomes high-risk by
-   touching `AGENTS.md` — open PR, report, stop; owner merges.
-4. `gh pr merge --squash`; report PR number, merge SHA,
-   `git revert <SHA>` one-liner; `git pull --rebase origin main`;
-   delete the worktree branch. On completion, update your
-   `docs/claims/<task-id>.json` to `"status": "done"` on `main`.
+| Lane | Extra commands |
+|---|---|
+| B | `node scripts/run-tray-vectors.mjs --file=tagging` ; `cargo test -p tray-tagging` |
+| C | `node scripts/run-tray-vectors.mjs --file=routing` ; `cargo test -p tray-routing` |
+| A | `node scripts/run-conduit-vectors.mjs` (exit 0 after P1) ; `wasm-pack build bindings/conduit-wasm` ; the binding JS test |
+| E | the parity harness itself |
 
-Rebase cadence with 5 agents: rebase daily; keep PRs small (small diff
-preferred); never force-push, never rewrite history, no `rm -rf`.
+First command for every lane: run its own vector command **before** writing
+code and record the baseline in your spec.
 
-## 6. Collision scenarios and resolution
+## 12. Merge flow and collisions
+
+* Low-risk (`rust/*`, `viewer/*`, `app/*`, `spec/*`, `fix/*`): rebase, rerun the
+  gate, `gh pr create`, wait for green CI, `gh pr merge --squash`, report PR
+  number, SHA and `git revert <SHA>`, then set the claim to `done` on `main`.
+* High-risk (`infra/*`, `legacy/` deletion, `AGENTS.md`, policy, history):
+  open the PR and stop; the owner merges.
+* Never force-push, rewrite history or run `rm -rf`.
 
 | Scenario | Resolution |
 |---|---|
-| Two agents claim the same task | Claim files on `main`: second pusher's `pull --rebase` shows the file already exists with `"in progress"` → retries with a free lane. No conflict text to resolve — different lanes are different filenames. |
-| Rebase conflict on `main` | Expected only if two lanes mis-declared ownership. Stop, compare §1 table, the lane that owns the path keeps it; the other rebases. Record in blocker file if recurring. |
-| Claim-file push rejected (non-fast-forward) | `pull --rebase`, re-check the file: claimed → pick another lane; missing → push again. Max 2 retries, then blocker file + stop. |
-| Stale claim (`in progress` with no commits/PR for >3 days) | Do not steal it. File a blocker noting the stale claim; owner reassigns. Expiry is owner-only. |
-| CI red | Max 2 fix attempts on your branch, then blocker file + stop. Never fix another lane's files to green your PR. |
-| Need a shared-file change | Stop, blocker file, do not touch. Infra branch handles it. |
-| Blocked > 2 attempts | Blocker file + end turn (`AGENTS.md` unattended rule). |
-
-## 7. What this branch adds
-
-* `docs/THINKING_SPECS.md` — goals + parity analysis (Claude-corrected).
-* This file (v0.2) — the 5-lane parallel design with owner decisions O1–O4 applied.
-* `docs/claims/README.md` + `.gitkeep` — claim-file protocol (v2: claims commit to `main`).
-* `docs/blockers/README.md` + `.gitkeep` — blocker-file protocol.
-* `AGENTS.md` — ownership + claim-protocol update (owner-approved, owner merges).
-* No product code touched. Docs-only: boundary check + `npm test`
-  unaffected by construction (`Cargo.lock` reverted).
-
-## 8. Open questions for the owner
-
-Resolved in v0.2: (a-interim) couplings pinned to BOM formula
-`max(0, sticks-1)` — needs final sign-off; (d) routing frame = Z-up;
-(e) 7.1–7.3 treated as UNVERIFIED, Lane D rebuilds minimum if missing;
-(g) claim/blocker files approved.
-Still open: (b) NEC Table 2 edition check (5"/6" rows — vectors truncate
-at 4", sizes above snap to the 4" radius); (c) keep or drop the 30.48 m
-"100 ft straight pull" heuristic, never labelled NEC (real rule is the
-360° one, NEC 358.26 / 344.26); (f) remove the two root P22115
-sharedparameters files (still tracked, against `ARCHITECTURE.md:219`).
-New: (h) confirm Lane A reuses `rust/conduit-wasm@c0da00c` (rebased) vs
-a fresh branch name.
+| Same task claimed twice | The claim file already on `main` wins; the second agent resets its claims worktree and picks another task |
+| `check-ownership.py` fails | You edited a path outside your lane. Revert it; if you truly need it, file a blocker |
+| CI red | Two fix attempts on your branch, then blocker file, claim `blocked`, stop. Never fix another lane's files |
+| Stale claim (no commits or PR for 3 days) | Do not take it over. File a blocker naming the stale claim; the owner reassigns |
+| Rebase conflict on lane files | Two lanes own the same path: stop and file a blocker (the lane table is wrong) |
