@@ -1,5 +1,50 @@
 # NOTES: deviations, blockers, open questions
 
+## 2026-10-23: P0 repair verification pass on PR #25 (6c964a0)
+- PR #25 (`app/modular-tray-ui` -> `main`, phases 6+7) CI-green on merge
+  commit and re-verified on clean `origin/main` checkout in this pass:
+  `npm test` 92 pass / 0 fail, `cargo test --workspace` (conduit-core 40 +
+  geom-core 35 + ifc-io 32 + scaffolds), both `wasm-pack` bindings,
+  both app builds, `check-boundaries.py` OK. Revert: `git revert 6c964a0`.
+- Claim corrections (PR #25 body said 92/92 and 89/89):
+  - `npm test` 92/92 VERIFIED on clean main (the glob mismatch noted in
+    planning is real but harmless: `npm test` globs
+    `crates/viewport-core/test/*.test.mjs`, the file on disk is
+    `self-test.mjs`, so the wasm self-test never runs — count still
+    reaches 92 via the other suites; the wasm smoke test is CI-blind
+    until the glob is fixed or the file renamed — follow-up, not P0).
+  - "89/89 via `scripts/run-conduit-vectors.mjs`" NOT VERIFIED as stated:
+    on clean main that runner reports 140 pass / 25 fail. All 25 are
+    stale-runner bugs, zero are code/vector regressions (each checked
+    against legacy JS directly): 20x `unknown fn` (engine-format cases
+    the task-2.1 runner predates), `segments-off-mid` (runner requires
+    `targetId` match when expected has none; per-task runner guards it),
+    `polar-zup-90` (runner calls `checkPoint` on undefined
+    `expected.point`; per-task runner guards it), `bom-waste-factor`
+    (generic runner drops `wasteFactorPct` from the call; legacy, vector
+    and per-task runner all agree on 4), `split-segment-bad-index`
+    (generic runner has no `badIndex` throw path; per-task runner does),
+    `findsnap-dangling-ref-skipped` (documents intentional R6 deviation:
+    legacy throws `TypeError`, per-task takeoff-io runner asserts the
+    throw; generic runner doesn't handle it). The 8 per-task runners
+    are the maintained path and all green: network 23, snap 24, fitting
+    15, bom 8, takeoff-io 6, geom 54, ifc 56, tray 91 (277 cases).
+    Follow-up (not P0): retire or repair the generic runner so its
+    failure count can't be mistaken for regressions.
+  - The 34-line `run-conduit-vectors.mjs` diff in PR #25 reviewed:
+    mechanical `pathToFileURL` import fix only (Windows compat), no
+    behavior change.
+- Board fix in this pass: task 7.4 "blocked on 3.2" is wrong — 3.2
+  (`ifc-io`, `b68aa84`) merged 2026-10-22. 7.4 has spec
+  (`docs/specs/tray/safe-ifc-editor.md`) and its deps met; set back
+  to `todo`.
+- Stale PR #20 (`infra/agent-autonomy` board-sync) closed as superseded:
+  CONFLICTING, predates PRs #23/#24/#25.
+- Process note: PR #25 merged 6 phases/41 files in one PR without
+  per-task review trail. Content verified good in this pass; recording
+  here so the trail exists. 7.4 + Phase 9 (QTO) specs remain the
+  owner's next decisions.
+
 ## 2026-10-23: PR #23 (rust/conduit-takeoff-io) merged by owner (4.5 done)
 - PR #23 self-merged as `c0da00c` under the tiered policy (low-risk `rust/*`).
   Revert: `git revert c0da00c`.
