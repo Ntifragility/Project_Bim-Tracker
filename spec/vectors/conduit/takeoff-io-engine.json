@@ -1,0 +1,73 @@
+{
+  "module": "conduit",
+  "feature": "takeoff-io",
+  "source": "legacy/packages/conduit-core/src/snap.js (findSnap) + spec/vectors/conduit/takeoff.json (findsnap-* reused verbatim)",
+  "units": "metres",
+  "notes": "Task 4.5 ports the last pure conduit logic: the network-bound findSnap (nodes-first, then segment interiors). Node/segment/miss cases reuse takeoff.json expectations verbatim. Priority/tie/dangling cases pin snap.js lines 10-32.",
+  "cases": [
+    {
+      "id": "findsnap-node",
+      "fn": "findSnap",
+      "input": {
+        "network": { "nodes": [{ "id": "n1", "x": 0, "y": 0, "z": 0 }, { "id": "n2", "x": 10, "y": 0, "z": 0 }], "runs": [{ "id": "r1", "nodeIds": ["n1", "n2"] }] },
+        "point": { "x": 0.001, "y": 0.001, "z": 0 },
+        "tolerance": 0.01
+      },
+      "expected": { "kind": "node", "nodeId": "n1" }
+    },
+    {
+      "id": "findsnap-segment",
+      "fn": "findSnap",
+      "input": {
+        "network": { "nodes": [{ "id": "n1", "x": 0, "y": 0, "z": 0 }, { "id": "n2", "x": 10, "y": 0, "z": 0 }], "runs": [{ "id": "r1", "nodeIds": ["n1", "n2"] }] },
+        "point": { "x": 5, "y": 0.005, "z": 0 },
+        "tolerance": 0.01
+      },
+      "expected": { "kind": "segment", "runId": "r1", "index": 0 }
+    },
+    {
+      "id": "findsnap-miss",
+      "fn": "findSnap",
+      "input": {
+        "network": { "nodes": [{ "id": "n1", "x": 0, "y": 0, "z": 0 }, { "id": "n2", "x": 10, "y": 0, "z": 0 }], "runs": [{ "id": "r1", "nodeIds": ["n1", "n2"] }] },
+        "point": { "x": 5, "y": 1, "z": 0 },
+        "tolerance": 0.01
+      },
+      "expected": null
+    },
+    {
+      "id": "findsnap-node-beats-closer-segment",
+      "fn": "findSnap",
+      "input": {
+        "network": { "nodes": [{ "id": "n1", "x": 0, "y": 0, "z": 0 }, { "id": "n2", "x": 10, "y": 0, "z": 0 }], "runs": [{ "id": "r1", "nodeIds": ["n1", "n2"] }] },
+        "point": { "x": 0.009, "y": 0.001, "z": 0 },
+        "tolerance": 0.01
+      },
+      "expected": { "kind": "node", "nodeId": "n1" },
+      "tol": 1e-9,
+      "note": "Query is ~0.0091 m from n1 but only ~0.001 m from the segment. Node stage short-circuits: node wins (snap.js early return)."
+    },
+    {
+      "id": "findsnap-tie-keeps-first-node",
+      "fn": "findSnap",
+      "input": {
+        "network": { "nodes": [{ "id": "n1", "x": 0, "y": 0, "z": 0 }, { "id": "n2", "x": 0, "y": 0, "z": 0 }], "runs": [{ "id": "r1", "nodeIds": ["n1", "n2"] }] },
+        "point": { "x": 0.005, "y": 0, "z": 0 },
+        "tolerance": 0.01
+      },
+      "expected": { "kind": "node", "nodeId": "n1" },
+      "note": "Equidistant nodes: strictly-smaller comparison keeps the first scanned (d < best.distance parity)."
+    },
+    {
+      "id": "findsnap-dangling-ref-skipped",
+      "fn": "findSnap",
+      "input": {
+        "network": { "nodes": [{ "id": "n1", "x": 0, "y": 0, "z": 0 }, { "id": "n2", "x": 10, "y": 0, "z": 0 }], "runs": [{ "id": "r1", "nodeIds": ["n1", "n99"] }] },
+        "point": { "x": 5, "y": 0.005, "z": 0 },
+        "tolerance": 0.01
+      },
+      "expected": null,
+      "note": "R6 deviation: legacy throws TypeError on the unresolvable pair; Rust skips it. Unreachable after validate_network (4.1 rejects dangling refs)."
+    }
+  ]
+}

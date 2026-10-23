@@ -6,6 +6,7 @@
 //! state replaced by an explicit [`SnapConfig`] struct. Vector math
 //! delegates to `geom-core`; network binding (`findSnap`) lives in 4.1.
 
+use crate::network::Network;
 use geom_core::{vec3, Vec3};
 
 const DEG_TO_RAD: f64 = std::f64::consts::PI / 180.0;
@@ -327,6 +328,92 @@ pub fn resolve(
         guide_axis: None,
         t: None,
     }
+}
+
+/// Network-bound snap hit (legacy `findSnap` result parity).
+#[derive(Debug, Clone, PartialEq)]
+pub enum FindSnapHit {
+    Node {
+        node_id: String,
+        point: Vec3,
+        distance: f64,
+    },
+    Segment {
+        run_id: String,
+        index: usize,
+        point: Vec3,
+        distance: f64,
+    },
+}
+
+fn network_point(net: &Network, node_id: &str) -> Option<Vec3> {
+    net.nodes
+        .iter()
+        .find(|n| n.id == *node_id)
+        .map(|n| Vec3::new(n.x, n.y, n.z))
+}
+
+/// Nearest node within `tolerance_m`, otherwise the nearest point on a
+/// segment within `tolerance_m` (`legacy snap.js:findSnap` parity, task 4.5).
+///
+/// Nodes short-circuit the segment stage (R3); endpoint `t` values are
+/// skipped (R4); pairs with a missing endpoint node are skipped (R6
+/// deviation: legacy throws a `TypeError` here, unreachable after
+/// `validate_network`).
+#[must_use]
+pub fn find_snap(net: &Network, point: Vec3, tolerance_m: f64) -> Option<FindSnapHit> {
+    let mut best: Option<FindSnapHit> = None;
+    for node in &net.nodes {
+        let d = vec3::distance(Vec3::new(node.x, node.y, node.z), point);
+        let better = best
+            .as_ref()
+            .map(|b| match b {
+                FindSnapHit::Node { distance, .. } | FindSnapHit::Segment { distance, .. } => {
+                    d < *distance
+                }
+            })
+            .unwrap_or(true);
+        if d <= tolerance_m && better {
+            best = Some(FindSnapHit::Node {
+                node_id: node.id.clone(),
+                point: Vec3::new(node.x, node.y, node.z),
+                distance: d,
+            });
+        }
+    }
+    if best.is_some() {
+        return best;
+    }
+    for run in &net.runs {
+        for index in 0..run.node_ids.len().saturating_sub(1) {
+            let (Some(a), Some(b)) = (
+                network_point(net, &run.node_ids[index]),
+                network_point(net, &run.node_ids[index + 1]),
+            ) else {
+                continue;
+            };
+            let hit = closest_on_segment(point, a, b);
+            if hit.t <= 0.0 || hit.t >= 1.0 || hit.distance > tolerance_m {
+                continue;
+            }
+            let better =
+                best.as_ref()
+                    .map(|b| match b {
+                        FindSnapHit::Node { distance, .. }
+                        | FindSnapHit::Segment { distance, .. } => hit.distance < *distance,
+                    })
+                    .unwrap_or(true);
+            if better {
+                best = Some(FindSnapHit::Segment {
+                    run_id: run.id.clone(),
+                    index,
+                    point: hit.point,
+                    distance: hit.distance,
+                });
+            }
+        }
+    }
+    best
 }
 
 #[cfg(test)]
