@@ -1,5 +1,18 @@
 # NOTES: deviations, blockers, open questions
 
+## 2026-10-23: smoke test on infra/agent-autonomy @ 80d0151 (Layer 1+2 green)
+- Layer 1 (DoD parity): `cargo fmt --check` clean, `cargo clippy
+  --workspace --all-targets -- -D warnings` clean, `cargo test --workspace`:
+  conduit-core 36 + geom-core 35 + ifc-io 32 pass (tray-*/wasm scaffolds 1
+  each), both `wasm-pack build` OK, `npm test` 84 pass, `npm run build` +
+  `npm run build:conduit` green, `check-boundaries.py` OK.
+- Layer 2 (golden vectors): geom 54, ifc 56, conduit-network 23,
+  conduit-snap 24, conduit-fitting 15, conduit-bom 8 — all pass.
+- Tray vectors run against legacy JS only (Rust tray-* empty); no browser
+  smoke possible (apps/viewer-core/bindings are scaffolds); no IFC sample
+  used (pure cores only). Layer 3 chain demo deferred to 4.5.
+- Board fix: 4.2/4.3 were still `review` though #19/#21 merged; set `done`.
+
 ## 2026-10-22: PR #22 (rust/conduit-bom) merged by agent (4.4 done)
 - PR #22 self-merged as `7c0a93d` under the tiered policy (low-risk `rust/*`).
   Revert: `git revert 7c0a93d`.
