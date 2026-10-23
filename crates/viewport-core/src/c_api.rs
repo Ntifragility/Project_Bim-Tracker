@@ -58,18 +58,24 @@ pub extern "C" fn viewport_destroy(ptr: *mut InstanceState) {
 
 #[no_mangle]
 pub extern "C" fn viewport_instance_set_mode(ptr: *mut InstanceState, mode: u32) {
-    if ptr.is_null() { return; }
+    if ptr.is_null() {
+        return;
+    }
     let tool_mode = match mode {
         1 => ToolMode::Drawing,
         2 => ToolMode::PickElevation,
         _ => ToolMode::Navigate,
     };
-    unsafe { (*ptr).controller.set_mode(tool_mode); }
+    unsafe {
+        (*ptr).controller.set_mode(tool_mode);
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn viewport_instance_allow_highlight(ptr: *mut InstanceState) -> u32 {
-    if ptr.is_null() { return 0; }
+    if ptr.is_null() {
+        return 0;
+    }
     u32::from(unsafe { (*ptr).controller.allow_highlight() })
 }
 
@@ -82,11 +88,17 @@ pub extern "C" fn viewport_instance_pointer_down(
     time_ms: f64,
     shift: u32,
 ) {
-    if ptr.is_null() { return; }
+    if ptr.is_null() {
+        return;
+    }
     let decision = unsafe {
-        (*ptr).controller.pointer_down_with_shift(button as u8, x, y, time_ms, shift != 0)
+        (*ptr)
+            .controller
+            .pointer_down_with_shift(button as u8, x, y, time_ms, shift != 0)
     };
-    unsafe { (*ptr).last = decision; }
+    unsafe {
+        (*ptr).last = decision;
+    }
 }
 
 #[no_mangle]
@@ -98,11 +110,17 @@ pub extern "C" fn viewport_instance_pointer_move(
     camera_distance: f64,
     viewport_height: f64,
 ) {
-    if ptr.is_null() { return; }
+    if ptr.is_null() {
+        return;
+    }
     let decision = unsafe {
-        (*ptr).controller.pointer_move(x, y, time_ms, camera_distance, viewport_height)
+        (*ptr)
+            .controller
+            .pointer_move(x, y, time_ms, camera_distance, viewport_height)
     };
-    unsafe { (*ptr).last = decision; }
+    unsafe {
+        (*ptr).last = decision;
+    }
 }
 
 #[no_mangle]
@@ -114,52 +132,72 @@ pub extern "C" fn viewport_instance_pointer_up(
     camera_distance: f64,
     viewport_height: f64,
 ) {
-    if ptr.is_null() { return; }
+    if ptr.is_null() {
+        return;
+    }
     let decision = unsafe {
-        (*ptr).controller.pointer_up(x, y, time_ms, camera_distance, viewport_height)
+        (*ptr)
+            .controller
+            .pointer_up(x, y, time_ms, camera_distance, viewport_height)
     };
-    unsafe { (*ptr).last = decision; }
+    unsafe {
+        (*ptr).last = decision;
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn viewport_instance_decision_action(ptr: *mut InstanceState) -> u32 {
-    if ptr.is_null() { return 0; }
+    if ptr.is_null() {
+        return 0;
+    }
     unsafe { (*ptr).last.action as u32 }
 }
 
 #[no_mangle]
 pub extern "C" fn viewport_instance_decision_preserve(ptr: *mut InstanceState) -> u32 {
-    if ptr.is_null() { return 1; }
+    if ptr.is_null() {
+        return 1;
+    }
     u32::from(unsafe { (*ptr).last.preserve_rubberband })
 }
 
 #[no_mangle]
 pub extern "C" fn viewport_instance_decision_highlight(ptr: *mut InstanceState) -> u32 {
-    if ptr.is_null() { return 0; }
+    if ptr.is_null() {
+        return 0;
+    }
     u32::from(unsafe { (*ptr).last.allow_element_highlight })
 }
 
 #[no_mangle]
 pub extern "C" fn viewport_instance_decision_azimuth(ptr: *mut InstanceState) -> f64 {
-    if ptr.is_null() { return 0.0; }
+    if ptr.is_null() {
+        return 0.0;
+    }
     unsafe { (*ptr).last.azimuth_delta }
 }
 
 #[no_mangle]
 pub extern "C" fn viewport_instance_decision_polar(ptr: *mut InstanceState) -> f64 {
-    if ptr.is_null() { return 0.0; }
+    if ptr.is_null() {
+        return 0.0;
+    }
     unsafe { (*ptr).last.polar_delta }
 }
 
 #[no_mangle]
 pub extern "C" fn viewport_instance_decision_truck_x(ptr: *mut InstanceState) -> f64 {
-    if ptr.is_null() { return 0.0; }
+    if ptr.is_null() {
+        return 0.0;
+    }
     unsafe { (*ptr).last.truck_x }
 }
 
 #[no_mangle]
 pub extern "C" fn viewport_instance_decision_truck_y(ptr: *mut InstanceState) -> f64 {
-    if ptr.is_null() { return 0.0; }
+    if ptr.is_null() {
+        return 0.0;
+    }
     unsafe { (*ptr).last.truck_y }
 }
 
@@ -185,7 +223,8 @@ pub extern "C" fn viewport_allow_highlight() -> u32 {
 #[no_mangle]
 pub extern "C" fn viewport_pointer_down(button: u32, x: f64, y: f64, time_ms: f64, shift: u32) {
     let decision = CONTROLLER.with(|slot| {
-        slot.borrow_mut().pointer_down_with_shift(button as u8, x, y, time_ms, shift != 0)
+        slot.borrow_mut()
+            .pointer_down_with_shift(button as u8, x, y, time_ms, shift != 0)
     });
     store(decision);
 }
@@ -199,7 +238,8 @@ pub extern "C" fn viewport_pointer_move(
     viewport_height: f64,
 ) {
     let decision = CONTROLLER.with(|slot| {
-        slot.borrow_mut().pointer_move(x, y, time_ms, camera_distance, viewport_height)
+        slot.borrow_mut()
+            .pointer_move(x, y, time_ms, camera_distance, viewport_height)
     });
     store(decision);
 }
@@ -213,7 +253,8 @@ pub extern "C" fn viewport_pointer_up(
     viewport_height: f64,
 ) {
     let decision = CONTROLLER.with(|slot| {
-        slot.borrow_mut().pointer_up(x, y, time_ms, camera_distance, viewport_height)
+        slot.borrow_mut()
+            .pointer_up(x, y, time_ms, camera_distance, viewport_height)
     });
     store(decision);
 }

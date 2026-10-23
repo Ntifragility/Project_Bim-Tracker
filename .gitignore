@@ -20,6 +20,7 @@ dist-ssr
 # Project IFC models are local validation data and may contain sensitive BIM data.
 *.ifc
 *.IFC
+!public/fixtures/*.ifc
 
 # Navisworks cache + IFC parser logs (local validation artifacts, never committed)
 *.nwc
