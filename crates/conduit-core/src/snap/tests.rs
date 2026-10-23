@@ -1,4 +1,5 @@
-//! `snap-engine.json` vectors as Rust tests (task 4.2, spec R1-R8).
+//! `snap-engine.json` + `takeoff-io-engine.json` vectors as Rust tests
+//! (task 4.2, spec R1-R8; task 4.5, spec R1-R6).
 
 use super::*;
 use geom_core::Vec3;
@@ -156,4 +157,76 @@ fn snap_resolve_priority() {
     };
     let ortho = resolve(v(5.0, 1.0, 0.0), &ocfg, Some(v(0.0, 0.0, 0.0)), &[], &[]);
     assert_eq!(ortho.snap_type, SnapType::Ortho);
+}
+
+// --- task 4.5: `takeoff-io-engine.json` find_snap vectors (spec R1-R6) ---
+
+use crate::network::{add_node, append_to_run, create_network, start_run, Network};
+
+fn line_net(nodes: &[[f64; 3]], run: &str) -> (Network, String) {
+    let mut net = create_network(3.048);
+    let mut ids = Vec::new();
+    for p in nodes {
+        let (n, id) = add_node(&net, p[0], p[1], p[2]);
+        net = n;
+        ids.push(id);
+    }
+    let first = ids[0].clone();
+    let (n, run_id) = start_run(&net, "3/4\"", "", run, &first).unwrap();
+    net = n;
+    for id in ids.iter().skip(1) {
+        net = append_to_run(&net, &run_id, id).unwrap();
+    }
+    (net, run_id)
+}
+
+#[test]
+fn findsnap_node_segment_miss() {
+    let (net, run_id) = line_net(&[[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]], "");
+    let hit = find_snap(&net, v(0.001, 0.001, 0.0), 0.01).unwrap();
+    assert!(matches!(hit, FindSnapHit::Node { ref node_id, .. } if node_id == "n1"));
+    let hit = find_snap(&net, v(5.0, 0.005, 0.0), 0.01).unwrap();
+    assert!(
+        matches!(hit, FindSnapHit::Segment { run_id: ref got, index: 0, .. } if *got == run_id)
+    );
+    assert!(find_snap(&net, v(5.0, 1.0, 0.0), 0.01).is_none());
+}
+
+#[test]
+fn findsnap_node_beats_closer_segment() {
+    // Query ~0.0091 m from n1 but only ~0.001 m from the segment: the node
+    // stage short-circuits, node wins (snap.js early return, spec R3).
+    let (net, _) = line_net(&[[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]], "");
+    let hit = find_snap(&net, v(0.009, 0.001, 0.0), 0.01).unwrap();
+    assert!(matches!(hit, FindSnapHit::Node { ref node_id, .. } if node_id == "n1"));
+}
+
+#[test]
+fn findsnap_tie_keeps_first_node() {
+    // Equidistant nodes: strictly-smaller comparison keeps the first
+    // scanned (legacy `d < best.distance` parity, spec R2).
+    let (net, _) = line_net(&[[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]], "");
+    let hit = find_snap(&net, v(0.005, 0.0, 0.0), 0.01).unwrap();
+    assert!(matches!(hit, FindSnapHit::Node { ref node_id, .. } if node_id == "n1"));
+}
+
+#[test]
+fn findsnap_dangling_ref_skipped() {
+    // R6 deviation: legacy throws TypeError on the unresolvable pair; Rust
+    // skips it. Unreachable after validate_network. The run's ONLY pair is
+    // dangling here, so no segment can hit.
+    let mut net = create_network(3.048);
+    let (n, n1) = add_node(&net, 0.0, 0.0, 0.0);
+    net = n;
+    let (n, n2) = add_node(&net, 10.0, 0.0, 0.0);
+    net = n;
+    let (n, run_id) = start_run(&net, "3/4\"", "", "", &n1).unwrap();
+    net = n;
+    net = append_to_run(&net, &run_id, &n2).unwrap();
+    assert_eq!(net.runs.len(), 1);
+    if let Some(r) = net.runs.iter_mut().find(|r| r.id == run_id) {
+        // Replace the resolvable pair with a dangling one.
+        r.node_ids = vec!["n1".into(), "n99".into()];
+    }
+    assert!(find_snap(&net, v(5.0, 0.005, 0.0), 0.01).is_none());
 }

@@ -3,12 +3,14 @@
 //! project I/O.
 //!
 //! Tasks 4.1 (`rust/conduit-network`) + 4.2 (`rust/conduit-snap`) + 4.3
-//! (`rust/conduit-fitting`) + 4.4 (`rust/conduit-bom`). Depends on
+//! (`rust/conduit-fitting`) + 4.4 (`rust/conduit-bom`) + 4.5
+//! (`rust/conduit-takeoff-io`: network snap binding). Depends on
 //! `geom-core` / `ifc-io` only; never on `tray-*`, the DOM, Three.js or
 //! viewer code (ARCHITECTURE section 2).
 //! See `docs/specs/conduit/network.md` + `snap.md` + `fitting.md` +
-//! `bom.md`; vectors in `spec/vectors/conduit/network*.json` +
-//! `snap-engine.json` + `fitting-engine.json` + `bom-engine.json`.
+//! `bom.md` + `takeoff-io.md`; vectors in `spec/vectors/conduit/network*.json` +
+//! `snap-engine.json` + `fitting-engine.json` + `bom-engine.json` +
+//! `takeoff-io-engine.json`.
 
 pub mod bom;
 pub mod fitting;
@@ -41,8 +43,9 @@ pub use registry::{
     DEFAULT_SELECTED_LABEL, DEFAULT_STICK_LENGTH_M, DIAMETER_PALETTE, PALETTE, UNKNOWN_COLOR,
 };
 pub use snap::{
-    closest_on_segment, raycast_elevation_plane, resolve, snap_ortho_3d, snap_polar_angle,
-    snap_to_nodes, snap_to_segments, SnapCandidate, SnapConfig, SnapNode, SnapSegment, SnapType,
+    closest_on_segment, find_snap, raycast_elevation_plane, resolve, snap_ortho_3d,
+    snap_polar_angle, snap_to_nodes, snap_to_segments, FindSnapHit, SnapCandidate, SnapConfig,
+    SnapNode, SnapSegment, SnapType,
 };
 pub use takeoff::{
     compute_run_takeoff, compute_takeoff, size_to_mm, RunTakeoff, Takeoff, TakeoffRun, TakeoffSize,
