@@ -60,11 +60,24 @@ Merge procedure:
 - Use your own git worktree when other agents run in parallel: `git worktree add ../wt-<name> -b <branch>`.
 
 ## Parallel work
-- Before starting, open `docs/TASKS.md` and claim ONE task by writing your agent name in Owner and `in progress` in Status; commit that one-line change to `main` first.
-- Never start a task claimed by another agent. Never edit another agent's owned folders.
+- Claims live in `docs/claims/<task-id>.json` (one file per task; see
+  `docs/claims/README.md`). Claim ONE task by committing your claim file
+  **directly to `main`** (`git checkout main && git pull --rebase origin
+  main`, write the file, `git push origin main`) before starting. Never
+  edit `docs/TASKS.md` to claim; a periodic `infra/claims-sync` task rolls
+  claims into the board. Never start a task claimed by another agent
+  (same file with `"status": "in progress"`).
+- Blockers live in `docs/blockers/<branch-with-dashes>.md` (one file per
+  branch; see `docs/blockers/README.md`). Never append to `NOTES.md`
+  from a lane branch; a periodic `infra/blockers-rollup` task rolls them
+  up. If blocked for more than two attempts, write the blocker file and
+  end your turn.
+- Never edit another agent's claim/blocker file or owned folders.
 - Each agent works in its own git worktree and branch.
 - Before opening/merging a PR: `git pull --rebase origin main`, then rerun all checks from the definition of done.
 - Only one agent at a time works on `infra/*` branches (root configs, CI, workspace manifests).
+- `Cargo.lock`: never commit changes unless you add/remove a dependency
+  (`git checkout -- Cargo.lock` before every commit otherwise).
 - Units: all quantities are metres internally; imperial values (10 ft sticks, NEC inches) are constants converted at the edges.
 
 ## Ownership by branch prefix
@@ -73,8 +86,11 @@ Merge procedure:
 | `rust/geom-*` | `crates/geom-core/`, its vectors and specs |
 | `rust/ifc-*` | `crates/ifc-io/`, its vectors and specs |
 | `rust/conduit-*` | `crates/conduit-core/`, `bindings/conduit-wasm/`, `spec/vectors/conduit/`, `docs/specs/conduit/` |
-| `rust/tray-*` | `crates/tray-tagging/`, `crates/tray-routing/`, `bindings/tray-wasm/`, `spec/vectors/tray/`, `docs/specs/tray/` |
+| `rust/tray-tagging` | `crates/tray-tagging/`, `spec/vectors/tray/tagging.json`, `spec/vectors/tray/validator.json`, `docs/specs/tray/tagging.md` |
+| `rust/tray-routing` | `crates/tray-routing/`, `spec/vectors/tray/routing.json`, `spec/vectors/tray/ifc-io.json`, `docs/specs/tray/routing.md` |
+| `rust/tray-*` (other) | `bindings/tray-wasm/`, `docs/specs/tray/` (shared tray files only; never the other lane's vector files) |
 | `viewer/*` | `packages/viewer-core/`, `docs/specs/viewer/` |
-| `app/*` | the named app under `apps/`, `packages/excel-io/` when its spec says so |
+| `app/*` | the named app under `apps/`, `packages/excel-io/` when its spec says so; `app/safe-ifc-editor` additionally owns `src/ifc/ifc-safe-editor.*` and its UI modules (never `src/main.js`) |
 | `infra/*` | root configs, `.github/`, workspace manifests |
 | `fix/*` | only the files named in the task |
+| `spec/*` | `docs/specs/**`, `spec/vectors/**`, `docs/claims/`, `docs/blockers/` templates; `spec/parity-harness` additionally owns `scripts/parity-*` |
