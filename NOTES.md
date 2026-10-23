@@ -1,5 +1,26 @@
 # NOTES: deviations, blockers, open questions
 
+## 2026-10-23: PR #23 (rust/conduit-takeoff-io) merged by owner (4.5 done)
+- PR #23 self-merged as `c0da00c` under the tiered policy (low-risk `rust/*`).
+  Revert: `git revert c0da00c`.
+- Scope: `findSnap` (legacy `snap.js`) ported to `conduit-core` (6 golden
+  vectors, 4 cargo tests); CSV/IFC text, project JSON, SHA-256, marker/
+  command-stack closures+ids recorded as owner-approved TS-side (`io.json`
+  `jsOnly`). One documented deviation: legacy throws `TypeError` on dangling
+  node refs; Rust skips the pair (unreachable after `validate_network`).
+- Safeguards met: rebased clean; full DoD re-ran green (fmt, clippy
+  `-D warnings`, `cargo test --workspace`: conduit-core 40 + geom-core 35 +
+  ifc-io 32 pass, takeoff-io 6 + snap 24 + network 23 + fitting 15 + bom 8
+  vectors pass, both wasm builds, `npm test` 83 pass / 1 pre-existing
+  `ifc-extractor` fail identical without changes, both app builds,
+  `check-boundaries.py` OK); CI `baseline` + `rust` SUCCESS; `MERGEABLE`.
+- Follow-ups left for owner: stale generic `run-conduit-vectors.mjs`
+  failures (SnapConfig.defaults / polar-zup-90 / validateNetwork /
+  dangling-ref) — Task-2.1 vintage runner, superseded by per-task runners;
+  pre-existing `ifc-extractor.test.js` npm failure; worktree branch
+  `rust/conduit-takeoff-io` deleted locally after merge.
+- Worktree branch `rust/conduit-takeoff-io` deleted after merge.
+
 ## 2026-10-22: PR #17 (rust/conduit-network) merged by agent (4.1 done)
 - PR #17 self-merged as `15f9d3b` under the tiered policy (low-risk `rust/*`).
   Revert: `git revert 15f9d3b`.
