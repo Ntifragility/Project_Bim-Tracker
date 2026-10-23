@@ -55,19 +55,19 @@ Phases and dependencies come from `ARCHITECTURE.md` section 7. Only one agent at
 ## Phase 6: Viewer (independent of 4 and 5)
 | ID | Task | Branch | Depends on | Owner | Status |
 |---|---|---|---|---|---|
-| 6.1 | `viewer-core`: extract engine, coordinates and Vite asset plugin with unchanged behaviour; remove `@covillaf` alias | `viewer/extract-engine` | 1.1 | | todo |
-| 6.1b | Move Rust `viewport-core` (from 0.7) to `crates/viewport-core`; stop committing `pkg/`; per-instance state; split generic gestures from conduit tool decisions; add auto-orbit (with toggle) and surface-pick normal to the viewer-core interface | `viewer/viewport` | 6.1 | | todo |
-| 6.2 | Compatibility smoke tests on a public sample IFC (use the `?ifc=` deep link) | `viewer/smoke-tests` | 6.1 | | todo |
-| 6.3+ | Improvement specs (section planes, ghost isolate, undo, PNG export, ...), one branch each | `viewer/<topic>` | 6.2 | | todo |
+| 6.1 | `viewer-core`: extract engine, coordinates and Vite asset plugin with unchanged behaviour; remove `@covillaf` alias | `viewer/extract-engine` | 1.1 | antigravity | done |
+| 6.1b | Move Rust `viewport-core` (from 0.7) to `crates/viewport-core`; stop committing `pkg/`; per-instance state; split generic gestures from conduit tool decisions; add auto-orbit (with toggle) and surface-pick normal to the viewer-core interface | `viewer/viewport` | 6.1 | antigravity | done |
+| 6.2 | Compatibility smoke tests on a public sample IFC (use the `?ifc=` deep link) | `viewer/smoke-tests` | 6.1 | antigravity | done |
+| 6.3+ | Improvement specs (section planes, ghost isolate, undo, PNG export, ...), one branch each | `viewer/<topic>` | 6.2 | antigravity | done |
 
 ## Phase 7: Apps
 | ID | Task | Branch | Depends on | Owner | Status |
 |---|---|---|---|---|---|
-| 7.1 | Split `src/main.js` into feature modules (tray app) | `app/split-main-js` | 1.1 | | todo |
-| 7.2 | Split conduit app UI modules | `app/conduit-ui-split` | 1.1 | | todo |
-| 7.3 | `packages/excel-io` optional package (workbook upload, mapping export). The live Excel bridge stays frozen | `app/excel-io` | 7.1 | | todo |
-| 7.4 | Safe IFC Editor and manual metadata (port last) | `app/safe-ifc-editor` | 3.2, 7.1 | | todo |
-| 7.5 | Optional UI items kept for owner's decision: wireframe (viewer-core), dark-mode toggle (app UI), Basic House sample (`samples/`) | `app/optional-ui` | 6.1, 7.1 | | todo |
+| 7.1 | Split `src/main.js` into feature modules (tray app) | `app/split-main-js` | 1.1 | antigravity | done |
+| 7.2 | Split conduit app UI modules | `app/conduit-ui-split` | 1.1 | antigravity | done |
+| 7.3 | `packages/excel-io` optional package (workbook upload, mapping export). The live Excel bridge stays frozen | `app/excel-io` | 7.1 | antigravity | done |
+| 7.4 | Safe IFC Editor and manual metadata (port last) | `app/safe-ifc-editor` | 3.2, 7.1 | antigravity | blocked on 3.2 |
+| 7.5 | Optional UI items kept for owner's decision: wireframe (viewer-core), dark-mode toggle (app UI), Basic House sample (`samples/`) | `app/optional-ui` | 6.1, 7.1 | antigravity | done |
 
 ## Phase 8: Parity gate
 | ID | Task | Branch | Depends on | Owner | Status |

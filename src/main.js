@@ -1,16 +1,16 @@
 import './style.css';
 import * as THREE from 'three';
 import * as OBC from '@thatopen/components';
-import * as XLSX from 'xlsx';
+import { readWorkbook, exportTagMapping } from 'excel-io';
 import { initExcelBridge } from './viewer-socket.js';
 import { initRoutingController } from './routing/routing-controller.js';
 import { addTraySystemAssignmentsToIfc, extractTraySystemAssignmentsFromIfc, taggedIfcFileName } from './ifc/ifc-tag-exporter.js';
-import { applySafeIfcEdits, editedIfcFileName } from './ifc/ifc-safe-editor.js';
+import { exportUnifiedIfc } from './ui/unified-export.js';
 import { validateTagIntegrity } from './ifc/tag-validator.js';
 import { allocateElementTags, getSystemTag, normalizeTagScheme } from './tagging/tag-scheme.js';
 import { classifyTaggableElement } from './tagging/element-classifier.js';
 import { TagLabelManager } from './tag-label-manager.js';
-import { createCovillafEngine } from './covillaf/engine.js';
+import { createCovillafEngine } from 'viewer-core';
 
 // Global variables for active model and state
 let activeModel = null;
@@ -289,34 +289,22 @@ async function initApp() {
   const { components, world, fragments, highlighter, hider } = engine;
 
   // ──────────────────────────────────────────────
-  //  AUTO-ORBIT CAMERA ROTATION
+  //  AUTO-ORBIT CAMERA ROTATION (delegated to viewer-core)
   // ──────────────────────────────────────────────
-  const autoRotateSpeed = 0.003; // Radians per frame
-  
-  function updateAutoRotate() {
-    if (autoRotateActive && world.camera && world.camera.controls && world.camera.controls.enabled) {
-      world.camera.controls.azimuthAngle += autoRotateSpeed;
+  engine.autoOrbit.onChange((active) => {
+    autoRotateActive = active;
+    if (orbitIndicator) {
+      orbitIndicator.style.display = active ? 'flex' : 'none';
     }
-    requestAnimationFrame(updateAutoRotate);
-  }
-  
-  // Start the animation loop
-  updateAutoRotate();
+  });
 
-  // Stop auto-orbit on any canvas user interaction
-  const stopAutoOrbit = () => {
-    if (autoRotateActive) {
-      autoRotateActive = false;
-      if (orbitIndicator) {
-        orbitIndicator.style.display = 'none';
-      }
-      console.log("[Auto-Orbit] Deactivated by user interaction.");
-    }
-  };
-
-  if (container) {
-    container.addEventListener('pointerdown', stopAutoOrbit);
-    container.addEventListener('wheel', stopAutoOrbit);
+  if (orbitIndicator) {
+    orbitIndicator.style.cursor = 'pointer';
+    orbitIndicator.title = 'Click to toggle Auto-Orbit';
+    orbitIndicator.addEventListener('click', (e) => {
+      e.stopPropagation();
+      engine.autoOrbit.toggle();
+    });
   }
 
   // Current FragmentsModel versions expose relations through getItemsData().
@@ -3047,10 +3035,7 @@ async function initApp() {
         fitModelToView(modelEntry.model);
         
         // 3. Trigger Auto-Orbit
-        autoRotateActive = true;
-        if (orbitIndicator) {
-          orbitIndicator.style.display = 'flex';
-        }
+        engine.autoOrbit.start();
         console.log(`[Auto-Orbit] Activated for model: ${modelEntry.name}`);
 
         refreshLoadedModelsList();
@@ -3163,9 +3148,7 @@ async function initApp() {
 
   function setWireframe(value) {
     isWireframe = value;
-    loadedModels.forEach(m => {
-      setWireframeForModel(m.model, isWireframe);
-    });
+    engine.setWireframe(isWireframe);
   }
 
   // Listeners: Sidebar controls
@@ -3569,65 +3552,12 @@ async function initApp() {
       return;
     }
 
-    let exportedModels = 0;
-    let appliedEditsCount = 0;
-    let appliedTagsCount = 0;
-    let skippedCount = 0;
-
-    for (const modelEntry of loadedModels) {
-      const modelIds = new Set([modelEntry.uuid, modelEntry.model?.uuid, modelEntry.model?.modelId].filter(Boolean));
-      const propertyEdits = Array.from(pendingIfcPropertyEdits.values()).filter((edit) => modelIds.has(edit.modelId));
-      const colorEdits = Array.from(pendingIfcColorEdits.values()).filter((edit) => modelIds.has(edit.modelId));
-      const assignments = Array.from(tagAssignments.values()).filter((assignment) =>
-        modelIds.has(assignment.modelId) || (modelEntry.model && (assignment.modelId === modelEntry.model.modelId || assignment.modelId === modelEntry.model.uuid))
-      );
-
-      const hasEdits = propertyEdits.length > 0 || colorEdits.length > 0;
-      const hasTags = assignments.length > 0;
-
-      if (!hasEdits && !hasTags) continue;
-
-      if (!modelEntry.sourceIfcBytes) {
-        console.warn(`[Unified IFC Export] No source bytes available for ${modelEntry.name}`);
-        skippedCount += propertyEdits.length + colorEdits.length + assignments.length;
-        continue;
-      }
-
-      try {
-        let currentBytes = modelEntry.sourceIfcBytes;
-
-        // 1. Apply property & appearance edits
-        if (hasEdits) {
-          const editResult = applySafeIfcEdits(currentBytes, { propertyEdits, colorEdits });
-          currentBytes = editResult.bytes;
-          appliedEditsCount += editResult.applied.length;
-          skippedCount += editResult.skipped.length;
-        }
-
-        // 2. Apply tag assignments
-        if (hasTags) {
-          const tagResult = addTraySystemAssignmentsToIfc(currentBytes, assignments);
-          currentBytes = tagResult.bytes;
-          appliedTagsCount += tagResult.applied.length;
-          skippedCount += tagResult.skipped.length;
-        }
-
-        // 3. Trigger download
-        const blob = new Blob([currentBytes], { type: 'application/x-step' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = editedIfcFileName(modelEntry.name);
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(url);
-        exportedModels += 1;
-      } catch (error) {
-        console.error(`[Unified IFC Export] Error exporting ${modelEntry.name}:`, error);
-        skippedCount += propertyEdits.length + colorEdits.length + assignments.length;
-      }
-    }
+    const { exportedModels, appliedEditsCount, appliedTagsCount, skippedCount } = exportUnifiedIfc({
+      loadedModels,
+      pendingIfcPropertyEdits,
+      pendingIfcColorEdits,
+      tagAssignments,
+    });
 
     if (exportedModels === 0) {
       const msg = 'No staged property edits, colors, or tag assignments to export.';
@@ -4166,10 +4096,8 @@ async function initApp() {
     reader.onload = (e) => {
       try {
         const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, { type: 'array' });
-        const firstSheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[firstSheetName];
-        const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+        const workbook = readWorkbook(data);
+        const jsonData = workbook.readSheet();
 
         if (jsonData.length > 0) {
           excelColumns = Object.keys(jsonData[0]);
@@ -4584,19 +4512,7 @@ async function initApp() {
         Excel_Row: Number.isInteger(assignment.excelRowIndex) ? assignment.excelRowIndex + 2 : '',
       };
     }));
-    const worksheet = XLSX.utils.json_to_sheet(rows);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Tag Register');
-    const summaryRows = getTraySystemSummaries().map((system) => ({
-      SystemTag: system.tag,
-      Components: system.count,
-      CableTrays: system.members.filter((member) => member.elementKind === 'tray').length,
-      CableFittings: system.members.filter((member) => member.elementKind === 'fitting').length,
-      Models: system.models.join(', '),
-      Status: system.status,
-    }));
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(summaryRows), 'Summary');
-    XLSX.writeFile(workbook, 'IFC_Tag_Mapping.xlsx');
+    exportTagMapping(rows, summaryRows, 'IFC_Tag_Mapping.xlsx');
     updateTagAssignmentUi(`Exported ${rows.length} tag assignment${rows.length === 1 ? '' : 's'}.`);
   });
 

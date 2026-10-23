@@ -4,7 +4,7 @@
 // later models are placed relative to it, so every model shares one coordination
 // matrix: scene = base * original, in Three axes (Y up, metres). Original IFC
 // coordinates are Z up: (x, y, z)_ifc = (x, -z, y)_three.
-import * as THREE from 'three';
+import * as THREE from "three";
 
 export function createCoordinateFrame(fragments) {
   const base = () => fragments.baseCoordinationMatrix?.clone() ?? new THREE.Matrix4();

@@ -119,7 +119,15 @@ impl Controller {
         let Some((dx, dy, button, moved, shift)) = self.step(x, y) else {
             return self.idle_decision();
         };
-        self.drag_decision(button, moved, shift, dx, dy, camera_distance, viewport_height)
+        self.drag_decision(
+            button,
+            moved,
+            shift,
+            dx,
+            dy,
+            camera_distance,
+            viewport_height,
+        )
     }
 
     pub fn pointer_up(
@@ -134,12 +142,21 @@ impl Controller {
             return self.idle_decision();
         };
         let (dx, dy, button, moved, shift) =
-            self.step(x, y).unwrap_or((0.0, 0.0, down.button, down.moved, down.shift));
+            self.step(x, y)
+                .unwrap_or((0.0, 0.0, down.button, down.moved, down.shift));
         let elapsed = time_ms - down.time_ms;
         self.down = None;
 
         if moved {
-            return self.drag_decision(button, true, shift, dx, dy, camera_distance, viewport_height);
+            return self.drag_decision(
+                button,
+                true,
+                shift,
+                dx,
+                dy,
+                camera_distance,
+                viewport_height,
+            );
         }
 
         if button == Button::Left && elapsed <= CLICK_MAX_MS {

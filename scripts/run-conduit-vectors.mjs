@@ -7,28 +7,30 @@
 // Exit code 1 on any failure. io.json cases are jsOnly by design.
 
 import { readFileSync, readdirSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const VEC_DIR = path.join(ROOT, 'spec/vectors/conduit');
 
 const LEG = path.join(ROOT, 'legacy/packages/conduit-core/src');
-const snapEngine = await import(path.join(LEG, 'snap-engine.js'));
-const fitting = await import(path.join(LEG, 'fitting-solver.js'));
-const bomCalc = await import(path.join(LEG, 'bom-calculator.js'));
-const geometry = await import(path.join(LEG, 'geometry.js'));
-const takeoffMod = await import(path.join(LEG, 'takeoff.js'));
-const network = await import(path.join(LEG, 'network.js'));
-const snapMod = await import(path.join(LEG, 'snap.js'));
-const coordUtils = await import(path.join(LEG, 'coordinate-utils.js'));
-const config = await import(path.join(LEG, 'config.js'));
-const diamReg = await import(path.join(LEG, 'diameter-registry.js'));
-const cmdStack = await import(path.join(LEG, 'command-stack.js'));
-const markerModel = await import(path.join(LEG, 'marker-model.js'));
-const projectIo = await import(path.join(LEG, 'project-io.js'));
-const csvExport = await import(path.join(LEG, 'csv-export.js'));
-const ifcExporter = await import(path.join(LEG, 'ifc-exporter.js'));
+const importLeg = (file) => import(pathToFileURL(path.join(LEG, file)).href);
+
+const snapEngine = await importLeg('snap-engine.js');
+const fitting = await importLeg('fitting-solver.js');
+const bomCalc = await importLeg('bom-calculator.js');
+const geometry = await importLeg('geometry.js');
+const takeoffMod = await importLeg('takeoff.js');
+const network = await importLeg('network.js');
+const snapMod = await importLeg('snap.js');
+const coordUtils = await importLeg('coordinate-utils.js');
+const config = await importLeg('config.js');
+const diamReg = await importLeg('diameter-registry.js');
+const cmdStack = await importLeg('command-stack.js');
+const markerModel = await importLeg('marker-model.js');
+const projectIo = await importLeg('project-io.js');
+const csvExport = await importLeg('csv-export.js');
+const ifcExporter = await importLeg('ifc-exporter.js');
 
 const pt = (x, y, z = 0) => ({ x, y, z });
 const fromArr = (a) => pt(a[0], a[1], a[2] ?? 0);
