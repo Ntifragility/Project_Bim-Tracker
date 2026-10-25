@@ -10,7 +10,7 @@
 pub const NETWORK_VERSION: u32 = 1;
 
 /// One node in original IFC coordinates (metres, Z-up).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Node {
     pub id: String,
     pub x: f64,
@@ -19,7 +19,7 @@ pub struct Node {
 }
 
 /// One conduit run: ordered node ids plus display metadata.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Run {
     pub id: String,
     pub name: String,
@@ -29,7 +29,7 @@ pub struct Run {
 }
 
 /// The network state (legacy `createNetwork` shape parity).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Network {
     pub version: u32,
     pub stick_length: f64,
@@ -39,7 +39,7 @@ pub struct Network {
 }
 
 /// Network error (legacy throw-message parity).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct NetError {
     /// Human-readable reason, mirroring the legacy throw text.
     pub message: String,
@@ -299,8 +299,23 @@ pub fn validate_network(data: &NetworkFile) -> Result<Network, NetError> {
     })
 }
 
-/// Serde-free file shape for [`validate_network`] (TS owns JSON parsing).
-#[derive(Debug, Clone, Default, PartialEq)]
+/// Convert a live [`Network`] back to the file shape (binding round-trips).
+#[must_use]
+pub fn network_to_file(net: &Network) -> NetworkFile {
+    NetworkFile {
+        version: net.version,
+        frame: "ifc-original".to_string(),
+        units: "m".to_string(),
+        stick_length: net.stick_length,
+        nodes: net.nodes.clone(),
+        runs: net.runs.clone(),
+        next_id: net.next_id,
+    }
+}
+
+/// File shape for [`validate_network`] (TS owns JSON parsing; binding
+/// re-emits this shape so mutate round-trips).
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct NetworkFile {
     pub version: u32,
     pub frame: String,

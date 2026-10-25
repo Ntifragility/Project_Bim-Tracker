@@ -7,7 +7,7 @@
 use crate::vec3::{self, Vec3};
 
 /// Result of [`closest_on_segment`].
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ClosestPoint {
     /// Closest point on the segment.
     pub point: Vec3,

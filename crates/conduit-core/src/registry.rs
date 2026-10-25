@@ -9,7 +9,7 @@
 //! TS-side (conduit `io.json` R8).
 
 /// One trade-size entry.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Diameter {
     pub id: String,
     pub label: String,

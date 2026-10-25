@@ -19,7 +19,7 @@ use std::ops::{Add, Sub};
 pub const NORMALIZE_EPSILON: f64 = 1e-7;
 
 /// 3D point / direction vector in original IFC coordinates (metres, Z-up).
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Vec3 {
     pub x: f64,
     pub y: f64,
