@@ -1,7 +1,8 @@
 # tray / safe-ifc-editor: Safe IFC Editor and manual metadata (task 7.4)
 
-Status: draft
+Status: approved (owner D-rulings 2026-10-25; finalized 2026-10-26 on spec/safe-editor-final)
 Branch: `app/safe-ifc-editor`
+Owner rulings applied: **D6** 7.1 done (merged PR #32 — Properties Panel lives at `src/ui/properties-panel.js`, Q1 closed); **D7a** 8.1 gate waits for 7.4 (Q3 closed); colour-entity allocation **stays TS-side permanently** (Q2 closed — `jsOnly` boundary, matches `takeoff-io.md` R7 + closeout §C).
 Owner folders: `src/ifc/ifc-safe-editor.*` + its UI modules (never `src/main.js`),
 `docs/specs/tray/`
 
@@ -21,7 +22,7 @@ modules before this wires into them.
   implemented and tested in `crates/ifc-io/src/{step,naming,value}.rs`.
 - **Task 7.1 (`app/split-main-js`)**: properties-panel, safe-editor panel,
   model loader as separate modules under `src/ui/`.
-  **Currently disputed — verify 7.1 done before starting this task.**
+  **Settled 2026-10-26: 7.1 done (PR #32 merged, `src/main.js` 153 lines, `src/ui/properties-panel.js` ~620 lines, D6).**
 - **Task 5.1 (`tray-tagging`)**: assignment state + validator feed the editor's
   integrity checks; editor never reimplements them.
 
@@ -99,11 +100,7 @@ modules before this wires into them.
   (`format_typed_value`, `is_writable_pset`); vectors `spec/vectors/ifc/
   {step,naming,value}.json`.
 
-## 7. Open questions
-
-1. 7.1 done-or-reopen must be settled before this starts (Properties Panel
-   location depends on it).
-2. Colour-entity allocation stays TS-side permanently, or moves to `ifc-io`
-   when binary parity is proven? Default: stays TS-side (current `jsOnly`).
-3. Does 8.1 (parity gate) wait for this task? Default: yes (Safe Editor is
-   default in-scope) — owner confirms.
+## 7. Open questions — resolved by owner 2026-10-25
+1. 7.1 done (PR #32 merged) — Properties Panel at `src/ui/properties-panel.js` confirmed. CLOSED.
+2. Colour-entity allocation stays TS-side permanently (`jsOnly`). CLOSED.
+3. 8.1 gate waits for 7.4 (D7a). CLOSED.
