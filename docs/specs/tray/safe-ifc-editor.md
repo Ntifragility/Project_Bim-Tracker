@@ -1,20 +1,50 @@
-# Spec: Safe IFC Editor and Manual Metadata (Task 7.4)
+# tray / safe-ifc-editor: Safe IFC Editor and manual metadata (task 7.4)
+
+Status: draft
+Branch: `app/safe-ifc-editor`
+Owner folders: `src/ifc/ifc-safe-editor.*` + its UI modules (never `src/main.js`),
+`docs/specs/tray/`
 
 ## 1. Overview
-Safe IFC Editor enables editing properties and appearance styles directly on IFC models without corrupting original geometric representations or breaking STEP file encoding.
+
+Safe IFC Editor enables editing properties and appearance styles directly on
+IFC models without corrupting original geometric representations or breaking
+STEP file encoding. Ported last: it reuses `ifc-io` (3.2) and must wait for
+7.1 (UI separation) — the Properties Panel and export triggers must be clean
+modules before this wires into them.
 
 ## 2. Dependencies
-- **Task 3.2 (`rust/ifc-io`)**: Low-level parsing and rewriting of IFC STEP physical files in Rust/Wasm.
-- **Task 7.1 (`app/split-main-js`)**: Clean UI separation of model inspection, property editing dialogs, and export triggers.
+
+- **Task 3.2 (`rust/ifc-io`)**: STEP primitives (`escape_step`,
+  `entity_ids`, `find_data_terminator`), export naming (`edited_name`),
+  typed-value table (`format_typed_value`, `is_writable_pset`). All
+  implemented and tested in `crates/ifc-io/src/{step,naming,value}.rs`.
+- **Task 7.1 (`app/split-main-js`)**: properties-panel, safe-editor panel,
+  model loader as separate modules under `src/ui/`.
+  **Currently disputed — verify 7.1 done before starting this task.**
+- **Task 5.1 (`tray-tagging`)**: assignment state + validator feed the editor's
+  integrity checks; editor never reimplements them.
 
 ## 3. Scope & Rules
-1. **Non-destructive**: Edits never overwrite the original IFC file in-place; export always uses the `-edited.ifc` suffix convention (`editedIfcFileName`).
-2. **Strict Property Whitelist**:
-   - Only edits properties inside whitelisted sets (`BIM_TRACKER_EDIT` or `COSAPI_[A-Z0-9_]+`).
-   - Standard value types supported: `IFCLABEL`, `IFCTEXT`, `IFCIDENTIFIER`, `IFCBOOLEAN`, `IFCINTEGER`, `IFCREAL`, `IFCDATE`, `IFCDATETIME`.
-3. **Appearance Styling**:
-   - Updates `IFCSTYLEDITEM` and `IFCSURFACESTYLE` to apply custom colors to IFC mapped representations safely.
-4. **Wasm Bridge Contract (Target)**:
+
+1. **Non-destructive**: edits never overwrite the original IFC file in-place;
+   export always uses the `-edited.ifc` suffix convention (`edited_name` in
+   `ifc-io`, legacy `editedIfcFileName` parity: `*.ifc` → `*_edited.ifc`,
+   anything else appends; default `model.ifc`).
+2. **Strict property whitelist**:
+   - Only NEW properties inside whitelisted sets (`BIM_TRACKER_EDIT` or
+     `COSAPI_[A-Z0-9_]+`, case-insensitive — `is_writable_pset` parity).
+     Updates to EXISTING properties are allowed in any pset.
+   - Typed values per `format_typed_value` parity: `IFCLABEL`, `IFCTEXT`,
+     `IFCIDENTIFIER`, `IFCBOOLEAN`, `IFCINTEGER`, `IFCREAL`, `IFCDATE`,
+     `IFCDATETIME`. Unknown type → `Err`, never a panic.
+3. **Appearance styling**: updates `IFCSTYLEDITEM` / `IFCSURFACESTYLE` chains to
+   apply custom colours to mapped representations safely (direct items and
+   `IfcMappedItem` sources). Colour/style entity-id allocation stays TS-side
+   (`jsOnly` boundary); the colour *plan* (hex validation, transparency clamp)
+   follows `ifc-io` value-table rules.
+4. **Wasm bridge contract (target)** — `ifc-io` Wasm exposes text-plan
+   functions; TS applies the splice (STEP full-text rendering stays TS-side):
    ```ts
    interface PropertyEdit {
      expressId: number;
@@ -29,13 +59,51 @@ Safe IFC Editor enables editing properties and appearance styles directly on IFC
      colorHex: string;
    }
 
-   function applySafeEdits(
-     sourceBytes: Uint8Array,
-     edits: { propertyEdits?: PropertyEdit[]; colorEdits?: AppearanceEdit[] }
-   ): { bytes: Uint8Array; applied: number[]; skipped: number[] };
-   ```
+    function applySafeEdits(
+      sourceBytes: Uint8Array,
+      edits: { propertyEdits?: PropertyEdit[]; colorEdits?: AppearanceEdit[] }
+    ): { bytes: Uint8Array; applied: number[]; skipped: number[] };
+    ```
+   Until `ifc-io` Wasm reaches binary parity, calls delegate to the current TS
+   implementation `applySafeIfcEdits` in `src/ifc/ifc-safe-editor.js`.
 
-## 4. UI Integration
-- In the tray viewer, when an element is selected, the Properties Panel allows adding or editing metadata fields.
-- On "Export Edited IFC", `applySafeIfcEdits` generates the unified edited IFC download.
-- Currently powered by `src/ifc/ifc-safe-editor.js`; once Task 3.2 is published, calls delegate to the Rust/Wasm implementation with exact binary parity.
+## 4. UI integration
+
+- In the tray viewer, when an element is selected, the Properties Panel allows
+  adding or editing metadata fields (whitelist + type table enforced; rejected
+  edits explain why, they never silently drop).
+- On "Export Edited IFC", the editor generates the unified edited IFC download
+  (`-edited.ifc` suffix, source file byte-identical).
+- Geometry is never touched: only `IFCPROPERTYSINGLEVALUE` values and style
+  chains change; representation items keep their entity ids.
+
+## 5. Acceptance criteria
+
+| Input / Action | Expected result |
+|---|---|
+| Edit an existing property value | new value in the correct pset, valid STEP, geometry unchanged |
+| Add a property to `BIM_TRACKER_EDIT` / `COSAPI_*` | created, typed correctly (`IfcLabel(.T.)` etc. per value table) |
+| Add a property to any other pset | rejected with whitelist error |
+| Set an appearance colour | direct + mapped items recoloured, items restorable |
+| Export | file named `*_edited.ifc`, source file byte-identical |
+| `npm test` + `npm run build` | green |
+
+## 6. Parity reference
+
+- `legacy/src/ifc/ifc-safe-editor.js` (383 lines: `decodeIfc`,
+  `escapeStepString`/`unescapeStepString`, `findDataTerminator`,
+  `entityIndex`, `parsePropertyModel`, `formatTypedValue`,
+  `shapeItemsForElement` incl. `IfcMappedItem` walk, `updateExistingStyles`,
+  `editedIfcFileName`, `applySafeIfcEdits`).
+- `crates/ifc-io` (plan side): `step`, `naming.edited_name`, `value`
+  (`format_typed_value`, `is_writable_pset`); vectors `spec/vectors/ifc/
+  {step,naming,value}.json`.
+
+## 7. Open questions
+
+1. 7.1 done-or-reopen must be settled before this starts (Properties Panel
+   location depends on it).
+2. Colour-entity allocation stays TS-side permanently, or moves to `ifc-io`
+   when binary parity is proven? Default: stays TS-side (current `jsOnly`).
+3. Does 8.1 (parity gate) wait for this task? Default: yes (Safe Editor is
+   default in-scope) — owner confirms.
