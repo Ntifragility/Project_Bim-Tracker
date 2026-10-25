@@ -1,7 +1,7 @@
 # conduit / conduit-wasm
-Status: approved (owner D-rulings 2026-10-25; spec written 2026-10-26)
-Branch: spec/conduit-wasm        Owner folders: docs/specs/conduit/
-Code landing: rust/conduit-wasm (follows this spec; owned folders: bindings/conduit-wasm/, spec/vectors/conduit/ only for runner glue)
+Status: implemented (2026-10-26: 4.6 landed, 43/43 wasm vectors + JS parity green)
+Branch: rust/conduit-wasm        Owner folders: bindings/conduit-wasm/, crates/conduit-core/ (serde derives + network_to_file only), spec/vectors/conduit/ (runner glue), docs/specs/conduit/
+Code landing: rust/conduit-wasm (this branch). App flag factory is the follow-up `app/conduit-wasm-flag` task.
 
 ## Goal
 Expose the finished `conduit-core` (4.1–4.5: network, snap, fitting, BOM, takeoff, history, registry) to `apps/conduit-takeoff` through a thin `wasm-bindgen` binding, behind a runtime flag so the app can switch between the legacy `@conduit-core` JS package and the Wasm core without behavior change.
@@ -67,6 +67,7 @@ pub fn registry_list() -> String            // DEFAULT_DIAMETERS JSON
 - Rust: `crates/conduit-core/src/*.rs` (all 165 vectors green in `cargo test`).
 - Spec chain: `network.md`, `snap.md`, `fitting.md`, `bom.md` (D1/D3), `takeoff-io.md` (R7 boundary).
 
-## Open questions / [UNVERIFIED]
-- **Q1:** `history_step` shape (op vocabulary) is fixed at landing from `history.rs` exports — spec allows the exact op names to settle in code + vectors glue.
-- **Q2:** Wasm vector runner (node vs `wasm-pack test`) chosen at landing; either must run the same 165 cases.
+## Open questions — resolved at landing (2026-10-26)
+- **Q1:** `history_step` vocabulary fixed: `execute {label} / undo / redo / clear / with_depth {max_depth}` (from `history.rs` exports). CLOSED.
+- **Q2:** Wasm vector runner = node + wasm-pack output (`scripts/run-conduit-wasm-vectors.mjs`: 43/43 incl. JS↔Wasm takeoff parity). CLOSED.
+- Core touch: `serde` derives on transfer structs + `network_to_file` helper only — no logic change; all conduit-core tests still green. `Network` serializes via `network_to_file` so mutate round-trips keep `frame`/`units`.

@@ -112,7 +112,7 @@ pub fn size_to_mm(size: &str) -> Option<f64> {
 }
 
 /// Per-run takeoff (legacy `computeRunTakeoff` parity).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RunTakeoff {
     pub length: f64,
     pub sticks: u32,
@@ -120,7 +120,7 @@ pub struct RunTakeoff {
 }
 
 /// Full takeoff (legacy `computeTakeoff` parity, minimal shape).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Takeoff {
     pub stick_length: f64,
     pub runs: Vec<TakeoffRun>,
@@ -129,7 +129,7 @@ pub struct Takeoff {
 }
 
 /// One per-run row: `{id, name, size, system, length, sticks, points}`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TakeoffRun {
     pub id: String,
     pub name: String,
@@ -141,7 +141,7 @@ pub struct TakeoffRun {
 }
 
 /// One per-size summary row.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TakeoffSize {
     pub size: String,
     pub runs: usize,
@@ -150,7 +150,7 @@ pub struct TakeoffSize {
 }
 
 /// Grand totals.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TakeoffTotals {
     pub runs: usize,
     pub length: f64,

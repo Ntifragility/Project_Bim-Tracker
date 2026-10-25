@@ -13,7 +13,7 @@ const RAD_TO_DEG: f64 = 180.0 / std::f64::consts::PI;
 const EPSILON: f64 = 1e-7;
 
 /// NEC Chapter 9 Table 2 row (legacy `NEC_BEND_TABLE` parity).
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct NecBendRow {
     pub trade_size: &'static str,
     pub label: &'static str,
@@ -101,7 +101,7 @@ pub const NEC_BEND_TABLE: [NecBendRow; 10] = [
 pub const DEFAULT_BEND_RADIUS_M: f64 = 0.1143;
 
 /// Bend radius query: trade-size string or diameter in mm.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum NecQuery {
     TradeSize(String),
     Mm(f64),
@@ -152,7 +152,7 @@ pub fn bend_angle(p1: Vec3, corner: Vec3, p2: Vec3) -> f64 {
 }
 
 /// Solved elbow fillet (legacy `solveElbowFitting` shape parity).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ElbowSolution {
     pub valid: bool,
     pub straight: bool,
@@ -234,7 +234,7 @@ pub fn solve_elbow(
 }
 
 /// One bend in a run (legacy `bends[]` entry parity).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BendInfo {
     pub index: usize,
     pub angle_deg: f64,
@@ -242,7 +242,7 @@ pub struct BendInfo {
 }
 
 /// Run-bend analysis (legacy `analyzeRunBends` parity).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RunBends {
     pub total_deg: f64,
     pub fittings: usize,
@@ -283,7 +283,7 @@ pub fn analyze_run_bends(points: &[Vec3]) -> RunBends {
 }
 
 /// Auto-riser node (legacy riser-node shape parity).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RiserNode {
     pub point: Vec3,
     pub is_riser: bool,

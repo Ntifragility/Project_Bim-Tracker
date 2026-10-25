@@ -14,7 +14,7 @@ const RAD_TO_DEG: f64 = 180.0 / std::f64::consts::PI;
 const EPSILON: f64 = 1e-7;
 
 /// Snap result type (legacy `snapType` parity).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SnapType {
     Endpoint,
     Midpoint,
@@ -25,7 +25,7 @@ pub enum SnapType {
 }
 
 /// One snap candidate (legacy `SnapCandidate` parity).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SnapCandidate {
     pub point: Vec3,
     pub snap_type: SnapType,
@@ -37,14 +37,14 @@ pub struct SnapCandidate {
 }
 
 /// A snap target node.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SnapNode {
     pub id: String,
     pub point: Vec3,
 }
 
 /// A snap target segment.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SnapSegment {
     pub id: String,
     pub start: Vec3,
@@ -52,7 +52,7 @@ pub struct SnapSegment {
 }
 
 /// Explicit snap configuration (legacy `SnapEngine` constructor parity).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SnapConfig {
     pub tolerance_m: f64,
     pub angular_tolerance_deg: f64,
@@ -331,7 +331,7 @@ pub fn resolve(
 }
 
 /// Network-bound snap hit (legacy `findSnap` result parity).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum FindSnapHit {
     Node {
         node_id: String,
