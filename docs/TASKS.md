@@ -63,7 +63,7 @@ Phases and dependencies come from `ARCHITECTURE.md` section 7. Only one agent at
 ## Phase 7: Apps
 | ID | Task | Branch | Depends on | Owner | Status |
 |---|---|---|---|---|---|
-| 7.1 | Split `src/main.js` into feature modules (tray app) | `app/split-main-js` | 1.1 |  | todo |
+| 7.1 | Split `src/main.js` into feature modules (tray app) | `app/split-main-js` | 1.1 | antigravity | done |
 | 7.2 | Split conduit app UI modules | `app/conduit-ui-split` | 1.1 |  | todo |
 | 7.3 | `packages/excel-io` optional package (workbook upload, mapping export). The live Excel bridge stays frozen | `app/excel-io` | 7.1 |  | todo |
 | 7.4 | Safe IFC Editor and manual metadata (port last) | `app/safe-ifc-editor` | 3.2, 7.1 | | todo |
