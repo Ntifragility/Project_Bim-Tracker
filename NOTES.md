@@ -1,5 +1,40 @@
 # NOTES: deviations, blockers, open questions
 
+## 2026-10-26: SPECS close-out run (owner: finish the architecture + specs set)
+- D1-D8 rulings (owner, 2026-10-25): D1 couplings BOM max(0,sticks-1); D2 NEC
+  truncated 4in pinned; D3 100ft kept legacy-labeled; D4 Z-up f64 confirmed;
+  D5 git rm no rewrite; D6 7.1 done / 7.2 todo / 7.3 done; D7a gate waits 7.4;
+  D7b synthetic fixture waived; D8 infra/* branch, owner merges.
+- Step 1: PR #29 reworked (7.1 stays done, only 7.2/7.3 re-opened) + ready-note
+  for owner merge; PR #31 closed unmerged (stale 7.1 claim, fulfilled by #32);
+  PR #30 left for owner merge (D-rulings posted as comment).
+- Step 3: PR #33 (fix/board-sync-72-73) merged as `cd81800` (self-merge,
+  low-risk fix/*; CI baseline+rust SUCCESS, MERGEABLE). Evidence: conduit
+  main.js 897 lines unsplit -> 7.2 todo; excel-io wired (readWorkbook in
+  excel-panel, exportTagMapping in tagging-panel), npm 92/92, both builds
+  green -> 7.3 stays done. Revert: `git revert cd81800`.
+- Step 4: 4 new specs merged to main (self-merge, low-risk spec/*, all CI
+  green): #34 conduit-ui-split (7.2, `da9ec2b`), #35 conduit-wasm (4.6,
+  `2b641bd`), #37 excel-io base (7.3, `c74d9df`), #39 viewer gaps — 4 Phase-B
+  specs (`d38b491`). Reverts: `git revert <SHA>` each.
+- Step 4 stacked on #30 (merge after #30, in order #30 -> #36 -> #38 -> #40):
+  #36 tray-wasm final (D4, per-module flag), #38 parity-gate + closeout final
+  (D1-D4,D6,D7), #40 safe-editor final (D6,D7a). All rebased onto
+  main@d38b491 conflict-free 2026-10-26. #30 itself rebased too.
+- Step 5: PR #41 infra/arch-v1 OPEN (high-risk, owner merges, agent stopped).
+  ARCHITECTURE v0.1 -> v1.0: viewport-core map, rules 9+10, conduit TS-side
+  boundary, as-built engine iface, Phase-B built-vs-spec split, hygiene done
+  (P22115 pair + legacy pkg wasm git-rm'd, *.sharedparameters.txt ignored),
+  all 11 Qs resolved. Full DoD green in worktree (fmt, clippy -D warnings,
+  cargo 40+35+32+1x4, both wasm-pack, npm 92/92, both builds, boundaries OK).
+  Cargo.lock wasm-build churn reverted before commit.
+- Remaining for owner: merge #29, #30, #36, #38, #40 (specs, in that order),
+  #41 (infra). Then code lanes: app/conduit-ui-split (7.2), rust/conduit-wasm
+  flag (4.6), 5.1/5.2 + 5.3, app/safe-ifc-editor (7.4), infra/remove-legacy
+  8.1 (deps must add 7.4 per D7a — gate PR updates TASKS.md).
+- No blockers. Root THINKING_SPECS.md (untracked, stale checkout) still needs
+  owner `rm` when the infra/agent-autonomy checkout retires.
+
 ## 2026-10-23: smoke test on infra/agent-autonomy @ 80d0151 (Layer 1+2 green)
 - Layer 1 (DoD parity): `cargo fmt --check` clean, `cargo clippy
   --workspace --all-targets -- -D warnings` clean, `cargo test --workspace`:
