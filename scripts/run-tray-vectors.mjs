@@ -97,6 +97,13 @@ function resolveNodeId(graph, ref) {
 
 async function runCase(vecFile, c) {
   const id = `${vecFile}:${c.id}`;
+  // rustOnly: no importable legacy counterpart (new UI-state behaviour with no
+  // legacy JS function, e.g. tagging-state.json). Verified in Rust
+  // (`cargo test -p tray-tagging`); skipped here, mirroring the jsOnly idea.
+  if (c.rustOnly) {
+    pass++;
+    return;
+  }
   const tol = c.tol ?? 1e-9;
   try {
     switch (c.fn) {

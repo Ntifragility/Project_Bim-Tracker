@@ -1,0 +1,229 @@
+{
+  "cases": [
+    {
+      "expected": {
+        "elementTag": "PT1.01.09",
+        "source": "pending",
+        "wasSaved": true
+      },
+      "fn": "effectiveAssignments",
+      "id": "state-overlay-pending-modify",
+      "input": {
+        "pending": [
+          {
+            "assignment": {
+              "componentId": "PT1.01.09",
+              "delete": false,
+              "elementKind": "tray",
+              "elementTag": "PT1.01.09",
+              "localId": 1,
+              "modelId": "m1",
+              "systemTag": "PT1"
+            }
+          }
+        ],
+        "saved": [
+          {
+            "componentId": "PT1.01.01",
+            "elementTag": "PT1.01.01",
+            "localId": 1,
+            "modelId": "m1",
+            "systemTag": "PT1"
+          }
+        ]
+      },
+      "rustOnly": true
+    },
+    {
+      "expected": {
+        "keptLocalIds": [
+          2
+        ]
+      },
+      "fn": "effectiveAssignments",
+      "id": "state-pending-delete-removes-key",
+      "input": {
+        "pending": [
+          {
+            "assignment": {
+              "delete": true,
+              "localId": 1,
+              "modelId": "m1"
+            }
+          }
+        ],
+        "saved": [
+          {
+            "localId": 1,
+            "modelId": "m1",
+            "systemTag": "PT1"
+          },
+          {
+            "localId": 2,
+            "modelId": "m1",
+            "systemTag": "PT1"
+          }
+        ]
+      },
+      "rustOnly": true
+    },
+    {
+      "expected": {
+        "restored": 1,
+        "restoredTags": [
+          "PT1.01.01",
+          "PT1.01.02"
+        ],
+        "snapshotOverwritten": true
+      },
+      "fn": "applyBatch+undoBatch",
+      "id": "state-batch-apply-and-undo",
+      "input": {
+        "batch1": [
+          {
+            "elementTag": "PT1.01.01",
+            "localId": 1,
+            "modelId": "m1"
+          },
+          {
+            "elementTag": "PT1.01.02",
+            "localId": 2,
+            "modelId": "m1"
+          }
+        ],
+        "batch2": [
+          {
+            "elementTag": "PT1.01.05",
+            "localId": 1,
+            "modelId": "m1"
+          }
+        ]
+      },
+      "rustOnly": true
+    },
+    {
+      "expected": {
+        "conflictDifferent": "PT9.01.01",
+        "conflictSame": null,
+        "conflictUnknown": null
+      },
+      "fn": "previewConflict",
+      "id": "state-preview-conflict",
+      "input": {
+        "effective": [
+          {
+            "componentId": "PT9.01.01",
+            "elementTag": "PT9.01.01",
+            "localId": 7,
+            "modelId": "m1"
+          }
+        ],
+        "probes": [
+          {
+            "generated": "pt9.01.01",
+            "localId": 7
+          },
+          {
+            "generated": "PT1.01.01",
+            "localId": 7
+          },
+          {
+            "generated": "PT1.01.01",
+            "localId": 99
+          }
+        ]
+      },
+      "rustOnly": true
+    },
+    {
+      "expected": {
+        "order": [
+          "PT1.01.01",
+          "PT1.01.02",
+          "PT2.01.01"
+        ]
+      },
+      "fn": "buildRegisterRows",
+      "id": "rows-register-sorted",
+      "input": {
+        "effective": [
+          {
+            "elementTag": "PT2.01.01",
+            "localId": 3,
+            "modelId": "m1",
+            "source": "pending",
+            "systemTag": "PT2"
+          },
+          {
+            "elementTag": "PT1.01.02",
+            "localId": 1,
+            "modelId": "m1",
+            "source": "ifc",
+            "systemTag": "PT1"
+          },
+          {
+            "elementTag": "PT1.01.01",
+            "localId": 2,
+            "modelId": "m1",
+            "source": "ifc",
+            "systemTag": "PT1"
+          }
+        ]
+      },
+      "rustOnly": true
+    },
+    {
+      "expected": {
+        "kind": {
+          "fitting": 1,
+          "tray": 2
+        },
+        "model": {
+          "m1.ifc": 2,
+          "m2.ifc": 1
+        },
+        "source": {
+          "ifc": 2,
+          "pending": 1
+        },
+        "system": {
+          "PT1": 2,
+          "PT2": 1
+        }
+      },
+      "fn": "buildSummaryRows",
+      "id": "rows-summary-counts",
+      "input": {
+        "effective": [
+          {
+            "elementKind": "tray",
+            "localId": 1,
+            "modelId": "m1",
+            "source": "ifc",
+            "systemTag": "PT1"
+          },
+          {
+            "elementKind": "tray",
+            "localId": 2,
+            "modelId": "m1",
+            "source": "pending",
+            "systemTag": "PT1"
+          },
+          {
+            "elementKind": "fitting",
+            "localId": 5,
+            "modelId": "m2",
+            "source": "ifc",
+            "systemTag": "PT2"
+          }
+        ]
+      },
+      "rustOnly": true
+    }
+  ],
+  "feature": "tagging-state",
+  "module": "tray",
+  "notes": "Assignment-state (effective overlay, pending delete, batch apply/undo, preview conflict) + register/summary row builders. Added by task 5.1; mirrors crates/tray-tagging state/rows tests. Cases are rustOnly (no importable legacy JS counterpart: the state logic lives in DOM-coupled UI closures); skipped by scripts/run-tray-vectors.mjs, verified by cargo test -p tray-tagging.",
+  "source": "src/ui/tagging-panel.js effective/undo logic + src/ui/system-manager.js summaries + docs/specs/tray/tagging.md R12-R13",
+  "units": "unit-free strings"
+}
