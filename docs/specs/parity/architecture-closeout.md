@@ -1,7 +1,6 @@
 # Architecture close-out: `ARCHITECTURE.md` deltas to fold in (owner merges)
 
-Status: draft — proposal only. This branch (`spec/arch-parity-closeout`) may not
-edit `ARCHITECTURE.md` itself (high-risk per `AGENTS.md`). Each item below is an
+Status: approved deltas (owner D-rulings 2026-10-25 applied 2026-10-26 on spec/parity-final). This branch (`spec/parity-final`, from `spec/arch-parity-closeout`) may not edit `ARCHITECTURE.md` itself (high-risk per `AGENTS.md`). Each item below is an
 exact delta for the owner (or an `infra/*` branch) to apply. All statements were
 verified against `origin/main` (`23079d3`) in this worktree.
 
@@ -105,18 +104,16 @@ here with unchanged behaviour") with the as-built interface on main:
   variants + `docs/claims/README.md` churn live in lane `spec/parallel-docs-v03`;
   do not touch here.
 
-## F. Section 11 open questions — refresh
-
-- Q2 (history rewrite): still open.
-- Q4 (parity reference data): half-resolved — `survey-box.ifc` covers the small
-  public IFC; a recorded conduit project file for CSV/IFC comparison is still
-  missing.
-- Add (from audit; owner rules before 5.x/7.4 build): couplings formula
-  (`ceil+elbows` vs `max(0,sticks-1)` vs out-of-scope); NEC Table 2 edition
-  (5"/6" rows?); 100 ft / 30.48 m straight-pull limit (keep as legacy heuristic
-  or drop; never label NEC); routing coordinate frame (confirm IFC Z-up f64,
-  conversion point in TS adapter); P22115 removal confirmation; 7.1–7.3
-  done-or-reopen confirmation.
+## F. Section 11 open questions — resolved by owner 2026-10-25
+- Q2 (history rewrite): **no rewrite** (D5: `git rm` normal commit only).
+- Q4 (parity reference data): `survey-box.ifc` covers the small public IFC; recorded conduit project file **waived** (D7b) — synthetic fixture governs gate check 9.
+- Couplings formula: **BOM `max(0,sticks-1)`** governs (D1). Python overlay `ceil+elbows` superseded.
+- NEC Table 2: **truncated at 4″ pinned** (D2); sizes above borrow the 4″ row, documented.
+- 100 ft / 30.48 m pull limit: **kept as legacy heuristic, never labeled NEC** (D3).
+- Routing frame: **IFC Z-up f64 confirmed**, conversion in TS adapter (D4).
+- P22115 removal: **`git rm`, no rewrite** (D5).
+- 7.1–7.3: **7.1 done, 7.2 re-opened todo, 7.3 verified done** (D6, PR #33 merged).
+- 8.1 deps: **include 7.4** (D7a); 7.2 code landing + 7.4 port precede the gate.
 - Resolved since v0.1 (close): unit policy (metres), excel bridge (frozen),
   tray/conduit `ifc-io` overlap (one crate, `ifc/base.md`), GUID determinism
   (injected fn), `vec` duplication (cleaned in 3.1), extractor contract (TS
@@ -128,6 +125,5 @@ here with unchanged behaviour") with the as-built interface on main:
   vectors reused (network 23 + snap 24 + takeoff-io 6 + fitting 15 + bom 8).
 - 5.3 acceptance: `tray-wasm` exports + `apps/tray-viewer` flag switch; vectors
   tagging 33 + validator 7 + routing 26 (`ifc-io.json` jsOnly, never ported).
-- 8.1 deps: add 7.4 (Safe Editor is default in-scope, ported last) — currently
-  `4.6, 5.3, 6.2, 7.1, 7.2`. Owner decides.
-- 7.4 deps `3.2, 7.1` stand, but 7.1 must be verified done first (see blocker).
+- 8.1 deps: add 7.4 → `4.6, 5.3, 6.2, 7.1, 7.2, 7.4` (D7a decided; apply in the gate PR).
+- 7.4 deps `3.2, 7.1` stand (7.1 merged PR #32, D6).
