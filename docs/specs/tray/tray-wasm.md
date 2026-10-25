@@ -1,7 +1,8 @@
 # tray / tray-wasm binding + app flag switch (task 5.3)
 
-Status: draft
+Status: approved (owner D-rulings 2026-10-25; finalized 2026-10-26 on spec/tray-wasm-final)
 Branch: `rust/tray-wasm`
+Owner rulings applied: **D4** routing frame confirmed IFC Z-up f64 (TS `ifc-extractor` adapter owns scene Y-up → IFC conversion; binding never converts — R3 now normative, Q2 closed); flag granularity = per-module (tagging, routing) with legacy default until gate (Q1 closed).
 Owner folders: `bindings/tray-wasm/`, `docs/specs/tray/` (shared tray files only;
 never the other lane's vector files), `apps/tray-viewer/`
 
@@ -85,9 +86,6 @@ Run `wasm-pack build` for `bindings/tray-wasm`; `npm test`; `npm run build`
 - Vectors: `spec/vectors/tray/tagging.json`, `validator.json`, `routing.json`
   (`ifc-io.json` jsOnly, excluded).
 
-## Open questions
-
-1. Flag granularity (per-module vs single master flag) — owner decides in the
-   app switch implementation.
-2. Routing frame conversion point — settled in the 5.2 lane spec; repeated here
-   only as a boundary pin.
+## Open questions — resolved by owner 2026-10-25
+1. Flag granularity: per-module (tagging, routing), legacy default until gate. CLOSED.
+2. Routing frame: D4 confirms IFC Z-up f64; conversion in TS `ifc-extractor` adapter. CLOSED.
