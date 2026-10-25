@@ -1,7 +1,6 @@
 # ARCHITECTURE: BIM Tracker rewrite (Rust cores + TypeScript viewer)
 
-Status: **draft v0.1**, 2026-10-19. Derived from `BIM-Tracker_Architecture_Review.md` and the owner's decisions below.
-Anything marked **[ASSUMPTION]** was decided by the reviewer and can be changed by the owner. Anything marked **[UNVERIFIED]** was not read in the review and must be checked inside the relevant spec.
+Status: **v1.0**, 2026-10-26. Promoted from draft v0.1 with owner D1–D8 rulings (2026-10-25) and the parity close-out deltas (`docs/specs/parity/architecture-closeout.md`, approved). `[ASSUMPTION]` markers below are now owner-confirmed unless still flagged; remaining `[UNVERIFIED]` items point at their owning spec.
 
 ---
 
@@ -41,8 +40,10 @@ Three product modules plus shared bases. Dependency direction is **downward only
  apps/tray-viewer        apps/conduit-takeoff            (TS, UI only)
         |                        |
         +------ packages/viewer-core (TS) ------+        shared by both apps
-        |                        |
- bindings/tray-wasm      bindings/conduit-wasm            (Rust, thin wasm-bindgen layer)
+        |              |                         |
+        |     crates/viewport-core (Rust)        |        gesture policy; viewer-core only
+        |              |                         |
+ bindings/tray-wasm  bindings/conduit-wasm            (Rust, thin wasm-bindgen layer)
         |                        |
  crates/tray-tagging     crates/conduit-core              (Rust, product cores)
  crates/tray-routing
@@ -55,13 +56,15 @@ Three product modules plus shared bases. Dependency direction is **downward only
 
 ### Dependency rules (enforced, see section 8)
 1. `geom-core` depends on nothing in this repo.
-2. `ifc-io` may depend on `geom-core` only. **[ASSUMPTION]** a shared IFC base crate is justified because both tray (`src/ifc/*`) and conduit (`ifc-exporter.js`) write IFC; **[UNVERIFIED]** whether their logic really overlaps. If not, split it per module in the spec.
-3. Product cores (`tray-tagging`, `tray-routing`, `conduit-core`) depend only on `geom-core` / `ifc-io`. They must not depend on each other, on the DOM, Three.js or any viewer code.
+2. `ifc-io` may depend on `geom-core` only. One shared IFC base crate is justified by shared STEP primitives + export naming + the typed-value table (closed per `docs/specs/ifc/base.md:16-24`; product pset logic lives in product modules).
+3. Product cores (`tray-tagging`, `tray-routing`, `conduit-core`) depend only on `geom-core` / `ifc-io`. They must not depend on each other, on the DOM, Three.js or any viewer code. (`tray-routing` takes no `ifc-io` edge today.)
 4. **Tray and conduit never import each other.**
-5. `bindings/*` depend only on their own cores and expose plain data types.
+5. `bindings/*` depend only on their own cores and expose plain data types (`tray-wasm` on `tray-tagging` + `tray-routing`; `conduit-wasm` on `conduit-core`).
 6. `viewer-core` depends on That Open / Three.js and on its own internal crate `viewport-core` only. It must not depend on product cores or apps.
 7. Apps may depend on `viewer-core`, bindings and `excel-io`; apps never contain business rules.
 8. `excel-io` depends on nothing in this repo and is never imported by a core or binding.
+9. `viewport-core` depends on nothing in this repo.
+10. Graph data crosses Wasm as arrays/typed arrays, never JS `Map`s (`docs/specs/tray/vectors.md` R9).
 
 ### Repository layout
 ```
@@ -93,8 +96,8 @@ Internal sub-module splits follow the existing file names; contents of most file
 | `ifc-io` | safe property/tag/colour edits, tag extraction, export naming | `src/ifc/ifc-safe-editor.js`, `ifc-tag-exporter.js`, `conduit-core/ifc-exporter.js` |
 | `tray-tagging` | scheme/allocation, classifier, validator | `src/tagging/*`, `src/ifc/tag-validator.js` |
 | `tray-routing` | centerline, graph, pathfinding, diagnostics, continuity check | `packages/routing-core/src/*`, `src/routing/*` (non-UI part) |
-| `conduit-core` | network, command-stack, diameter-registry, marker-model, snap, fitting (NEC bends), bom (stick optimizer), takeoff, csv-export, project-io | `packages/conduit-core/src/*` + four unmerged feature branches |
-| `viewport-core` | pointer/gesture policy (orbit, pan, pivot orbit, click vs drag); used only by `viewer-core` | **already Rust**: `packages/viewport-core` on branch `feature/revit-viewport-controls` (controller.rs + C API) |
+| `conduit-core` | network, history model, registry seed, marker-model (state only), snap (+`find_snap`), fitting (NEC bends), bom (stick optimizer), takeoff | `packages/conduit-core/src/*` + merged snap/fitting/HUD/BOM branches. CSV text, project JSON, SHA-256, STEP overlay text, marker ids/listeners, command-stack closures stay TS-side (`docs/specs/conduit/takeoff-io.md` R7, `io.json` jsOnly) |
+| `viewport-core` | pointer/gesture policy (orbit, pan, pivot orbit, click vs drag); used only by `viewer-core` | **Rust, built**: `crates/viewport-core` (per-instance `viewport_create`/`viewport_destroy` + `viewport_instance_*`, global compat kept); auto-orbit + surface-pick normal in the `viewer-core` interface |
 | routing extractor (stays TypeScript) | reads the loaded model, builds plain vertex arrays; imports Three.js, so it cannot be a core | `src/routing/ifc-extractor.js` |
 
 ---
@@ -124,18 +127,10 @@ Decision **[ASSUMPTION]**: build the "improved engine" as a **layer on top of th
 
 - Pin exact versions of `@thatopen/components`, `components-front`, `fragments`, `web-ifc`, `three`. Upgrades are their own branch with the compatibility tests below.
 - No patches to library code. If a library change is unavoidable, use a documented patch file (`patch-package`) and open an upstream issue/PR. Licenses: That Open and Three.js are MIT; `web-ifc` is MPL-2.0 (relevant only if its own files are modified). Not legal advice.
-- One factory, `createEngine(container, options)`, returning a **stable interface** that hides That Open types from the apps: `loadIfc`, `selection` (get/set/events), `highlight/paint`, `hide/isolate/ghost`, `pick(ndc, {snap})`, `camera` (focus, views), `coordinates` (`toScene` / `toOriginal`), `overlay` (add/remove Three.js groups), `dispose`.
-- Phase A (parity): move the current `src/covillaf/engine.js` + `coordinates.js` + the duplicated Vite asset plugin here with unchanged behaviour. Both apps use it; the `@covillaf` alias disappears.
-- Phase A also takes the generic navigation work from `feature/revit-viewport-controls`: orbit/pan gestures (`viewport-core`), the surface-pick **normal** added to `pick()`, and the auto-orbit currently living in the tray app's `src/main.js`. Conduit-specific decisions (place point, sample elevation, keep the rubber-band while orbiting) stay in conduit.
-- Phase B (improvements, separate specs, **the only new-feature track**), from the owner's own `docs/covillaf-next.md`:
-  - section planes / section box honoured by picking (stock `Clipper` to be evaluated first)
-  - assembly selection that stops at the spatial container; select-similar by IFC class
-  - ghost isolate (chosen system solid, rest faint)
-  - frame cap, lower resolution while the camera moves, WebGL context-loss notice
-  - undo for colour and visibility
-  - PNG export of the current view at a chosen size
-  - IFC-coordinate (Z-up, double precision) positions/lengths in the public API
-- Before writing any custom feature, check whether the installed stock classes already cover it: `Clipper`, `Hider`, `Classifier`, `LengthMeasurement` / `AreaMeasurement` / `VolumeMeasurement`, `SnapResolvers`, `VertexPicker`. Fit **[UNVERIFIED]**.
+- One factory, `createEngine(container, options)` (= `createCovillafEngine`), returning a **stable interface** that hides That Open types from the apps: `loadIfc`, `selection`, `highlight/paint`, `hide/isolate/ghost` (`isolation.ghostIsolate/hardIsolate/resetIsolation/isGhostActive`, ghost = 15% opacity, depthWrite off), `pick(ndc, {snap})` → `{point, snapped, normal}` (world-space normal, clipping planes honoured), `camera` (focus, views), `coordinates` (`toScene` / `toOriginal`, Z-up f64), `overlay` (add/remove Three.js groups), `clipper` (`createPlane/deletePlane/deleteAll/toggle/pickHonorsPlanes`), `autoOrbit` (`start/stop/toggle/isActive/onChange`; app keeps badge/toggle only), `exportPng` (`capturePng/downloadPng`), `dispose`.
+- Phase A (parity, **built**): `packages/viewer-core/src/{engine,coordinates,index,vite-plugin}.js` extracted with unchanged behaviour; both apps use it; the `@covillaf` alias is gone. Viewport gestures from `viewport-core` (per-instance handles) + pick normal + auto-orbit landed.
+- Phase B (improvements, separate specs, **the only new-feature track**), from the owner's own `docs/covillaf-next.md`. Built (specs `Status: done/implemented`): section planes honoured by picking, ghost isolate, PNG export at chosen size. Specced, code todo (`docs/specs/viewer/{perf-budget,undo-appearance,assembly-select,ifc-coords-api}.md`): frame cap + degrade-while-moving + WebGL context-loss notice; undo for colour/visibility; assembly-select stopping at the spatial container + select-similar by IFC class; IFC-coordinate positions/lengths in the public API.
+- Before writing any custom feature, check whether the installed stock classes already cover it: `Clipper`, `Hider`, `Classifier`, `LengthMeasurement` / `AreaMeasurement` / `VolumeMeasurement`, `SnapResolvers`, `VertexPicker`.
 - Compatibility tests: smoke tests that load a small public IFC and check selection, hide and paint through the `viewer-core` interface, so a That Open upgrade that breaks behaviour is caught by CI.
 
 Naming note: the folder currently called `ThatOpenEngine/` is **COVILLAF SIMULATE** (structural analysis), not the That Open Engine. The improved engine is `viewer-core`.
@@ -213,9 +208,9 @@ Every phase-0 failure seen in the review (the broken `main` build) is caught by 
 
 ## 9. Public-repository hygiene (D6)
 
-- No real project files: remove `P22115-CC-2140-07-05*` `.nwc`/`.log.html`/shared-parameter files from the tree; only small, synthetic or explicitly permitted samples in `samples/`. Rewriting git history is a separate, deliberate decision (files already pushed remain in history).
+- No real project files: `P22115-CC-2140-07-05*` `.nwc`/`.log.html`/shared-parameter files removed from the tree (2026-10-26, `git rm`, no history rewrite per owner D5); only small, synthetic or explicitly permitted samples in `samples/`. `*.sharedparameters.txt` is gitignored.
 - No personal email addresses, machine inventories or client names in docs, logbooks or commit metadata. Use a project identity for commits.
-- Keep `.gitignore` for `*.ifc` (models may contain sensitive data).
+- Keep `.gitignore` for `*.ifc` (models may contain sensitive data). Build output (`**/pkg/`, incl. `legacy/packages/viewport-core/pkg/*.wasm`) is not tracked.
 - Record dependency licenses in `docs/licenses.md` (`web-ifc` MPL-2.0 noted).
 
 ---
@@ -226,17 +221,24 @@ Every phase-0 failure seen in the review (the broken `main` build) is caught by 
 |---|---|
 | Full rewrite stalls or regresses behaviour | Legacy frozen and runnable; golden vectors; parity gate; flags to switch per module |
 | "Rust everywhere" hits browser limits | Cores in Rust/Wasm, viewer and UI in TypeScript (section 1) |
-| Rust IFC handling is immature | Keep `web-ifc` for loading/geometry; Rust only for tag/property data logic. Re-check `legacy` approach in the `ifc-io` spec **[UNVERIFIED]** |
+| Rust IFC handling is immature | Keep `web-ifc` for loading/geometry; Rust only for tag/property data logic (closed per `docs/specs/ifc/base.md`) |
 | Wasm size or call overhead | Bulk data as typed arrays; measure before optimizing |
 | Agents collide | Worktrees, one spec per branch, folder ownership in AGENTS.md |
 | Spec drift | Spec updated in the same branch as behaviour changes; vectors in CI |
 | Time cost of a full rewrite | Order by dependency and risk; conduit first because its logic is already pure and tested |
 
-## 11. Open questions for the owner
-1. ~~Unit policy~~ Resolved by the owner (2026-10-19): metres internally; imperial values are constants converted at the edges.
-2. History rewrite for already-pushed sample files: yes/no?
-3. ~~Python `excel-ifc-bridge`~~ Resolved by the owner: frozen, implemented later.
-4. Parity reference data: can a recorded conduit project file and a small public IFC be provided for the smoke tests?
+## 11. Open questions for the owner (all resolved 2026-10-25 unless noted)
+1. ~~Unit policy~~ Resolved (2026-10-19): metres internally; imperial values are constants converted at the edges.
+2. ~~History rewrite~~ Resolved (D5): no rewrite; `git rm` normal commit only.
+3. ~~Python `excel-ifc-bridge`~~ Resolved: frozen, implemented later.
+4. ~~Parity reference data~~ Resolved (D7b): `survey-box.ifc` covers the small public IFC; recorded conduit project file waived — synthetic fixture `spec/vectors/conduit/project-synthetic.json` governs gate check 9.
+5. ~~Couplings formula~~ Resolved (D1): BOM `max(0,sticks-1)` governs; Python overlay `ceil+elbows` superseded.
+6. ~~NEC Table 2 edition~~ Resolved (D2): truncated at 4″ pinned; larger sizes borrow the 4″ row.
+7. ~~100 ft pull limit~~ Resolved (D3): kept as legacy heuristic, never labeled NEC.
+8. ~~Routing frame~~ Resolved (D4): IFC Z-up f64 confirmed; conversion in the TS `ifc-extractor` adapter.
+9. ~~P22115 removal~~ Resolved (D5): removed, no rewrite.
+10. ~~7.1–7.3 status~~ Resolved (D6): 7.1 done, 7.2 re-opened todo, 7.3 verified done.
+11. ~~8.1 gate deps~~ Resolved (D7a): gate waits for 7.4; 8.1 deps `4.6, 5.3, 6.2, 7.1, 7.2, 7.4`.
 
 ---
 
@@ -244,9 +246,9 @@ Every phase-0 failure seen in the review (the broken `main` build) is caught by 
 
 **Keep every old `.md` file; delete none.** Move them into `docs/` with their original names and content unchanged (history and evidence). The living versions are the files under `docs/specs/`; once a spec is approved, add one line at the top of its original: "Superseded by docs/specs/<module>/<file>.md". The other root notes (`EXcel_IFC_Bridge.md`, `FLOATING_TAGS_IMPLEMENTATION_PLAN.md`, `ideas_pending.md`, `conduit-overlay-spec.md`) are also moved into `docs/`, not deleted.
 
-- **`routing-architecture.md`** -> baseline for `docs/specs/tray/routing.md`. The extractor imports Three.js, so it stays a TypeScript adapter that passes plain vertex arrays to `tray-routing`. Its data contract uses JS `Map`s: use arrays/typed arrays across Wasm. The spec must declare the coordinate frame (legacy likely works in scene space, Y-up; this architecture uses IFC Z-up) and units (default tolerance 100 mm = 0.1 m). Keep the principal-axis confidence rule and "report, don't silently connect".
+- **`routing-architecture.md`** -> baseline for `docs/specs/tray/routing.md`. The extractor imports Three.js, so it stays a TypeScript adapter that passes plain vertex arrays to `tray-routing`. Its data contract uses arrays/typed arrays across Wasm (R9, D4). Coordinate frame: IFC Z-up f64 in Rust; the TS `ifc-extractor` adapter owns scene (Y-up) → IFC conversion. Units: default tolerance 100 mm = 0.1 m. Keep the principal-axis confidence rule and "report, don't silently connect".
 - **`tagging-architecture.md`** -> baseline for `docs/specs/tray/tagging.md`. The saved/pending/undo assignment state currently lives in `src/main.js` (e.g. `lastBatchSnapshot`); it becomes a state module in `tray-tagging`. Keep legacy `SystemTag-C001` parsing and scheme v2 (`ElementTag` = `ComponentId`) as vectors. Rust produces the Tag Register and Summary rows; `excel-io` only writes the file.
 - **`revizto-validation.md`** -> evidence for routing vectors (122 leaf segments out of 134 parts; tolerance table 100/500/1000 mm; route #3192 to #3702 = 13.71 m at 1000 mm). The real IFC stays out of git, so public CI uses a small synthetic IFC with the same structure; the real numbers are a local regression check.
 - **`covillaf-next.md`** -> the viewer Phase B backlog (section 5).
 - **`review-12345.md`** -> source of section 1b. Its line about a "remote WebIFC configuration" is outdated: wasm is served locally through `/covillaf/web-ifc/`.
-- **`viewport-core` (existing Rust crate)**: branch `feature/revit-viewport-controls` already contains `packages/viewport-core` (controller.rs ~419 lines, C API, test script). Move it to `crates/viewport-core`; do not commit build output (`pkg/*.wasm` is committed today); the C API keeps global `thread_local` state, so prefer per-instance handles **[UNVERIFIED]**; split generic gestures (viewer) from conduit tool decisions (conduit).
+- **`viewport-core` (Rust crate, built)**: `crates/viewport-core` (per-instance `viewport_create`/`viewport_destroy` + `viewport_instance_*`, global compat kept); generic gestures (viewer) split from conduit tool decisions (conduit). Build output (`pkg/`) is gitignored, never committed.
