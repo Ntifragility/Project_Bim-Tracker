@@ -26,6 +26,9 @@ dist-ssr
 *.nwc
 *.log.html
 
+# Shared-parameter exports may reference real project data (ARCH section 9 hygiene)
+*.sharedparameters.txt
+
 # Python bytecode
 __pycache__/
 *.py[cod]
