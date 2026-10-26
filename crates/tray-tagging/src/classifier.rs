@@ -5,7 +5,8 @@
 //! elements return `kind: None` so the user assigns them explicitly.
 
 /// Classification outcome.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Classification {
     pub kind: Option<String>,
     pub confidence: f64,
@@ -13,7 +14,8 @@ pub struct Classification {
 }
 
 /// Minimal element metadata for classification.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ElementRef {
     pub name: String,
     pub ifc_type: String,

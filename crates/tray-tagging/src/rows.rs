@@ -4,7 +4,8 @@
 use crate::state::EffectiveElement;
 
 /// One Tag Register row.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RegisterRow {
     pub system_tag: String,
     pub element_tag: String,
@@ -18,7 +19,8 @@ pub struct RegisterRow {
 }
 
 /// One Summary row: aggregate count for a (group, key) pair.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SummaryRow {
     pub group: String,
     pub key: String,
