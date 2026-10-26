@@ -43,14 +43,14 @@ Phases and dependencies come from `ARCHITECTURE.md` section 7. Only one agent at
 | 4.3 | Fitting solver (NEC bends) | `rust/conduit-fitting` | 4.1 | opencode | done |
 | 4.4 | BOM and stick optimizer | `rust/conduit-bom` | 4.1 | opencode | done |
 | 4.5 | Takeoff, CSV export, project I/O | `rust/conduit-takeoff-io` | 4.2, 4.3, 4.4 | opencode | done |
-| 4.6 | `conduit-wasm` binding; switch `apps/conduit-takeoff` behind a flag | `rust/conduit-wasm` | 4.5 | | todo |
+| 4.6 | `conduit-wasm` binding; switch `apps/conduit-takeoff` behind a flag | `rust/conduit-wasm` | 4.5 | | done |
 
 ## Phase 5: Tray
 | ID | Task | Branch | Depends on | Owner | Status |
 |---|---|---|---|---|---|
-| 5.1 | `tray-tagging` (scheme, classifier, validator, assignment state: saved/pending/undo, register rows) | `rust/tray-tagging` | 3.1, 3.2 | | todo |
-| 5.2 | `tray-routing` (centerline, graph, pathfinding, continuity) | `rust/tray-routing` | 3.1 | | todo |
-| 5.3 | `tray-wasm` binding; switch `apps/tray-viewer` behind a flag | `rust/tray-wasm` | 5.1, 5.2 | | todo |
+| 5.1 | `tray-tagging` (scheme, classifier, validator, assignment state: saved/pending/undo, register rows) | `rust/tray-tagging` | 3.1, 3.2 | | done |
+| 5.2 | `tray-routing` (centerline, graph, pathfinding, continuity) | `rust/tray-routing` | 3.1 | | done |
+| 5.3 | `tray-wasm` binding; switch `apps/tray-viewer` behind a flag | `rust/tray-wasm` | 5.1, 5.2 | | done |
 
 ## Phase 6: Viewer (independent of 4 and 5)
 | ID | Task | Branch | Depends on | Owner | Status |
