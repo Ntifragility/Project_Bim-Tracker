@@ -13,7 +13,8 @@ pub const MAX_SEQUENCE_DIGITS: u32 = 6;
 pub const SCHEME_VERSION: &str = "2";
 
 /// Raw (possibly untrimmed / string-typed) scheme input from the UI.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SchemeInput {
     pub prefix: String,
     pub system: String,
@@ -26,13 +27,15 @@ pub struct SchemeInput {
 }
 
 /// Normalized, validated scheme.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TypeCodes {
     pub tray: String,
     pub fitting: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TagScheme {
     pub prefix: String,
     pub system: String,
@@ -113,7 +116,8 @@ pub fn format_element_tag(
 }
 
 /// Parsed generated element tag.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ParsedTag {
     pub system_tag: String,
     pub type_code: String,
@@ -146,7 +150,8 @@ pub fn parse_generated_element_tag(value: &str, scheme: &TagScheme) -> Option<Pa
 }
 
 /// Scheme validation outcome (legacy `validateTagScheme` shape).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SchemeValidation {
     pub valid: bool,
     pub errors: Vec<String>,
@@ -195,7 +200,8 @@ pub fn validate_tag_scheme(input: &SchemeInput) -> SchemeValidation {
 
 /// Minimal element identity for allocation (extra legacy fields ride along
 /// unchanged via the generic `meta` passthrough in `TagAssignment::extra`).
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ElementRef {
     pub model_id: String,
     pub local_id: i64,
@@ -203,14 +209,16 @@ pub struct ElementRef {
 }
 
 /// Existing assignment (only `element_tag`/`component_id` read, like legacy).
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ExistingTag {
     pub element_tag: String,
     pub component_id: String,
 }
 
 /// Allocated tag assignment (legacy spread shape + v2 stamp + delete flag).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TagAssignment {
     pub model_id: String,
     pub local_id: i64,
@@ -226,7 +234,8 @@ pub struct TagAssignment {
 }
 
 /// Allocation outcome.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AllocateResult {
     pub valid: bool,
     pub errors: Vec<String>,

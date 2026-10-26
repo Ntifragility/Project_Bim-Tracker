@@ -10,7 +10,8 @@ use geom_core::vec3::{self, Vec3};
 pub const DEFAULT_TOLERANCE_M: f64 = 0.1;
 
 /// Input segment reference.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SegmentRef {
     pub id: String,
     pub start: Vec3,
@@ -20,14 +21,16 @@ pub struct SegmentRef {
 }
 
 /// One endpoint reference inside a node.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EndpointRef {
     pub segment_id: String,
     pub end: String,
 }
 
 /// Graph node.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Node {
     pub id: String,
     pub position: Vec3,
@@ -36,7 +39,8 @@ pub struct Node {
 }
 
 /// Graph edge (one per segment; `id == segment.id`).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Edge {
     pub id: String,
     pub from: String,
@@ -47,7 +51,8 @@ pub struct Edge {
 }
 
 /// Connectivity graph.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Graph {
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
@@ -189,7 +194,8 @@ pub fn build_connectivity_graph(segments: &[SegmentRef], tolerance: f64) -> Grap
 }
 
 /// Graph component (BFS over node<->edge adjacency).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Component {
     pub node_ids: Vec<String>,
     pub edge_ids: Vec<String>,

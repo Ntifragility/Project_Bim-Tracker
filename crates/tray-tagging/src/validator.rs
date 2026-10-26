@@ -5,7 +5,8 @@
 //! Errors block (`valid: false`); warnings never block.
 
 /// Element view for validation.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ValidElement {
     pub system_tag: String,
     pub tag: String,
@@ -13,14 +14,16 @@ pub struct ValidElement {
 }
 
 /// Excel row reference.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ExcelTag {
     pub row_number: u32,
     pub tag: String,
 }
 
 /// One integrity issue (error or warning).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct IntegrityIssue {
     pub code: String,
     pub tag: String,
@@ -28,7 +31,8 @@ pub struct IntegrityIssue {
 }
 
 /// Counters (legacy `counts` shape).
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct IntegrityCounts {
     pub ifc_tags: usize,
     pub excel_tags: usize,
@@ -38,7 +42,8 @@ pub struct IntegrityCounts {
 }
 
 /// Validation report.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct IntegrityReport {
     pub valid: bool,
     pub errors: Vec<IntegrityIssue>,

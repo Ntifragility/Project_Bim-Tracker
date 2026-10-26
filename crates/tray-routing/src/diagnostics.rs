@@ -8,7 +8,8 @@ use crate::graph::{connected_components, Component, Graph};
 pub const DEFAULT_MINIMUM_CONFIDENCE: f64 = 0.65;
 
 /// Diagnosis outcome.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Diagnosis {
     pub segment_count: usize,
     pub node_count: usize,

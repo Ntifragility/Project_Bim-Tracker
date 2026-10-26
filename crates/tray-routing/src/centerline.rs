@@ -6,7 +6,8 @@
 use geom_core::vec3::{self, Vec3};
 
 /// Centerline inference outcome.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Centerline {
     pub valid: bool,
     pub reason: String,

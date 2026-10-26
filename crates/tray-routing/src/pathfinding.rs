@@ -5,7 +5,8 @@
 use crate::graph::Graph;
 
 /// Pathfinding outcome.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Path {
     pub found: bool,
     pub reason: String,

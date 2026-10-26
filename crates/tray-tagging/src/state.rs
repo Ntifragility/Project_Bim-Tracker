@@ -9,7 +9,8 @@
 use crate::scheme::TagAssignment;
 
 /// Saved (IFC) assignment.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SavedAssignment {
     pub model_id: String,
     pub model_name: String,
@@ -28,14 +29,16 @@ pub struct SavedAssignment {
 }
 
 /// Pending edit: `assignment.delete == true` means pending deletion.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PendingEdit {
     pub assignment: TagAssignment,
 }
 
 /// Saved-or-pending merged view. `source` is `"ifc"` or `"pending"`;
 /// `was_saved` marks a pending edit over an existing saved tag (Modified).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EffectiveElement {
     pub model_id: String,
     pub model_name: String,
@@ -56,7 +59,8 @@ pub struct EffectiveElement {
 }
 
 /// Batch snapshot entry: previous pending value (or None) per touched key.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BatchSnapshot {
     pub key: String,
     pub previous: Option<TagAssignment>,
