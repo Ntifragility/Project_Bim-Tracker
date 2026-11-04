@@ -7,6 +7,7 @@
 
 import { exportUnifiedIfc as runUnifiedExport } from './unified-export.js';
 import { ifcEditElementKey, normalizeHexColor } from './helpers.js';
+import { validatePropertyEdit, validateColorEdit } from './safe-editor-panel.js';
 
 /**
  * @param {object} ctx app context (`src/ui/context.js`)
@@ -164,10 +165,7 @@ export function initEditing(ctx, dom, api) {
         return;
       }
       const propertySet = dom.metadataPset.value.trim();
-      if (!/^(?:BIM_TRACKER_EDIT|COSAPI_[A-Z0-9_]+)$/i.test(propertySet)) {
-        renderPendingIfcEdits('Use BIM_TRACKER_EDIT or a COSAPI_ prefixed property-set name.');
-        return;
-      }
+      const safePanel = api.safeEditor;
       const rows = readMetadataRows();
       if (!rows.length) {
         renderPendingIfcEdits('Add at least one metadata property and value.');
@@ -176,6 +174,22 @@ export function initEditing(ctx, dom, api) {
       const invalid = rows.find((row) => !row.property || row.value === '');
       if (invalid) {
         renderPendingIfcEdits('Every metadata row requires both a property name and value.');
+        return;
+      }
+      // Route through the safe-editor validators when bound (7.4 wiring):
+      // whitelist + typed-value rejections explain why, never silently drop.
+      if (safePanel) {
+        for (const elem of targetElements) {
+          for (const row of rows) {
+            const verdict = validatePropertyEdit({ propertySet, property: row.property, value: row.value, valueType: row.valueType });
+            if (!verdict.ok) {
+              renderPendingIfcEdits(`Not staged: ${verdict.message}`);
+              return;
+            }
+          }
+        }
+      } else if (!/^(?:BIM_TRACKER_EDIT|COSAPI_[A-Z0-9_]+)$/i.test(propertySet)) {
+        renderPendingIfcEdits('Use BIM_TRACKER_EDIT or a COSAPI_ prefixed property-set name.');
         return;
       }
 
@@ -227,6 +241,14 @@ export function initEditing(ctx, dom, api) {
         renderPendingIfcEdits('Property set and property name are required.');
         return;
       }
+      // Same safe-editor gate for single-property staging.
+      if (api.safeEditor) {
+        const verdict = validatePropertyEdit({ propertySet, property, value, valueType: 'IFCLABEL' });
+        if (!verdict.ok) {
+          renderPendingIfcEdits(`Not staged: ${verdict.message}${verdict.warning ? ` (${verdict.warning})` : ''}`);
+          return;
+        }
+      }
 
       for (const elem of targetElements) {
         const modelId = elem.modelId;
@@ -246,6 +268,13 @@ export function initEditing(ctx, dom, api) {
       if (!color) {
         renderPendingIfcEdits('Choose a valid RGB color.');
         return;
+      }
+      if (api.safeEditor) {
+        const verdict = validateColorEdit({ color });
+        if (!verdict.ok) {
+          renderPendingIfcEdits(`Not staged: ${verdict.message}`);
+          return;
+        }
       }
       ctx.selectedAppearanceColor = color;
       dom.contextSelectionColor.value = color;

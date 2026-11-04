@@ -34,6 +34,8 @@ import { initTaggingPanel } from './ui/tagging-panel.js';
 import { initSystemManager } from './ui/system-manager.js';
 import { initExcelPanel } from './ui/excel-panel.js';
 import { initEditing } from './ui/editing.js';
+import { initSafeEditorPanel } from './ui/safe-editor-panel.js';
+import { createTrayBackends } from './backend.js';
 import { initModelLoader } from './ui/model-loader.js';
 import { initViewerChrome } from './ui/viewer-chrome.js';
 import { initContextMenu } from './ui/context-menu.js';
@@ -101,6 +103,13 @@ export async function initApp() {
   excel.wireExcelControls();
 
   // 8. Safe editing (needs tagging validation + appearance staging).
+  // initSafeEditorPanel binds the safe/ validators + export collector to the
+  // shared ctx maps; initEditing wires the DOM controls that stage into them.
+  const trayBackends = await createTrayBackends();
+  api.trayBackends = trayBackends;
+  console.log(`[Tray Viewer] compute backends: tagging=${trayBackends.flags.tagging}, routing=${trayBackends.flags.routing}`);
+  const safeEditor = initSafeEditorPanel({ ctx, dom, api });
+  api.safeEditor = safeEditor;
   const editing = initEditing(ctx, dom, api);
   editing.wireEditingControls();
 
@@ -108,6 +117,7 @@ export async function initApp() {
   ctx.routingController = initRoutingController({
     world,
     getLoadedModels: () => ctx.loadedModels,
+    routingBackend: trayBackends.routing,
     onClear: () => {
       ctx.traySystemContinuityReport = null;
       api.renderTraySystemContinuityReport();

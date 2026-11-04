@@ -4,9 +4,11 @@
 // length/sticks/segments, select/delete, count badge. Registers
 // `api.renderRunsList` on the coordinator for cross-module use.
 
-import { computeRunTakeoff, deleteRun, nodeById, analyzeRunBends } from '@conduit-core';
+// Compute fns come from `state.backend` (../backend.js factory); the static
+// import below is the JS fallback for tests that build state without one.
 
 export function createRunsList({ state, els, api }) {
+  const backend = state.backend;
   function renderRunsList(drawingTool) {
     const runs = Object.values(state.network.runs);
     els.runsCountBadge.textContent = runs.length;
@@ -25,12 +27,12 @@ export function createRunsList({ state, els, api }) {
     els.runList.innerHTML = '';
 
     for (const run of runs) {
-      const takeoff = computeRunTakeoff(state.network, run.id);
+      const takeoff = backend.computeRunTakeoff(state.network, run.id);
       const color = state.diameterRegistry.getColor(run.size);
       const isSelected = state.selectedRunId === run.id;
 
-      const runNodes = (run.nodeIds || []).map((nid) => nodeById(state.network, nid)).filter(Boolean);
-      const bendAnalysis = analyzeRunBends(runNodes);
+      const runNodes = (run.nodeIds || []).map((nid) => backend.nodeById(state.network, nid)).filter(Boolean);
+      const bendAnalysis = backend.analyzeRunBends(runNodes);
 
       const card = document.createElement('div');
       card.className = `run-item-card ${isSelected ? 'selected' : ''}`;
@@ -64,7 +66,7 @@ export function createRunsList({ state, els, api }) {
       const delBtn = card.querySelector('.run-item-del-btn');
       delBtn.addEventListener('click', () => {
         const prevNet = state.network;
-        const nextNet = deleteRun(prevNet, run.id);
+        const nextNet = backend.deleteRun(prevNet, run.id);
 
         const deleteCmd = {
           description: `Delete ${run.name || run.id}`,

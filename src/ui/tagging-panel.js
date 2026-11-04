@@ -10,10 +10,18 @@
 // (`ReferenceError` at click time, identical in `legacy/src/main.js`).
 
 import { exportTagMapping } from 'excel-io';
-import { allocateElementTags, getSystemTag, normalizeTagScheme } from '../tagging/tag-scheme.js';
-import { classifyTaggableElement } from '../tagging/element-classifier.js';
-import { validateTagIntegrity } from '../ifc/tag-validator.js';
 import { getAssignmentKey, requestTagReplacement } from './helpers.js';
+// Tagging/classifier/validator fns come from `api.trayBackends.tagging`
+// (src/backend.js factory: JS default, ?tagging=wasm opt-in). The static
+// imports below are the JS fallback for unit tests that call
+// initTaggingPanel without backends.
+import {
+  allocateElementTags as jsAllocateElementTags,
+  getSystemTag as jsGetSystemTag,
+  normalizeTagScheme as jsNormalizeTagScheme,
+} from '../tagging/tag-scheme.js';
+import { classifyTaggableElement as jsClassifyTaggableElement } from '../tagging/element-classifier.js';
+import { validateTagIntegrity as jsValidateTagIntegrity } from '../ifc/tag-validator.js';
 
 /**
  * @param {object} ctx app context (`src/ui/context.js`)
@@ -21,6 +29,14 @@ import { getAssignmentKey, requestTagReplacement } from './helpers.js';
  * @param {object} api shared runtime API (populated by feature modules)
  */
 export function initTaggingPanel(ctx, dom, api) {
+  const tag = api.trayBackends?.tagging ?? {
+    allocateElementTags: jsAllocateElementTags,
+    getSystemTag: jsGetSystemTag,
+    normalizeTagScheme: jsNormalizeTagScheme,
+    classifyTaggableElement: jsClassifyTaggableElement,
+    validateTagIntegrity: jsValidateTagIntegrity,
+  };
+  const { allocateElementTags, getSystemTag, normalizeTagScheme, classifyTaggableElement, validateTagIntegrity } = tag;
   function getAssignmentForElement(element = ctx.selectedIfcElement) {
     if (!element) return null;
     return ctx.tagAssignments.get(getAssignmentKey(element.modelId, element.localId)) || null;

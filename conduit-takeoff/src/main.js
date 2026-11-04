@@ -8,6 +8,7 @@
 
 import './style.css';
 import { collectEls } from './ui/dom.js';
+import { createConduitBackend } from './backend.js';
 import { createConduitState } from './ui/state.js';
 import { createViewerChrome } from './ui/viewer-chrome.js';
 import { createModelLoad } from './ui/model-load.js';
@@ -26,7 +27,10 @@ export async function initApp() {
   console.log('[Conduit Takeoff] Initializing engine...');
   const els = collectEls();
   api.els = els;
-  const state = createConduitState();
+  const backend = await createConduitBackend();
+  api.backend = backend;
+  console.log(`[Conduit Takeoff] compute backend: ${backend.backend}`);
+  const state = createConduitState(backend);
   api.state = state;
 
   // 1. Viewer chrome (overlay, tabs, engine bootstrap + HUD fan-out).

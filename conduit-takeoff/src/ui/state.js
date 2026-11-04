@@ -4,14 +4,24 @@
 // coordinator (conduit-ui-split module 2). All calculations stay in
 // `@conduit-core` / `drawing-tool.js`; this module only holds data.
 
+// `backend` (from ../backend.js `createConduitBackend()`) supplies the
+// compute surface; defaults to `@conduit-core` so tests keep working.
 import {
-  createNetwork,
-  createCommandStack,
-  createDiameterRegistry,
-  createMarkerStore,
+  createNetwork as jsCreateNetwork,
+  createCommandStack as jsCreateCommandStack,
+  createDiameterRegistry as jsCreateDiameterRegistry,
+  createMarkerStore as jsCreateMarkerStore,
 } from '@conduit-core';
 
-export function createConduitState() {
+const jsFallback = {
+  createNetwork: jsCreateNetwork,
+  createCommandStack: jsCreateCommandStack,
+  createDiameterRegistry: jsCreateDiameterRegistry,
+  createMarkerStore: jsCreateMarkerStore,
+};
+
+export function createConduitState(backend) {
+  const core = backend ?? jsFallback;
   return {
     sourceModel: {
       name: '',
@@ -26,10 +36,14 @@ export function createConduitState() {
       wasteFactor: 0,
       unit: 'METRE',
     },
-    network: createNetwork(),
-    commandStack: createCommandStack({ maxDepth: 200 }),
-    diameterRegistry: createDiameterRegistry(),
-    markerStore: createMarkerStore(),
+    network: core.createNetwork(),
+    commandStack: core.createCommandStack({ maxDepth: 200 }),
+    diameterRegistry: core.createDiameterRegistry(),
+    markerStore: core.createMarkerStore(),
     selectedRunId: null,
+    // Compute surface: modules read `state.backend` for takeoff/snap/BOM.
+    // Kept non-enumerable-adjacent (plain field) so project serialization
+    // (`serializeProject`) never picks it up.
+    backend: core,
   };
 }
