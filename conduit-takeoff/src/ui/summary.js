@@ -4,11 +4,14 @@
 // waste factor input, totals. Registers `api.renderSummary` on the
 // coordinator for cross-module use.
 
-import { computeTakeoff, convertLength } from '@conduit-core';
+// `computeTakeoff` comes from `state.backend`; `convertLength` is a pure
+// unit helper that stays JS-side (presentation only).
+import { convertLength } from '@conduit-core';
 
 export function createSummary({ state, els, api }) {
+  const backend = state.backend ?? { computeTakeoff: () => ({ bySize: [], totals: {} }) };
   function renderSummary() {
-    const takeoff = computeTakeoff(state.network);
+    const takeoff = backend.computeTakeoff(state.network);
     const bySize = takeoff.bySize || [];
     const totals = takeoff.totals || { runs: 0, length: 0, sticks: 0 };
 

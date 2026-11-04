@@ -5,9 +5,9 @@
 // (`exportCompleteCsv`), IFC overlay export (`exportOverlayIfc`), keyboard
 // shortcuts. Registers `api.downloadFile` on the coordinator.
 
+// Persistence/serialization helpers stay JS-side by design (conduit-wasm.md
+// R4); `computeTakeoff` + `createNetwork` come from `state.backend`.
 import {
-  createNetwork,
-  computeTakeoff,
   serializeProject,
   deserializeProject,
   verifySourceHash,
@@ -16,6 +16,7 @@ import {
 } from '@conduit-core';
 
 export function createProjectIo({ state, els, engine, api }) {
+  const backend = state.backend;
   function downloadFile(content, filename, type = 'application/json') {
     const blob = new Blob([content], { type });
     const url = URL.createObjectURL(blob);
@@ -103,7 +104,7 @@ export function createProjectIo({ state, els, engine, api }) {
         }
 
         // Restore project network and settings
-        state.network = createNetwork();
+        state.network = backend.createNetwork();
         if (Array.isArray(proj.network?.nodes)) {
           state.network.nodes = [...proj.network.nodes];
         } else if (proj.network?.nodes && typeof proj.network.nodes === 'object') {
@@ -132,7 +133,7 @@ export function createProjectIo({ state, els, engine, api }) {
 
     // Export CSV
     els.btnExportCsv.addEventListener('click', () => {
-      const takeoff = computeTakeoff(state.network);
+      const takeoff = backend.computeTakeoff(state.network);
 
       const csvContent = exportCompleteCsv({
         runs: takeoff.runs,
