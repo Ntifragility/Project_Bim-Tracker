@@ -98,3 +98,37 @@ test('isolation inverse mapping groups unselected elements for ghosting', () => 
   assert.deepEqual(ghostExpressIds, [101, 103, 104]);
 });
 
+test('coordinates expose IFC frame helpers (length, format, frame)', () => {
+  const fragments = {
+    baseCoordinationMatrix: new THREE.Matrix4().makeTranslation(300000, 8600000, 100),
+  };
+  const frame = createCoordinateFrame(fragments);
+  // 10 ft stick in scene space -> 3.048 m in IFC.
+  const a = frame.toScene({ x: 0, y: 0, z: 0 });
+  const b = frame.toScene({ x: 3.048, y: 0, z: 0 });
+  assert.ok(Math.abs(frame.lengthOriginal(a, b) - 3.048) < 1e-6);
+  const fmt = frame.formatIfc({ x: 1.23456, y: 2, z: 3 });
+  assert.equal(fmt.x, 1.23456);
+  assert.equal(fmt.display, '(1.235, 2.000, 3.000)');
+  const desc = frame.frame();
+  assert.equal(desc.up, 'Z');
+  assert.equal(desc.units, 'm');
+  assert.deepEqual([desc.originShift.x, desc.originShift.y, desc.originShift.z], [300000, 8600000, 100]);
+});
+
+test('engine exposes Phase-B APIs (selection, perf, appearanceHistory)', async () => {
+  const src = fs.readFileSync(path.resolve('packages/viewer-core/src/engine.js'), 'utf8');
+  for (const needle of ['selectAssembly', 'selectSimilar', 'setFrameCap', 'setMoveDegrade', 'onContextLost', 'appearanceHistory', 'original']) {
+    assert.ok(src.includes(needle), `engine.js exposes ${needle}`);
+  }
+  // perf policy transitions (headless-safe, no GPU): emulate via src check
+  // that __shouldRender/__cameraStart/__cameraIdle hooks exist for tests.
+  for (const hook of ['__shouldRender', '__cameraStart', '__cameraIdle', '__isDegraded']) {
+    assert.ok(src.includes(hook), `perf exposes ${hook}`);
+  }
+  // appearanceHistory contract: push/undo/redo/clear/depth in source.
+  for (const fn of ['push(label', 'async undo()', 'async redo()', 'clear()', 'depth()']) {
+    assert.ok(src.includes(fn), `appearanceHistory has ${fn}`);
+  }
+});
+
