@@ -33,6 +33,9 @@ function viewportWasmResolver() {
 
 export default defineConfig({
   root: ".",
+  // Share the tray app's public dir (fixtures, web-ifc.wasm) so `?ifc=`
+  // deep links and wasm assets resolve identically in both apps.
+  publicDir: path.resolve(ROOT, "public"),
   plugins: [covillafWebIfc(), viewportWasmResolver()],
   resolve: {
     alias: {
