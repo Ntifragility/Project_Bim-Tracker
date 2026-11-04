@@ -1,6 +1,7 @@
 // Task 4.6 vector runner: runs the conduit golden vectors through the
 // wasm-pack-built `bindings/conduit-wasm` entry and compares against the
-// same expectations the legacy JS runner uses.
+// shared expectations in spec/vectors/conduit/ (post-legacy: legacy/ deleted
+// at the 8.1 parity gate; legacy-JS comparison runners retired with it).
 //
 // Usage: node scripts/run-conduit-wasm-vectors.mjs
 // Requires: wasm-pack build bindings/conduit-wasm (pkg/ present).
@@ -66,6 +67,7 @@ function netFile(spec, stick = 3.048, nextId = 50) {
 const files = readdirSync(VEC_DIR).filter((f) => f.endsWith('.json')).sort();
 for (const f of files) {
   const vec = JSON.parse(readFileSync(path.join(VEC_DIR, f), 'utf8'));
+  if (!Array.isArray(vec.cases)) continue; // fixture files (e.g. project-synthetic.json) carry no cases
   for (const c of vec.cases) {
     const id = `${f}:${c.id}`;
     const tol = c.tol ?? 1e-9;
@@ -245,30 +247,9 @@ expectFile('takeoff.json', []);
   ok(Math.abs(rt.length - 2) < 1e-9, 'takeoff:run', JSON.stringify(rt).slice(0, 120));
 }
 
-// --- JS-vs-Wasm backend parity (flag-switch proof, R5) ---
-{
-  const LEG = path.join(ROOT, 'legacy/packages/conduit-core/src');
-  const jsNet = await import(path.join(LEG, 'network.js'));
-  const jsTakeoff = await import(path.join(LEG, 'takeoff.js'));
-  const fromArr = (a) => ({ x: a[0], y: a[1], z: a[2] ?? 0 });
-  let net = jsNet.createNetwork({ stickLength: 3.048 });
-  let nodeId;
-  ({ network: net, nodeId } = jsNet.addNode(net, fromArr([0, 0, 0])));
-  let runId;
-  ({ network: net, runId } = jsNet.startRun(net, { size: '3/4"', system: '' }, nodeId));
-  for (const p of [[1, 0, 0], [2, 0, 0], [5, 0, 0]]) {
-    ({ network: net, nodeId } = jsNet.addNode(net, fromArr(p)));
-    net = jsNet.appendToRun(net, runId, nodeId);
-  }
-  const jsTake = jsTakeoff.computeTakeoff(net);
-  // Same logical network through the wasm backend.
-  const pts = net.nodes.map((n) => [n.x, n.y, n.z]);
-  const built = buildNet(3.048, pts, { size: '3/4"' });
-  const wTake = JSON.parse(wasm.network_takeoff(built.net));
-  ok(Math.abs(wTake.totals.length - jsTake.totals.length) < 1e-9, 'parity:length', `${wTake.totals.length} vs ${jsTake.totals.length}`);
-  ok(wTake.totals.sticks === jsTake.totals.sticks, 'parity:sticks', `${wTake.totals.sticks} vs ${jsTake.totals.sticks}`);
-  ok(wTake.runs.length === jsTake.runs.length, 'parity:runs', `${wTake.runs.length}`);
-}
+// --- constants parity (ex-legacy comparison, now wasm-vs-fixture) ---
+// Post-legacy: the JS-vs-Wasm comparison retired with legacy/. Wasm takeoff
+// numbers are pinned by takeoff.json + project-synthetic.json expectations.
 
 console.log(`\nconduit-wasm vectors: ${pass} passed, ${fail} failed`);
 for (const fl of failures) console.log('FAIL', fl);

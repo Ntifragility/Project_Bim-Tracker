@@ -34,37 +34,27 @@ function exists(p) { return existsSync(file(p)); }
 report('1', 'golden vectors pass in Rust',
   run('cargo', ['test', '--workspace'], { timeout: 900000 }) ? 'PASS' : 'FAIL');
 
-// 2 — vectors against legacy JS
+// 2 — vectors against fixtures (post-legacy: runners retired with legacy/;
+// surviving wasm runners compare against spec/vectors JSON directly)
 {
-  const runners = ['run-geom-vectors.mjs', 'run-ifc-vectors.mjs', 'run-conduit-vectors.mjs',
-    'run-conduit-network-vectors.mjs', 'run-conduit-snap-vectors.mjs', 'run-conduit-fitting-vectors.mjs',
-    'run-conduit-bom-vectors.mjs', 'run-conduit-takeoff-io-vectors.mjs', 'run-conduit-wasm-vectors.mjs',
-    'run-tray-vectors.mjs', 'run-tray-wasm-vectors.mjs'];
+  const runners = ['run-conduit-wasm-vectors.mjs', 'run-tray-wasm-vectors.mjs'];
   const missing = runners.filter((r) => !exists(`scripts/${r}`));
-  if (missing.length) report('2', 'vectors pass against legacy JS', 'FAIL', `missing runners: ${missing.join(',')}`);
+  if (missing.length) report('2', 'wasm vectors pass against fixtures', 'FAIL', `missing runners: ${missing.join(',')}`);
   else {
     const fails = [];
     const skipped = [];
     for (const r of runners) {
-      if (r.endsWith('-wasm-vectors.mjs')) {
-        // wasm runners need `wasm-pack build` artefacts (pkg/ is gitignored):
-        // SKIP when pkg/ is absent instead of failing the gate.
-        const bind = r.includes('conduit') ? 'bindings/conduit-wasm/pkg' : 'bindings/tray-wasm/pkg';
-        if (!exists(bind)) { skipped.push(`${r} (no pkg/, run wasm-pack build)`); continue; }
-      }
-      if (r === 'run-conduit-vectors.mjs') {
-        // PRE-EXISTING failures vs legacy-JS-only vectors on clean main
-        // (not CI-gated; Rust cargo tests are the gate). Record, don't fail.
-        if (!run('node', [`scripts/${r}`], { timeout: 300000 })) skipped.push(`${r} (pre-existing, not CI-gated)`);
-        continue;
-      }
+      // wasm runners need `wasm-pack build` artefacts (pkg/ is gitignored):
+      // SKIP when pkg/ is absent instead of failing the gate.
+      const bind = r.includes('conduit') ? 'bindings/conduit-wasm/pkg' : 'bindings/tray-wasm/pkg';
+      if (!exists(bind)) { skipped.push(`${r} (no pkg/, run wasm-pack build)`); continue; }
       if (!run('node', [`scripts/${r}`], { timeout: 300000 })) fails.push(r);
     }
     const detail = [
       fails.length ? `failing: ${fails.join(',')}` : `${runners.length - skipped.length} runners green`,
       skipped.length ? `skipped: ${skipped.join('; ')}` : '',
     ].filter(Boolean).join('; ');
-    report('2', 'vectors pass against legacy JS', fails.length ? 'FAIL' : 'PASS', detail);
+    report('2', 'wasm vectors pass against fixtures', fails.length ? 'FAIL' : 'PASS', detail);
   }
 }
 

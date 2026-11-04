@@ -10,7 +10,7 @@ Product goals (unchanged): an IFC viewer with (1) **QTO / tagging of cable trays
 
 | # | Owner decision | Consequence |
 |---|---|---|
-| D1 | Rewrite the whole code; it must be modular | Full rewrite, executed incrementally behind frozen legacy code (section 7) |
+| D1 | Rewrite the whole code; it must be modular | Full rewrite, executed incrementally; legacy reference deleted at the 8.1 parity gate (section 7) |
 | D2 | Rust everywhere possible | All logic cores in Rust, compiled to WebAssembly. See D2 limits below |
 | D3 | Rewrite only what is already done | No new features in the rewrite, except the engine-improvement track (D5) |
 | D4 | An `.xlsx` file is always present, but Excel is not core | Excel I/O is an optional package, installable later; cores never depend on it |
@@ -26,7 +26,7 @@ Product goals (unchanged): an IFC viewer with (1) **QTO / tagging of cable trays
 
 **In scope (already built):** IFC loading and inspection; batch tagging; tagged IFC export; mapping export; tray-system management; continuity diagnostics; route calculation; Safe IFC Editor (default in scope, **ported last**); `?ifc=` deep link (used for smoke tests); conduit snap, fittings, HUD/properties, BOM, takeoff, CSV/IFC overlay export; viewport controls; **auto-orbit** (kept; moves to `viewer-core`, app keeps only its toggle/badge; the review notes it cannot be restarted from the UI, so the spec adds a toggle); Excel workbook upload and mapping export through `excel-io` (later). **Kept for your decision (ported last, optional):** wireframe mode (to `viewer-core`), dark-mode toggle (app UI), Basic House sample (to `samples/`); you decide later whether to keep each.
 
-**Not ported** (stay in `legacy/` until the parity gate, then deleted): `sendMeasurementToExcel()`, the generic `addProjectTagsToIfc` / `extractProjectTagsFromIfc` workflow, unreferenced assets (`hero.png`, `vite.svg`, `javascript.svg`), unused `public/web-ifc*.wasm`, the **live Excel bridge** (`excel-ifc-bridge/`, `src/viewer-socket.js`: **frozen**, implemented later), and `ThatOpenEngine/` (moved out).
+**Not ported** (deleted with `legacy/` at the 8.1 parity gate): `sendMeasurementToExcel()`, the generic `addProjectTagsToIfc` / `extractProjectTagsFromIfc` workflow, unreferenced assets (`hero.png`, `vite.svg`, `javascript.svg`), unused `public/web-ifc*.wasm`, the **live Excel bridge** (`excel-ifc-bridge/`, `src/viewer-socket.js`: **frozen**, implemented later), and `ThatOpenEngine/` (moved out).
 
 "Not ported" does not mean "delete now": nothing in the review list is removed before its decision is recorded.
 
@@ -79,9 +79,9 @@ packages/
 apps/
   tray-viewer/  conduit-takeoff/
 spec/
-  vectors/<module>/*.json      golden test vectors (shared by Rust and legacy JS)
+  vectors/<module>/*.json      golden test vectors (shared by Rust and fixtures)
 docs/specs/<module>/*.md       feature specs (section 6)
-legacy/                        frozen copy of the current JS (reference only, deleted after parity)
+legacy/                        deleted (was: frozen reference copy, removed at 8.1 gate)
 samples/                       small public test IFC/xlsx only
 ARCHITECTURE.md  AGENTS.md  README.md
 .github/workflows/ci.yml
@@ -164,14 +164,14 @@ Branch: rust/<crate>-<feature>        Owner folders: <list>
 
 Rules:
 - One spec = one branch = one agent. A spec lists the only folders its branch may edit.
-- **Golden vectors:** the acceptance table is stored as JSON in `spec/vectors/<module>/`. The same vectors run against the legacy JS (proving they describe real behaviour) and the Rust crate (proving parity). A feature is done when the vectors pass in Rust.
+- **Golden vectors:** the acceptance table is stored as JSON in `spec/vectors/<module>/`. Post-8.1 the vectors run against Rust and fixtures. A feature is done when the vectors pass in Rust.
 - Specs are updated in the same branch as the code that changes the behaviour.
 
 ---
 
 ## 7. Migration plan (rewrite without a big bang)
 
-The legacy JS is **frozen, not deleted**, until the parity gate passes. Each work package below is sized for one agent and one branch.
+The legacy JS was **frozen, then deleted** at the parity gate. Each work package below is sized for one agent and one branch.
 
 | Phase | Work packages (branch prefix) | Depends on | Parallel? |
 |---|---|---|---|
@@ -199,7 +199,7 @@ Parallel agents run in **separate git worktrees** (`git worktree add ../wt-<name
 | TS package/app boundaries | `dependency-cruiser` or `eslint-plugin-boundaries` config mirroring section 2 |
 | Core purity (no I/O, no DOM) | crates do not depend on `web-sys`/`js-sys`; only `bindings/*` do |
 | Formatting / lint | `cargo fmt --check`, `cargo clippy -D warnings`, ESLint + Prettier |
-| Behaviour parity | `cargo test` runs `spec/vectors`; legacy JS runs the same vectors until deletion |
+| Behaviour parity | `cargo test` runs `spec/vectors`; wasm runners compare against fixtures |
 | Build health | CI on every pull request: Rust tests, `wasm-pack build`, `npm test`, both app builds. Merging is blocked when red |
 
 Every phase-0 failure seen in the review (the broken `main` build) is caught by this CI.

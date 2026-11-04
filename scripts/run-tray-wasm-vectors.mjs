@@ -1,7 +1,8 @@
 // Task 5.3 vector runner: runs the tray golden vectors (tagging 33 +
 // validator 7 + tagging-state 6 + routing 26 = 72) through the wasm-pack-built
-// `bindings/tray-wasm` entry and compares against the same expectations the
-// legacy JS runner uses.
+// `bindings/tray-wasm` entry and compares against the shared expectations in
+// spec/vectors/tray/ (post-legacy: legacy/ deleted at the 8.1 parity gate;
+// legacy-JS comparison runners retired with it).
 //
 // Usage: node scripts/run-tray-wasm-vectors.mjs
 // Requires: wasm-pack build bindings/tray-wasm (pkg/ present).

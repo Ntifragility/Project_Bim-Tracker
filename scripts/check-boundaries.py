@@ -11,7 +11,8 @@ Enforces, on every PR:
   T2. `packages/viewer-core` imports no product core, app, or plugin.
   T3. New apps never cross-import the other product line
       (`apps/tray-viewer` <-> `apps/conduit-takeoff`).
-  `legacy/` is the frozen reference and is excluded from every check.
+   `legacy/` was the frozen reference (deleted at the 8.1 parity gate) and
+   remains excluded from every check via TS_EXCLUDE_DIRS.
 
 Exit 0 when all boundaries hold, 1 with a violation list otherwise.
 """
@@ -46,7 +47,7 @@ MEMBER_MANIFESTS = {
 }
 
 # --- TypeScript: scoped import-edge rules (T1/T2/T3) ---
-# Directories never scanned (frozen reference, build output, vendored code).
+# Directories never scanned (build output, vendored code; legacy/ deleted at 8.1).
 TS_EXCLUDE_DIRS = {"legacy", "node_modules", "dist", "target", "pkg", "archive"}
 TS_EXTENSIONS = {".js", ".mjs", ".cjs", ".ts", ".tsx"}
 
