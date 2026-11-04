@@ -72,4 +72,4 @@ Phases and dependencies come from `ARCHITECTURE.md` section 7. Only one agent at
 ## Phase 8: Parity gate
 | ID | Task | Branch | Depends on | Owner | Status |
 |---|---|---|---|---|---|
-| 8.1 | Run parity checklist (`ARCHITECTURE.md` section 7); delete `legacy/` | `infra/remove-legacy` | 4.6, 5.3, 6.2, 7.1, 7.2 | | todo |
+| 8.1 | Run parity checklist (`ARCHITECTURE.md` section 7); delete `legacy/` | `infra/remove-legacy` | 4.6, 5.3, 6.2, 7.1, 7.2, 7.4 | | todo |

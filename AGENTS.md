@@ -5,7 +5,7 @@ Read `ARCHITECTURE.md` first. It defines the modules, allowed dependencies and m
 ## Working rules
 1. **One task = one spec = one branch.** Branch from `main`. Names: `fix/<topic>`, `infra/<topic>`, `spec/<topic>`, `rust/<crate>-<feature>`, `viewer/<topic>`, `app/<topic>`. Branches are flat (git cannot nest them) and short-lived.
 2. **Edit only the folders your spec lists as owned.** Anything else is another agent's work. Shared files (workspace configs, CI) are changed only in their own `infra/` branch.
-3. **Never edit `legacy/`** except to run it. It is the reference until the parity gate passes.
+3. `legacy/` was deleted at the 8.1 parity gate; do not recreate it.
 4. **Never modify That Open libraries.** `viewer-core` wraps them; it does not patch them.
 5. **Dependency direction is downward only** (see `ARCHITECTURE.md` section 2). Tray and conduit never import each other. Cores never touch the DOM, Three.js or `web-sys`. If you need a new dependency edge, stop and ask.
 6. **Rust crates are pure:** no I/O, no globals, no time, no randomness, no panics for expected errors (return `Result`).
