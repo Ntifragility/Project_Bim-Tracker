@@ -41,3 +41,4 @@ jobs:
       - run: wasm-pack build bindings/conduit-wasm --target bundler
       - run: wasm-pack build bindings/tray-wasm --target bundler
       - run: python3 scripts/check-boundaries.py
+      - run: node scripts/parity-harness.mjs --quick --allow-expected
