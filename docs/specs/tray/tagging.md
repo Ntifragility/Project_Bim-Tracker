@@ -154,8 +154,8 @@ colour/style entities, `ifc-extractor.js` (Three.js), and
 Covered by `spec/vectors/tray/tagging.json` (33) +
 `spec/vectors/tray/validator.json` (7) +
 `spec/vectors/tray/tagging-state.json` (6, added by this task); all pass in
-Rust (`cargo test -p tray-tagging`: 46/46) and against legacy JS
-(`node scripts/run-tray-vectors.mjs`, tagging + validator suites green).
+Rust (`cargo test -p tray-tagging`: 46/46) and post-legacy via
+(`node scripts/run-tray-wasm-vectors.mjs`, tagging + validator suites green).
 
 | Case | Input | Expected |
 |---|---|---|
@@ -192,7 +192,7 @@ native `Tag` allowlist, `_tagged.ifc` naming — read path already in `ifc-io`)
 pending deletions, `getExcelTagsForValidation` + `runTagValidation`
 - Tests: `legacy/packages/routing-core/test/tag-scheme.test.js`,
 `tag-validator.test.js`; vectors: `spec/vectors/tray/tagging.json`,
-`validator.json`, runner `scripts/run-tray-vectors.mjs`.
+`validator.json`, runner `scripts/run-tray-wasm-vectors.mjs`.
 
 ## Open questions — resolved by 5.1 (2026-10-25)
 

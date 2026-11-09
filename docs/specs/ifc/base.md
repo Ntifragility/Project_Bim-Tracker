@@ -2,7 +2,7 @@
 
 Status: draft
 Branch: `rust/ifc-io`
-Owner folders: `crates/ifc-io/`, `spec/vectors/ifc/`, `docs/specs/ifc/`, `scripts/run-ifc-vectors.mjs`
+Owner folders: `crates/ifc-io/`, `spec/vectors/ifc/`, `docs/specs/ifc/` (vectors run in-crate via `cargo test -p ifc-io`; the legacy `scripts/run-ifc-vectors.mjs` runner was retired at the 8.1 parity gate with `legacy/`)
 
 ## Goal
 
@@ -102,9 +102,9 @@ StickLength`, defaulting to 0 when absent for old overlay files).
 
 ## Acceptance criteria
 
-Stored as `spec/vectors/ifc/*.json`, run against legacy JS via
-`node scripts/run-ifc-vectors.mjs` where a legacy function exists and
-against this crate via `cargo test`:
+Stored as `spec/vectors/ifc/*.json`, run in-crate via `cargo test -p ifc-io`
+(the legacy `node scripts/run-ifc-vectors.mjs` runner was retired at the
+8.1 parity gate with `legacy/`):
 
 | File | Cases | Covers |
 |---|---|---|

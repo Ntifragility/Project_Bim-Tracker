@@ -2,7 +2,7 @@
 
 Status: draft
 Branch: `rust/conduit-snap`
-Owner folders: `crates/conduit-core/` (snap module only), `spec/vectors/conduit/snap-engine.json`, `docs/specs/conduit/`, `scripts/run-conduit-snap-vectors.mjs`
+Owner folders: `crates/conduit-core/` (snap module only), `spec/vectors/conduit/snap-engine.json`, `docs/specs/conduit/`, `scripts/run-conduit-wasm-vectors.mjs`
 
 ## Goal
 
@@ -63,9 +63,9 @@ empty nodes/segments skip their stages (legacy parity).
 
 ## Acceptance criteria
 
-Stored as `spec/vectors/conduit/snap-engine.json`, run against legacy JS
-via `node scripts/run-conduit-snap-vectors.mjs` and against this crate
-via `cargo test`:
+Stored as `spec/vectors/conduit/snap-engine.json`, run post-legacy via
+`node scripts/run-conduit-wasm-vectors.mjs` (legacy runners retired at the
+8.1 parity gate with `legacy/`) and against this crate via `cargo test`:
 
 | Area | Cases | Covers |
 |---|---|---|

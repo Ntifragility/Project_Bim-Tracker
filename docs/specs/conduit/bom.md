@@ -2,7 +2,7 @@
 
 Status: draft
 Branch: `rust/conduit-bom`
-Owner folders: `crates/conduit-core/` (bom module only), `spec/vectors/conduit/bom-engine.json`, `docs/specs/conduit/`, `scripts/run-conduit-bom-vectors.mjs`
+Owner folders: `crates/conduit-core/` (bom module only), `spec/vectors/conduit/bom-engine.json`, `docs/specs/conduit/`, `scripts/run-conduit-wasm-vectors.mjs`
 
 ## Goal
 
@@ -63,9 +63,9 @@ parity). Empty runs (no points) contribute zero hardware.
 
 ## Acceptance criteria
 
-Stored as `spec/vectors/conduit/bom-engine.json`, run against legacy JS
-via `node scripts/run-conduit-bom-vectors.mjs` and against this crate
-via `cargo test`:
+Stored as `spec/vectors/conduit/bom-engine.json`, run post-legacy via
+`node scripts/run-conduit-wasm-vectors.mjs` (legacy runners retired at the
+8.1 parity gate with `legacy/`) and against this crate via `cargo test`:
 
 | Area | Cases | Covers |
 |---|---|---|

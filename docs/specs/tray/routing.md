@@ -110,7 +110,7 @@ re-exports them. No second implementation.
 ## Acceptance criteria
 
 Covered by `spec/vectors/tray/routing.json` (26 cases) via
-`node scripts/run-tray-vectors.mjs` (26/26 green against legacy JS) and
+`node scripts/run-tray-wasm-vectors.mjs` (26/26 green post-legacy) and
 `cargo test -p tray-routing` (26/26 green in Rust).
 
 | Case | Input | Expected |
@@ -157,7 +157,7 @@ candidate regexes `IFCCABLECARRIERSEGMENT|FITTING` + Revizto
 `ifc-extractor.test.js`; evidence `docs/revizto-validation.md`
 (100/500/1000 mm tolerance table; route #3192→#3702 13.71 m);
 vectors `spec/vectors/tray/routing.json` + runner
-`scripts/run-tray-vectors.mjs`.
+`scripts/run-tray-wasm-vectors.mjs`.
 
 ## Open questions — resolved by 5.2 (2026-10-25)
 

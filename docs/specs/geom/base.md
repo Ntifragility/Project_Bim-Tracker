@@ -2,7 +2,7 @@
 
 Status: draft
 Branch: `rust/geom-core`
-Owner folders: `crates/geom-core/`, `spec/vectors/geom/`, `docs/specs/geom/`, `scripts/run-geom-vectors.mjs`
+Owner folders: `crates/geom-core/`, `spec/vectors/geom/`, `docs/specs/geom/` (vectors run in-crate via `cargo test -p geom-core`; the legacy `scripts/run-geom-vectors.mjs` runner was retired at the 8.1 parity gate with `legacy/`)
 
 ## Goal
 
@@ -85,8 +85,9 @@ parity, verified against real three.js r184). `to_original` inverts `base`
 
 ## Acceptance criteria
 
-Stored as `spec/vectors/geom/*.json`, run against legacy JS via
-`node scripts/run-geom-vectors.mjs` and against this crate via `cargo test`:
+Stored as `spec/vectors/geom/*.json`, run in-crate via `cargo test -p geom-core`
+(the legacy `node scripts/run-geom-vectors.mjs` runner was retired at the
+8.1 parity gate with `legacy/`):
 
 | File | Cases | Covers |
 |---|---|---|
