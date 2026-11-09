@@ -19,8 +19,9 @@ const SRC = path.join(ROOT, "target/wasm32-unknown-unknown/release/viewport_core
 const DEST = path.join(ROOT, "public/assets/viewport_core.wasm");
 
 // npm-only environments (plain frontend dev machines, the CI `baseline` job)
-// have no Rust toolchain. The CI `viewport-wasm` job is the hard gate for
-// freshness; here, an existing artifact is good enough to unblock dev/build.
+// have no Rust toolchain. The built wasm is committed (like
+// public/web-ifc.wasm) and the CI `viewport-wasm` job fails on drift, so an
+// existing artifact is good enough to unblock dev/build here.
 try {
   execFileSync("cargo", ["build", "-p", "viewport-core", "--target", "wasm32-unknown-unknown", "--release"], {
     cwd: ROOT,

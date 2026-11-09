@@ -14,11 +14,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-      # Pure cdylib with a C API: plain cargo emits a directly instantiable
-      # module, no wasm-pack needed. Guards against regressions of the missing
-      # `viewport_core.wasm` that broke the conduit open-file button.
+      # The built wasm is committed (like public/web-ifc.wasm) so npm-only
+      # flows work out of the box. This job rebuilds from source and fails on
+      # drift, so a stale binary can never slip through silently.
       - run: node scripts/build-viewport-wasm.mjs
-      - run: node -e "const b=require('node:fs').readFileSync('public/assets/viewport_core.wasm'); if(b[0]!==0x00||b[1]!==0x61||b[2]!==0x73||b[3]!==0x6d) throw new Error('not a wasm module')"
+      - run: git diff --exit-code -- public/assets/viewport_core.wasm
 
   baseline:
     runs-on: ubuntu-latest
