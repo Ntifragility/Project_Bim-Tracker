@@ -2,7 +2,7 @@
 
 Status: draft
 Branch: `rust/conduit-takeoff-io`
-Owner folders: `crates/conduit-core/` (snap module only), `spec/vectors/conduit/takeoff-io-engine.json`, `docs/specs/conduit/`, `scripts/run-conduit-takeoff-io-vectors.mjs`
+Owner folders: `crates/conduit-core/` (snap module only), `spec/vectors/conduit/takeoff-io-engine.json`, `docs/specs/conduit/`, `scripts/run-conduit-wasm-vectors.mjs`
 
 ## Goal
 
@@ -69,9 +69,9 @@ pattern) and string building.
 
 ## Acceptance criteria
 
-Stored as `spec/vectors/conduit/takeoff-io-engine.json`, run against
-legacy JS via `node scripts/run-conduit-takeoff-io-vectors.mjs` and
-against this crate via `cargo test`:
+Stored as `spec/vectors/conduit/takeoff-io-engine.json`, run post-legacy
+via `node scripts/run-conduit-wasm-vectors.mjs` (legacy runners retired at
+the 8.1 parity gate with `legacy/`) and against this crate via `cargo test`:
 
 | Area | Cases | Covers |
 |---|---|---|

@@ -2,7 +2,7 @@
 
 Status: implemented (vectors) — Rust crates land in Phase 3/4
 Branch: `spec/vectors-conduit`
-Owner folders: `spec/vectors/conduit/`, `docs/specs/conduit/`, `scripts/run-conduit-vectors.mjs`
+Owner folders: `spec/vectors/conduit/`, `docs/specs/conduit/`, `scripts/run-conduit-wasm-vectors.mjs`
 
 ## Goal
 
@@ -23,8 +23,9 @@ they describe real behaviour) and against the Rust crates in Phase 3/4
 | `spec/vectors/conduit/units.json` | 18 | `coordinate-utils.js`, `config.js`, `diameter-registry.js`: UNIT_TABLE, unit resolve/convert, trade-size parse, default diameters, stick length |
 | `spec/vectors/conduit/io.json` | 12 | `command-stack.js`, `marker-model.js`, `project-io.js`, `csv-export.js`, `ifc-exporter.js`: shape-pinned TS-side behaviour (jsOnly) |
 
-89 cases total, all passing against legacy JS via
-`node scripts/run-conduit-vectors.mjs`.
+89 cases total, run post-legacy via
+`node scripts/run-conduit-wasm-vectors.mjs` (legacy runners retired at the
+8.1 parity gate with `legacy/`).
 
 ## Rules
 
