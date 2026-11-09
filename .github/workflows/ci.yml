@@ -7,6 +7,19 @@ on:
     branches: [main]
 
 jobs:
+  viewport-wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      # Pure cdylib with a C API: plain cargo emits a directly instantiable
+      # module, no wasm-pack needed. Guards against regressions of the missing
+      # `viewport_core.wasm` that broke the conduit open-file button.
+      - run: node scripts/build-viewport-wasm.mjs
+      - run: node -e "const b=require('node:fs').readFileSync('public/assets/viewport_core.wasm'); if(b[0]!==0x00||b[1]!==0x61||b[2]!==0x73||b[3]!==0x6d) throw new Error('not a wasm module')"
+
   baseline:
     runs-on: ubuntu-latest
     steps:

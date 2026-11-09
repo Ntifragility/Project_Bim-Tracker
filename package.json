@@ -8,7 +8,11 @@
     "apps/*"
   ],
   "scripts": {
+    "predev": "node scripts/build-viewport-wasm.mjs",
     "dev": "vite",
+    "predev:conduit": "node scripts/build-viewport-wasm.mjs",
+    "prebuild": "node scripts/build-viewport-wasm.mjs",
+    "prebuild:conduit": "node scripts/build-viewport-wasm.mjs",
     "dev:conduit": "vite conduit-takeoff --open",
     "build": "vite build",
     "build:conduit": "vite build conduit-takeoff",
