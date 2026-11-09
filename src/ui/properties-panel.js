@@ -290,13 +290,13 @@ export function initPropertiesPanel(ctx, dom, api) {
     syncProjectTagPropertyGroup(model, localId);
   }
 
-  function collectModernPropertySets(value, groups, visited = new Set()) {
-    if (!value || typeof value !== 'object' || visited.has(value)) return;
+  function collectModernPropertySets(value, groups = new Map(), visited = new Set()) {
+    if (!value || typeof value !== 'object' || visited.has(value)) return groups;
     visited.add(value);
 
     if (Array.isArray(value)) {
       value.forEach((item) => collectModernPropertySets(item, groups, visited));
-      return;
+      return groups;
     }
 
     const properties = Array.isArray(value.HasProperties) ? value.HasProperties : null;
@@ -333,6 +333,7 @@ export function initPropertiesPanel(ctx, dom, api) {
     for (const nested of Object.values(value)) {
       collectModernPropertySets(nested, groups, visited);
     }
+    return groups;
   }
 
   // Main display function: show full element properties panel
@@ -486,11 +487,9 @@ export function initPropertiesPanel(ctx, dom, api) {
         }))?.[0];
 
         if (itemData) {
-          // Verbatim legacy quirk (see spec open questions): the combined
-          // view calls the collector with a single argument, so `groups`
-          // is undefined here exactly as in `src/main.js` before the split.
-          // The per-element try/catch below preserves the legacy outcome
-          // (warn + skip) instead of failing the whole panel render.
+          // Single-argument call returns the filled Map (default param);
+          // the legacy verbatim-quirk throw is fixed, the try/catch stays
+          // as a per-element guard (see spec Q1, now resolved).
           const psets = collectModernPropertySets(itemData);
           elementPsetsList.push(psets);
         }
@@ -519,7 +518,7 @@ export function initPropertiesPanel(ctx, dom, api) {
     const psetMap = new Map();
 
     elementPsetsList.forEach((psets) => {
-      for (const [psetName, props] of Object.entries(psets)) {
+      for (const { name: psetName, entries: props } of psets.values()) {
         if (!psetMap.has(psetName)) psetMap.set(psetName, { elementCount: 0, propMap: new Map() });
         const psetData = psetMap.get(psetName);
         psetData.elementCount += 1;
