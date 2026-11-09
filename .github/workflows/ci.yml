@@ -37,6 +37,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -54,3 +58,5 @@ jobs:
       - run: wasm-pack build bindings/conduit-wasm --target bundler
       - run: wasm-pack build bindings/tray-wasm --target bundler
       - run: python3 scripts/check-boundaries.py
+      - run: npm ci
+      - run: node scripts/parity-harness.mjs --quick --allow-expected
