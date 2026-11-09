@@ -223,7 +223,7 @@
   ],
   "feature": "tagging-state",
   "module": "tray",
-  "notes": "Assignment-state (effective overlay, pending delete, batch apply/undo, preview conflict) + register/summary row builders. Added by task 5.1; mirrors crates/tray-tagging state/rows tests. Cases are rustOnly (no importable legacy JS counterpart: the state logic lives in DOM-coupled UI closures); skipped by scripts/run-tray-vectors.mjs, verified by cargo test -p tray-tagging.",
+  "notes": "Assignment-state (effective overlay, pending delete, batch apply/undo, preview conflict) + register/summary row builders. Added by task 5.1; mirrors crates/tray-tagging state/rows tests. Cases are rustOnly (no importable legacy JS counterpart: the state logic lives in DOM-coupled UI closures); skipped by the retired scripts/run-tray-vectors.mjs, verified by cargo test -p tray-tagging and post-legacy by scripts/run-tray-wasm-vectors.mjs.",
   "source": "src/ui/tagging-panel.js effective/undo logic + src/ui/system-manager.js summaries + docs/specs/tray/tagging.md R12-R13",
   "units": "unit-free strings"
 }
