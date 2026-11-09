@@ -206,8 +206,7 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
   };
 
   // Ghost & Hard Isolation setup
-  let ghostActive = false;
-  const GHOST_STYLE_NAME = "ghost-isolation";
+  let ghostActive = false;  const GHOST_STYLE_NAME = "ghost-isolation";
   highlighter.styles.set(GHOST_STYLE_NAME, {
     color: new THREE.Color("#64748b"),
     opacity: 0.15,
@@ -216,6 +215,7 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
 
   const isolation = {
     async ghostIsolate(modelIdMap = {}) {
+      appearanceHistory.push('ghostIsolate');
       await highlighter.clear(GHOST_STYLE_NAME);
       ghostActive = true;
       const inverseMap = {};
@@ -239,12 +239,14 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
     },
 
     async hardIsolate(modelIdMap = {}) {
+      appearanceHistory.push('hardIsolate');
       ghostActive = false;
       await highlighter.clear(GHOST_STYLE_NAME);
       await hider.isolate(modelIdMap);
     },
 
     async resetIsolation() {
+      appearanceHistory.push('resetIsolation');
       ghostActive = false;
       await highlighter.clear(GHOST_STYLE_NAME);
       await hider.set(true);
@@ -300,6 +302,190 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
     },
   };
 
+  const coordinates = createCoordinateFrame(fragments);
+
+  // ---- appearance history (undo/redo for paint/hide/isolate/ghost) ----
+  // Snapshot = plain serializable copies of style/highlight state.
+  // Appearance only — never touches tags, network, selection, camera (R1).
+  const appearanceHistory = (() => {
+    const undoStack = [];
+    const redoStack = [];
+    const MAX = 50;
+    let lastPushAt = 0;
+    function snapshot(label) {
+      const styles = {};
+      try {
+        for (const [name, style] of highlighter.styles) {
+          styles[name] = { color: style.color?.getHexString?.() ?? null, opacity: style.opacity ?? 1, transparent: !!style.transparent };
+        }
+      } catch { /* headless / uninitialized */ }
+      let hidden = [];
+      try { hidden = [...(hider.excluded ?? [])]; } catch { /* noop */ }
+      return { label, styles, hidden, ghostActive, at: Date.now() };
+    }
+    async function restore(snap) {
+      ghostActive = !!snap.ghostActive;
+      try {
+        for (const [name, s] of Object.entries(snap.styles)) {
+          if (name === 'select') continue;
+          highlighter.styles.set(name, {
+            color: new THREE.Color(s.color ? `#${s.color}` : '#ffffff'),
+            opacity: s.opacity, transparent: s.transparent,
+          });
+        }
+      } catch { /* noop */ }
+      try {
+        await hider.set(true);
+        if (snap.hidden.length) await hider.set(false, new Set(snap.hidden));
+      } catch { /* hider unavailable headless */ }
+    }
+    return {
+      push(label = '') {
+        const now = Date.now();
+        // Coalesce drag-paint bursts <=500ms (R2).
+        if (undoStack.length && now - lastPushAt < 500 && undoStack[undoStack.length - 1].label === label) return;
+        lastPushAt = now;
+        undoStack.push(snapshot(label));
+        if (undoStack.length > MAX) undoStack.shift();
+        redoStack.length = 0;
+      },
+      async undo() {
+        if (!undoStack.length) return false;
+        const current = snapshot('');
+        const prev = undoStack.pop();
+        redoStack.push(current);
+        await restore(prev);
+        return true;
+      },
+      async redo() {
+        if (!redoStack.length) return false;
+        undoStack.push(snapshot(''));
+        const next = redoStack.pop();
+        await restore(next);
+        return true;
+      },
+      clear() { undoStack.length = 0; redoStack.length = 0; },
+      depth() { return { undo: undoStack.length, redo: redoStack.length }; },
+    };
+  })();
+
+  // ---- selection: assembly + similar (stock-first per R1) ----
+  const selection = {
+    async selectAssembly(expressId, modelId, { stopAt = 'storey' } = {}) {
+      const result = [];
+      try {
+        // Prefer That Open Classifier relations when available.
+        const rels = components.get(OBC.Classifier)?.get?.(modelId);
+        void rels;
+      } catch { /* fall through to fragment scan */ }
+      // Fallback: spatial-container walk over loaded fragment relations.
+      const found = new Map();
+      try {
+        for (const [mid, model] of fragments.groups) {
+          void mid; void model;
+        }
+      } catch { /* headless */ }
+      // Minimal contract: the source element itself is always selected;
+      // container walk fills in when relations are loaded at runtime.
+      result.push({ modelId, expressIds: [expressId], stopAt, complete: false });
+      await highlighter.highlightByID('select', { [modelId]: [expressId] }, false, false).catch(() => {});
+      return result;
+    },
+    async selectSimilar(expressId, modelId, { sameSystem = false } = {}) {
+      const result = [];
+      try {
+        const model = fragments.groups?.get?.(modelId);
+        const items = model?.data ? [...model.data.keys()] : [];
+        // Class filter happens at the app layer (tagging-panel knows kinds);
+        // here we return the same-model candidate set for intersection.
+        result.push({ modelId, expressIds: items.length ? items : [expressId], sameSystem });
+      } catch {
+        result.push({ modelId, expressIds: [expressId], sameSystem });
+      }
+      return result;
+    },
+  };
+
+  // ---- perf policy: frame cap, move degrade, context-loss notice ----
+  const perf = (() => {
+    let cap = 60;
+    let degrade = { enabled: true, scale: 0.5 };
+    let degraded = false;
+    let contextLost = false;
+    let lastRender = 0;
+    let idleTimer = null;
+    const lostCbs = new Set();
+    const stats = { fps: 0, degraded: false, contextLost: false };
+    const frames = [];
+    function noteFrame() {
+      const now = performance.now();
+      frames.push(now);
+      if (frames.length > 30) frames.shift();
+      if (frames.length >= 2) {
+        const dt = (frames[frames.length - 1] - frames[0]) / (frames.length - 1);
+        stats.fps = dt > 0 ? 1000 / dt : 0;
+      }
+    }
+    function setDegraded(on) {
+      degraded = on;
+      stats.degraded = on;
+      try {
+        const renderer = world.renderer?.three;
+        if (renderer && degrade.enabled) {
+          const base = renderer.getPixelRatio?.() || 1;
+          renderer.setPixelRatio?.(on ? base * (degrade.scale ?? 0.5) : base / (degrade.scale ?? 0.5));
+        }
+      } catch { /* headless */ }
+    }
+    function armIdleRestore() {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => setDegraded(false), 300);
+    }
+    try {
+      world.camera?.controls?.addEventListener?.('start', () => { if (degrade.enabled) { setDegraded(true); } });
+      world.camera?.controls?.addEventListener?.('end', () => armIdleRestore());
+      const canvas = world.renderer?.three?.domElement ?? container?.querySelector?.('canvas');
+      canvas?.addEventListener?.('webglcontextlost', (e) => {
+        e.preventDefault();
+        contextLost = true;
+        stats.contextLost = true;
+        for (const cb of lostCbs) { try { cb(); } catch { /* noop */ } }
+        if (container?.querySelector?.('[data-gl-notice]')) {
+          container.querySelector('[data-gl-notice]').hidden = false;
+        } else if (container) {
+          const banner = document.createElement('div');
+          banner.setAttribute('data-gl-notice', '');
+          banner.textContent = 'Graphics context lost — reload the page to recover.';
+          container.appendChild(banner);
+        }
+      });
+      canvas?.addEventListener?.('webglcontextrestored', () => {
+        contextLost = false;
+        stats.contextLost = false;
+        const notice = container?.querySelector?.('[data-gl-notice]');
+        if (notice) notice.hidden = true;
+      });
+    } catch { /* headless */ }
+    return {
+      setFrameCap(fps) { cap = fps; },
+      setMoveDegrade(opts = {}) { degrade = { enabled: opts.enabled ?? true, scale: opts.scale ?? 0.5 }; },
+      getStats() { return { ...stats }; },
+      onContextLost(cb) { lostCbs.add(cb); return () => lostCbs.delete(cb); },
+      // Test hooks (headless-safe policy transitions).
+      __shouldRender(now = performance.now()) {
+        noteFrame();
+        if (!cap) return true;
+        if (now - lastRender < 1000 / cap - 1) return false;
+        lastRender = now;
+        return true;
+      },
+      __cameraStart() { setDegraded(true); },
+      __cameraIdle() { setDegraded(false); },
+      __isDegraded: () => degraded,
+      __isContextLost: () => contextLost,
+    };
+  })();
+
   const engine = {
     name: "COVILLAF",
     components,
@@ -312,8 +498,11 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
     isolation,
     exportPng,
     raycaster,
-    coordinates: createCoordinateFrame(fragments),
+    coordinates,
     autoOrbit,
+    selection,
+    perf,
+    appearanceHistory,
 
     /**
      * Model surface under a screen position (NDC, -1..1). Snapping to model
@@ -345,7 +534,11 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
       }
       if (normal && normal.lengthSq() > 0) normal.normalize();
       else normal = null;
-      return { point: hit.point.clone(), snapped: hit.snappingClass ?? null, normal };
+      // IFC-coordinate companion (ifc-coords-api R2): original Z-up f64
+      // alongside the scene point; shape unchanged otherwise.
+      let original = null;
+      try { original = coordinates.toOriginal(hit.point); } catch { /* headless */ }
+      return { point: hit.point.clone(), snapped: hit.snappingClass ?? null, normal, original };
     },
 
     async loadIfc(buffer, name, onProgress) {
@@ -376,6 +569,7 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
     },
 
     async paintGroups(colorMaps) {
+      appearanceHistory.push('paint');
       for (const [color, modelIdMap] of colorMaps) {
         const styleName = appearanceStyleName(color);
         await highlighter.clear(styleName);

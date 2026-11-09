@@ -12,11 +12,16 @@ function viewportWasmResolver() {
   const virtualId = "\0virtual:viewport_core.wasm";
   return {
     name: "viewport-wasm-resolver",
+    // Safety net for stale absolute `/assets/...` URLs: if the built wasm is
+    // missing (e.g. pre-hooks skipped), fall back to the virtual module so the
+    // failure surfaces as a 404 with a clear console error instead of a
+    // bundler crash. `scripts/build-viewport-wasm.mjs` normally guarantees
+    // `public/assets/viewport_core.wasm` exists before dev/build.
     resolveId(id, importer) {
-      if (id.includes("viewport_core.wasm")) {
-        const cleanPath = id.replace(/\?url$/, "");
-        const targetPath = path.resolve(path.dirname(importer || __dirname), cleanPath);
-        if (!fs.existsSync(targetPath)) {
+      if (id === "/assets/viewport_core.wasm?url" || id === "/assets/viewport_core.wasm") {
+        const built = path.resolve(ROOT, "public/assets/viewport_core.wasm");
+        if (!fs.existsSync(built)) {
+          console.warn("[viewport-wasm-resolver] public/assets/viewport_core.wasm missing — run `npm run prebuild` or `node scripts/build-viewport-wasm.mjs`.");
           return virtualId;
         }
       }
@@ -33,6 +38,9 @@ function viewportWasmResolver() {
 
 export default defineConfig({
   root: ".",
+  // Share the tray app's public dir (fixtures, web-ifc.wasm) so `?ifc=`
+  // deep links and wasm assets resolve identically in both apps.
+  publicDir: path.resolve(ROOT, "public"),
   plugins: [covillafWebIfc(), viewportWasmResolver()],
   resolve: {
     alias: {

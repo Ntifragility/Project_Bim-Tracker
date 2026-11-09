@@ -2,7 +2,7 @@
 
 Status: draft
 Branch: `rust/conduit-network`
-Owner folders: `crates/conduit-core/`, `spec/vectors/conduit/network.json`, `docs/specs/conduit/`, `scripts/run-conduit-network-vectors.mjs`
+Owner folders: `crates/conduit-core/`, `spec/vectors/conduit/network.json`, `docs/specs/conduit/`, `scripts/run-conduit-wasm-vectors.mjs`
 
 ## Goal
 
@@ -84,9 +84,9 @@ the TS edge owns the counter (injected determinism, Q1 pattern).
 
 ## Acceptance criteria
 
-Stored as `spec/vectors/conduit/network.json`, run against legacy JS via
-`node scripts/run-conduit-network-vectors.mjs` where a legacy function
-exists and against this crate via `cargo test`:
+Stored as `spec/vectors/conduit/network.json`, run post-legacy via
+`node scripts/run-conduit-wasm-vectors.mjs` (legacy runners retired at the
+8.1 parity gate with `legacy/`) and against this crate via `cargo test`:
 
 | Area | Cases | Covers |
 |---|---|---|
