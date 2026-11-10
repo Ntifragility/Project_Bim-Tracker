@@ -277,8 +277,8 @@ export function createViewerChrome({ state, els, api }) {
               screenX: change.screenPos.x,
               screenY: change.screenPos.y,
               lengthM: change.liveSegment || 0,
-              angleDeg,
-              isAngleSnapped: !!change.isVertical || (angleDeg % 45 < 2 || angleDeg % 45 > 43),
+              angleDeg: change.liveBendAngle !== undefined && change.activePoints.length >= 2 ? change.liveBendAngle : angleDeg,
+              isAngleSnapped: Boolean(change.isAngleSnapped || change.isVertical || (angleDeg % 45 < 2 || angleDeg % 45 > 43)),
               elevationM: drawingTool.activeElevation,
               visible: true,
             });

@@ -573,6 +573,43 @@ export function createConduitRibbonDef(ctx) {
             ],
           },
           {
+            id: 'angles',
+            label: 'Angles',
+            items: [
+              [
+                {
+                  kind: 'input',
+                  id: 'top-angles-select',
+                  label: 'Angles:',
+                  inputType: 'select',
+                  keytip: 'CRA',
+                  tooltip: 'Revit MEP Bend Angles Constraint (NFPA 70 / NEC Specific vs Any Angle)',
+                  options: [
+                    { value: 'specific', label: 'Specific Angles (NEC)' },
+                    { value: 'any', label: 'Use Any Angle' },
+                  ],
+                  value(c) {
+                    const tool = getTool();
+                    return tool?.isSpecificAnglesEnforced !== false ? 'specific' : 'any';
+                  },
+                  onChange(val, c) {
+                    const tool = getTool();
+                    if (tool) {
+                      tool.isSpecificAnglesEnforced = (val === 'specific');
+                    }
+                    const statusText = c.els?.statusText || getDoc()?.getElementById('status-text');
+                    if (statusText) {
+                      statusText.textContent = val === 'specific'
+                        ? 'Bend constraint: Specific Angles (NEC standard 15°, 22.5°, 30°, 45°, 60°, 90°)'
+                        : 'Bend constraint: Use Any Angle (Freeform routing)';
+                    }
+                    c.ribbonApi?.refresh();
+                  },
+                },
+              ],
+            ],
+          },
+          {
             id: 'system',
             label: 'System',
             items: [
