@@ -386,14 +386,51 @@ export class SnapEngine {
  *   distance: number
  * }}
  */
+/**
+ * Revit MEP-Style Cartesian XYZ Bend Angle Constraint during interactive layout.
+ *
+ * Constrains candidate cursor points strictly relative to the Cartesian XYZ coordinate reference:
+ * - Primary Orthogonal Axes: X (East-West), Z (North-South), Y (Vertical Elevation).
+ * - Planar Diagonals: 45° offsets in the horizontal plane (X-Z).
+ *
+ * When turning from an X-pipe to a Z-pipe: exact 90° Cartesian corner fillet in the X-Z plane.
+ * When turning from a horizontal pipe to a vertical riser: exact 90° Cartesian vertical fillet in X-Y or Z-Y plane.
+ * When taking an offset: exact 45° Cartesian fillet in the X-Z plane.
+ * When extending collinear: 0° bend (straight continuation without curves).
+ *
+ * @param {Point3D} pPrev - Start of incoming segment
+ * @param {Point3D} pAnchor - End of incoming segment (the apex/corner)
+ * @param {Point3D} pCursor - Raw cursor candidate point in 3D
+ * @param {Object} [options]
+ * @param {number[]} [options.allowedAnglesDeg] - Allowed relative turn angles (default [0, 45, 90])
+ * @param {number} [options.toleranceDeg] - Angular snap tolerance window (default 18.0°)
+ * @param {boolean} [options.enforceSpecificAngles] - When true, forces snapping to nearest Cartesian direction
+ * @param {boolean} [options.allow45] - Allow 45° diagonal snap (default true)
+ * @param {number} [options.minTangentM] - Minimum required straight tangent distance (meters)
+ * @param {'Y'|'Z'} [options.upAxis] - Up axis ('Y' for Three.js, 'Z' for IFC)
+ * @returns {{
+ *   point: Point3D,
+ *   bendAngleDeg: number,
+ *   rawAngleDeg: number,
+ *   cartesianAxis: 'X'|'Z'|'Y'|'XZ_45'|'none',
+ *   cartesianHeading: string,
+ *   isSnapped: boolean,
+ *   isStandard: boolean,
+ *   tangentValid: boolean,
+ *   minTangentM: number,
+ *   distance: number
+ * }}
+ */
 export function constrainConduitBendAngle(
   pPrev,
   pAnchor,
   pCursor,
   {
-    allowedAnglesDeg = [0, 11.25, 15, 22.5, 30, 45, 60, 90],
-    toleranceDeg = 6.0,
+    allowedAnglesDeg = [0, 15, 22.5, 30, 45, 60, 90],
+    toleranceDeg = 18.0,
     enforceSpecificAngles = true,
+    cartesianReference = true,
+    allow45 = true,
     minTangentM = 0,
     upAxis = 'Y',
   } = {}
@@ -403,6 +440,8 @@ export function constrainConduitBendAngle(
       point: pCursor,
       bendAngleDeg: 0,
       rawAngleDeg: 0,
+      cartesianAxis: 'none',
+      cartesianHeading: '',
       isSnapped: false,
       isStandard: false,
       tangentValid: true,
@@ -411,25 +450,7 @@ export function constrainConduitBendAngle(
     };
   }
 
-  // If no prior segment, no bend constraint can be evaluated (first segment)
-  if (!pPrev) {
-    return {
-      point: pCursor,
-      bendAngleDeg: 0,
-      rawAngleDeg: 0,
-      isSnapped: false,
-      isStandard: true,
-      tangentValid: true,
-      minTangentM: 0,
-      distance: vec3.distance(pAnchor, pCursor),
-    };
-  }
-
   // Coordinate projections on the active work plane
-  const dxIn = pAnchor.x - pPrev.x;
-  const dPlaneIn = upAxis === 'Y' ? pAnchor.z - pPrev.z : pAnchor.y - pPrev.y;
-  const inLen = Math.hypot(dxIn, dPlaneIn);
-
   const dxOut = pCursor.x - pAnchor.x;
   const dPlaneOut = upAxis === 'Y' ? pCursor.z - pAnchor.z : pCursor.y - pAnchor.y;
   const outLen = Math.hypot(dxOut, dPlaneOut);
@@ -440,6 +461,8 @@ export function constrainConduitBendAngle(
       point: { ...pCursor },
       bendAngleDeg: 0,
       rawAngleDeg: 0,
+      cartesianAxis: 'none',
+      cartesianHeading: '',
       isSnapped: false,
       isStandard: true,
       tangentValid: minTangentM <= 0.03,
@@ -448,74 +471,205 @@ export function constrainConduitBendAngle(
     };
   }
 
-  // If incoming segment in horizontal plane has zero length (e.g. was a pure vertical riser)
-  if (inLen < EPSILON) {
+  // Relative mode (when cartesianReference is explicitly false)
+  if (!cartesianReference) {
+    if (!pPrev) {
+      return {
+        point: pCursor,
+        bendAngleDeg: 0,
+        rawAngleDeg: 0,
+        cartesianAxis: 'none',
+        cartesianHeading: '',
+        isSnapped: false,
+        isStandard: true,
+        tangentValid: true,
+        minTangentM: 0,
+        distance: vec3.distance(pAnchor, pCursor),
+      };
+    }
+
+    const dxIn = pAnchor.x - pPrev.x;
+    const dPlaneIn = upAxis === 'Y' ? pAnchor.z - pPrev.z : pAnchor.y - pPrev.y;
+    const inLen = Math.hypot(dxIn, dPlaneIn);
+
+    if (inLen < EPSILON) {
+      return {
+        point: { ...pCursor },
+        bendAngleDeg: 90,
+        rawAngleDeg: 90,
+        cartesianAxis: 'Y',
+        cartesianHeading: 'Y',
+        isSnapped: true,
+        isStandard: true,
+        tangentValid: outLen >= minTangentM,
+        minTangentM,
+        distance: outLen,
+      };
+    }
+
+    const headingIn = Math.atan2(dPlaneIn, dxIn);
+    const headingOut = Math.atan2(dPlaneOut, dxOut);
+
+    let deltaAngleRad = headingOut - headingIn;
+    while (deltaAngleRad > Math.PI) deltaAngleRad -= 2 * Math.PI;
+    while (deltaAngleRad <= -Math.PI) deltaAngleRad += 2 * Math.PI;
+
+    const rawAngleDeg = Math.abs(deltaAngleRad) * RAD_TO_DEG;
+    const turnSign = deltaAngleRad >= 0 ? 1 : -1;
+
+    let closestAngle = allowedAnglesDeg[0];
+    let minDiff = Infinity;
+    for (const std of allowedAnglesDeg) {
+      const diff = Math.abs(rawAngleDeg - std);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestAngle = std;
+      }
+    }
+
+    const isSnapped = minDiff <= toleranceDeg;
+    const useAngle = (isSnapped || enforceSpecificAngles) ? closestAngle : rawAngleDeg;
+    const isStandard = isSnapped || (enforceSpecificAngles && minDiff <= 15.0);
+
+    const finalHeadingRad = headingIn + (turnSign * useAngle * DEG_TO_RAD);
+    const effectiveLen = Math.max(outLen, minTangentM > 0 && enforceSpecificAngles ? minTangentM : 0);
+    const tangentValid = outLen >= (minTangentM - 0.01);
+
+    const snappedX = pAnchor.x + effectiveLen * Math.cos(finalHeadingRad);
+    const snappedPlane = (upAxis === 'Y' ? pAnchor.z : pAnchor.y) + effectiveLen * Math.sin(finalHeadingRad);
+
+    const snappedPoint = upAxis === 'Y'
+      ? { x: snappedX, y: pCursor.y, z: snappedPlane }
+      : { x: snappedX, y: snappedPlane, z: pCursor.z };
+
     return {
-      point: { ...pCursor },
-      bendAngleDeg: 90,
-      rawAngleDeg: 90,
-      isSnapped: true,
-      isStandard: true,
-      tangentValid: outLen >= minTangentM,
+      point: snappedPoint,
+      bendAngleDeg: useAngle,
+      rawAngleDeg: Math.round(rawAngleDeg * 10) / 10,
+      cartesianAxis: 'none',
+      cartesianHeading: '',
+      isSnapped,
+      isStandard,
+      tangentValid,
       minTangentM,
-      distance: outLen,
+      distance: effectiveLen,
     };
   }
 
-  // Base incoming heading in radians
-  const headingIn = Math.atan2(dPlaneIn, dxIn);
-  // Candidate outgoing heading in radians
-  const headingOut = Math.atan2(dPlaneOut, dxOut);
+  // 1. Cartesian XYZ Reference Mode (Default in 3D BIM)
+  const cartesianTargets = allow45
+    ? [0, 45, 90, 135, 180, 225, 270, 315]
+    : [0, 90, 180, 270];
 
-  // Deflection angle between incoming vector and outgoing candidate
-  let deltaAngleRad = headingOut - headingIn;
-  // Normalize to (-PI, PI]
-  while (deltaAngleRad > Math.PI) deltaAngleRad -= 2 * Math.PI;
-  while (deltaAngleRad <= -Math.PI) deltaAngleRad += 2 * Math.PI;
+  let rawHeadingDeg = Math.atan2(dPlaneOut, dxOut) * RAD_TO_DEG;
+  if (rawHeadingDeg < 0) rawHeadingDeg += 360;
 
-  const rawAngleDeg = Math.abs(deltaAngleRad) * RAD_TO_DEG;
-  const turnSign = deltaAngleRad >= 0 ? 1 : -1;
-
-  // Find nearest allowed standard angle
-  let closestAngle = allowedAnglesDeg[0];
+  let closestHeading = cartesianTargets[0];
   let minDiff = Infinity;
-  for (const std of allowedAnglesDeg) {
-    const diff = Math.abs(rawAngleDeg - std);
+  for (const target of cartesianTargets) {
+    let diff = Math.abs(rawHeadingDeg - target);
+    if (diff > 180) diff = 360 - diff;
     if (diff < minDiff) {
       minDiff = diff;
-      closestAngle = std;
+      closestHeading = target;
     }
   }
 
-  const isSnapped = minDiff <= toleranceDeg;
-  // In Revit "Use specific angles" mode, we force-snap to the closest standard angle
-  // If enforceSpecificAngles is false, we only snap when within tolerance
-  const useAngle = (isSnapped || enforceSpecificAngles) ? closestAngle : rawAngleDeg;
-  const isStandard = isSnapped || (enforceSpecificAngles && minDiff <= 15.0);
+  const isCartesianSnapped = minDiff <= toleranceDeg || enforceSpecificAngles;
+  const snappedHeading = isCartesianSnapped ? closestHeading : rawHeadingDeg;
 
-  // Compute final snapped heading
-  const finalHeadingRad = headingIn + (turnSign * useAngle * DEG_TO_RAD);
+  const snapRad = snappedHeading * DEG_TO_RAD;
+  let snappedX = pAnchor.x + outLen * Math.cos(snapRad);
+  let snappedPlane = (upAxis === 'Y' ? pAnchor.z : pAnchor.y) + outLen * Math.sin(snapRad);
 
-  // Compute tangent distance validity
-  const effectiveLen = Math.max(outLen, minTangentM > 0 && enforceSpecificAngles ? minTangentM : 0);
-  const tangentValid = outLen >= (minTangentM - 0.01);
-
-  // Snapped 3D point
-  const snappedX = pAnchor.x + effectiveLen * Math.cos(finalHeadingRad);
-  const snappedPlane = (upAxis === 'Y' ? pAnchor.z : pAnchor.y) + effectiveLen * Math.sin(finalHeadingRad);
+  let cartesianAxis = 'none';
+  let cartesianHeading = '';
+  if (snappedHeading === 0) {
+    snappedPlane = upAxis === 'Y' ? pAnchor.z : pAnchor.y;
+    cartesianAxis = 'X';
+    cartesianHeading = 'X+';
+  } else if (snappedHeading === 180) {
+    snappedPlane = upAxis === 'Y' ? pAnchor.z : pAnchor.y;
+    cartesianAxis = 'X';
+    cartesianHeading = 'X-';
+  } else if (snappedHeading === 90) {
+    snappedX = pAnchor.x;
+    cartesianAxis = upAxis === 'Y' ? 'Z' : 'Y';
+    cartesianHeading = upAxis === 'Y' ? 'Z+' : 'Y+';
+  } else if (snappedHeading === 270) {
+    snappedX = pAnchor.x;
+    cartesianAxis = upAxis === 'Y' ? 'Z' : 'Y';
+    cartesianHeading = upAxis === 'Y' ? 'Z-' : 'Y-';
+  } else if (snappedHeading % 90 === 45) {
+    cartesianAxis = 'XZ_45';
+    cartesianHeading = '45° Offset';
+  }
 
   const snappedPoint = upAxis === 'Y'
     ? { x: snappedX, y: pCursor.y, z: snappedPlane }
     : { x: snappedX, y: snappedPlane, z: pCursor.z };
 
+  if (!pPrev) {
+    return {
+      point: snappedPoint,
+      bendAngleDeg: 0,
+      rawAngleDeg: 0,
+      cartesianAxis,
+      cartesianHeading,
+      isSnapped: false, // first segment has no prior bend
+      isStandard: true,
+      tangentValid: true,
+      minTangentM: 0,
+      distance: outLen,
+    };
+  }
+
+  const dxIn = pAnchor.x - pPrev.x;
+  const dPlaneIn = upAxis === 'Y' ? pAnchor.z - pPrev.z : pAnchor.y - pPrev.y;
+  const inLen = Math.hypot(dxIn, dPlaneIn);
+
+  let bendAngleDeg = 0;
+  let isStandard = true;
+
+  if (inLen > EPSILON) {
+    let inHeadingDeg = Math.atan2(dPlaneIn, dxIn) * RAD_TO_DEG;
+    if (inHeadingDeg < 0) inHeadingDeg += 360;
+
+    let closestInHeading = cartesianTargets[0];
+    let minInDiff = Infinity;
+    for (const target of cartesianTargets) {
+      let diff = Math.abs(inHeadingDeg - target);
+      if (diff > 180) diff = 360 - diff;
+      if (diff < minInDiff) {
+        minInDiff = diff;
+        closestInHeading = target;
+      }
+    }
+    const refInHeading = minInDiff <= 18.0 ? closestInHeading : inHeadingDeg;
+
+    let deltaDeg = snappedHeading - refInHeading;
+    while (deltaDeg > 180) deltaDeg -= 360;
+    while (deltaDeg <= -180) deltaDeg += 360;
+
+    bendAngleDeg = Math.round(Math.abs(deltaDeg) * 10) / 10;
+    isStandard = allowedAnglesDeg.some((a) => Math.abs(bendAngleDeg - a) <= 1.0);
+  } else {
+    bendAngleDeg = 90;
+    isStandard = true;
+  }
+
+  const tangentValid = outLen >= (minTangentM - 0.01);
+
   return {
     point: snappedPoint,
-    bendAngleDeg: useAngle,
-    rawAngleDeg: Math.round(rawAngleDeg * 10) / 10,
-    isSnapped,
+    bendAngleDeg,
+    rawAngleDeg: bendAngleDeg,
+    cartesianAxis,
+    cartesianHeading,
+    isSnapped: isCartesianSnapped,
     isStandard,
     tangentValid,
     minTangentM,
-    distance: effectiveLen,
+    distance: outLen,
   };
 }

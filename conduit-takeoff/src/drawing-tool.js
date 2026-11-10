@@ -51,6 +51,25 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
   workPlaneGrid.renderOrder = 50;
   overlayGroup.add(workPlaneGrid);
 
+  // XYZ Work Plane Grid Axes Helper (Red = X, Green = Y/Elevation, Blue = Z)
+  const workPlaneAxes = new THREE.AxesHelper(10);
+  workPlaneAxes.name = 'WorkPlaneAxesHelper';
+  workPlaneAxes.position.y = 2.8;
+  workPlaneAxes.renderOrder = 55;
+  workPlaneAxes.material.depthTest = false;
+  workPlaneAxes.material.transparent = true;
+  workPlaneAxes.material.opacity = 0.85;
+  overlayGroup.add(workPlaneAxes);
+
+  // XYZ World Origin Axes Helper (Red = X, Green = Y, Blue = Z)
+  const worldAxesHelper = new THREE.AxesHelper(16);
+  worldAxesHelper.name = 'WorldAxesHelper';
+  worldAxesHelper.renderOrder = 45;
+  worldAxesHelper.material.depthTest = false;
+  worldAxesHelper.material.transparent = true;
+  worldAxesHelper.material.opacity = 0.4;
+  overlayGroup.add(worldAxesHelper);
+
   // Snap Indicator Dot
   const snapDotGeo = new THREE.SphereGeometry(0.045, 16, 16);
   const snapDotMat = new THREE.MeshBasicMaterial({
@@ -404,11 +423,13 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
     let liveBendAngle = 0;
     let isAngleSnapped = false;
     let isTangentValid = true;
+    let cartesianHeading = '';
 
     if (isPerpendicularActive) {
       targetPt = getVerticalProjectionPoint(lastPt, lastNdc);
       liveBendAngle = 90;
       isAngleSnapped = true;
+      cartesianHeading = '[Vertical: Y]';
 
       const vpos = vertGuideGeo.attributes.position.array;
       vpos[0] = lastPt.x;
@@ -422,59 +443,40 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
       angleGuideLine.visible = false;
     } else if (targetPt && !cursorOnSurface) {
       vertGuideLine.visible = false;
-      if (prevPt) {
-        // Enforce relative bend angle constraint relative to incoming segment!
-        const bendResult = constrainConduitBendAngle(prevPt, lastPt, targetPt, {
-          allowedAnglesDeg: [0, 11.25, 15, 22.5, 30, 45, 60, 90],
-          toleranceDeg: 7.5,
-          enforceSpecificAngles: isSpecificAnglesEnforced,
-          minTangentM: minRadiusM * 0.4,
-          upAxis: 'Y',
-        });
-        targetPt = bendResult.point;
-        liveBendAngle = bendResult.bendAngleDeg;
-        isAngleSnapped = bendResult.isSnapped;
-        isTangentValid = bendResult.tangentValid;
+      const bendResult = constrainConduitBendAngle(prevPt, lastPt, targetPt, {
+        allowedAnglesDeg: [0, 45, 90],
+        toleranceDeg: 18.0,
+        enforceSpecificAngles: isSpecificAnglesEnforced,
+        cartesianReference: true,
+        allow45: true,
+        minTangentM: minRadiusM * 0.4,
+        upAxis: 'Y',
+      });
+      targetPt = bendResult.point;
+      liveBendAngle = bendResult.bendAngleDeg;
+      isAngleSnapped = bendResult.isSnapped;
+      isTangentValid = bendResult.tangentValid;
+      cartesianHeading = bendResult.cartesianHeading ? `[Axis: ${bendResult.cartesianHeading}]` : '';
 
-        // Render dashed polar guide ray along the snapped heading
-        if (isAngleSnapped && targetPt) {
-          const gdx = targetPt.x - lastPt.x;
-          const gdz = targetPt.z - lastPt.z;
-          const glen = Math.hypot(gdx, gdz);
-          if (glen > 0.05) {
-            const rayScale = Math.max(glen * 1.5, 8.0);
-            const apos = angleGuideGeo.attributes.position.array;
-            apos[0] = lastPt.x;
-            apos[1] = lastPt.y;
-            apos[2] = lastPt.z;
-            apos[3] = lastPt.x + (gdx / glen) * rayScale;
-            apos[4] = lastPt.y;
-            apos[5] = lastPt.z + (gdz / glen) * rayScale;
-            angleGuideGeo.attributes.position.needsUpdate = true;
-            angleGuideLine.computeLineDistances?.();
-            angleGuideLine.visible = true;
-          } else {
-            angleGuideLine.visible = false;
-          }
+      // Render dashed Cartesian guide ray along the snapped heading
+      if (isAngleSnapped && targetPt) {
+        const gdx = targetPt.x - lastPt.x;
+        const gdz = targetPt.z - lastPt.z;
+        const glen = Math.hypot(gdx, gdz);
+        if (glen > 0.05) {
+          const rayScale = Math.max(glen * 1.5, 12.0);
+          const apos = angleGuideGeo.attributes.position.array;
+          apos[0] = lastPt.x;
+          apos[1] = lastPt.y;
+          apos[2] = lastPt.z;
+          apos[3] = lastPt.x + (gdx / glen) * rayScale;
+          apos[4] = lastPt.y;
+          apos[5] = lastPt.z + (gdz / glen) * rayScale;
+          angleGuideGeo.attributes.position.needsUpdate = true;
+          angleGuideLine.computeLineDistances?.();
+          angleGuideLine.visible = true;
         } else {
           angleGuideLine.visible = false;
-        }
-      } else if (isOrthoActive) {
-        const orthoResult = constrainOrtho3D(lastPt, targetPt);
-        targetPt = orthoResult;
-        liveBendAngle = 0;
-        isAngleSnapped = true;
-        angleGuideLine.visible = false;
-        if (orthoResult.axis === 'Y') {
-          const vpos = vertGuideGeo.attributes.position.array;
-          vpos[0] = lastPt.x;
-          vpos[1] = lastPt.y - 15;
-          vpos[2] = lastPt.z;
-          vpos[3] = lastPt.x;
-          vpos[4] = lastPt.y + 15;
-          vpos[5] = lastPt.z;
-          vertGuideGeo.attributes.position.needsUpdate = true;
-          vertGuideLine.visible = true;
         }
       } else {
         angleGuideLine.visible = false;
@@ -491,8 +493,10 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
         const pP = activeRunPoints[i - 1];
         const pC = activeRunPoints[i];
         const pN = activeRunPoints[i + 1];
-        const elbow = solveElbowFitting(pP, pC, pN, minRadiusM, 8);
-        if (elbow.isValid && !elbow.isStraight) {
+        const angle = calculateBendAngle(pP, pC, pN);
+        const hasTurn = angle >= 10.0;
+        const elbow = hasTurn ? solveElbowFitting(pP, pC, pN, minRadiusM, 8) : null;
+        if (elbow && elbow.isValid && !elbow.isStraight) {
           const straightCyl = createCylinderSegment(currentStart, elbow.tangentStart, pipeRadius, colorHex);
           if (straightCyl) activeRunGroup.add(straightCyl);
           for (let a = 0; a < elbow.arcPoints.length - 1; a++) {
@@ -509,8 +513,10 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
 
       // Live elbow at the active corner (between prevPt, lastPt, and targetPt)
       if (targetPt && prevPt) {
-        const liveElbow = solveElbowFitting(prevPt, lastPt, targetPt, minRadiusM, 8);
-        if (liveElbow.isValid && !liveElbow.isStraight) {
+        // Only generate an elbow if there is an actual turn! (liveBendAngle >= 15°)
+        const hasTurn = liveBendAngle >= 15.0;
+        const liveElbow = hasTurn ? solveElbowFitting(prevPt, lastPt, targetPt, minRadiusM, 8) : null;
+        if (liveElbow && liveElbow.isValid && !liveElbow.isStraight) {
           const straightIn = createCylinderSegment(currentStart, liveElbow.tangentStart, pipeRadius, colorHex);
           if (straightIn) activeRunGroup.add(straightIn);
 
@@ -559,6 +565,7 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
         targetPt,
         isVertical: isPerpendicularActive || targetPt.axis === 'Y',
         liveBendAngle,
+        cartesianHeading,
         isAngleSnapped,
         isTangentValid,
       };
@@ -612,9 +619,11 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
           const pPrev = points[i - 1];
           const pCurr = points[i];
           const pNext = points[i + 1];
-          const elbow = solveElbowFitting(pPrev, pCurr, pNext, minRadiusM, 10);
+          const angle = calculateBendAngle(pPrev, pCurr, pNext);
+          const hasTurn = angle >= 10.0;
+          const elbow = hasTurn ? solveElbowFitting(pPrev, pCurr, pNext, minRadiusM, 10) : null;
 
-          if (elbow.isValid && !elbow.isStraight) {
+          if (elbow && elbow.isValid && !elbow.isStraight) {
             // 1. Straight conduit up to the bend's tangent start point
             const straightCyl = createCylinderSegment(currentStart, elbow.tangentStart, pipeRadius, colorHex, isSelected);
             if (straightCyl) runGroup.add(straightCyl);
@@ -954,19 +963,17 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
         let candidate = target;
         if (!target.onSurface) {
           const prevPt = activeRunPoints.length >= 2 ? activeRunPoints[activeRunPoints.length - 2] : null;
-          if (prevPt) {
-            const minRadiusM = getNecBendRadiusM(diameterRegistry.getSelected()?.label);
-            const bendResult = constrainConduitBendAngle(prevPt, lastPt, target, {
-              allowedAnglesDeg: [0, 11.25, 15, 22.5, 30, 45, 60, 90],
-              toleranceDeg: 7.5,
-              enforceSpecificAngles: isSpecificAnglesEnforced,
-              minTangentM: minRadiusM * 0.4,
-              upAxis: 'Y',
-            });
-            candidate = bendResult.point;
-          } else if (isOrthoActive) {
-            candidate = constrainOrtho3D(lastPt, target);
-          }
+          const minRadiusM = getNecBendRadiusM(diameterRegistry.getSelected()?.label);
+          const bendResult = constrainConduitBendAngle(prevPt, lastPt, target, {
+            allowedAnglesDeg: [0, 45, 90],
+            toleranceDeg: 18.0,
+            enforceSpecificAngles: isSpecificAnglesEnforced || isOrthoActive,
+            cartesianReference: true,
+            allow45: true,
+            minTangentM: minRadiusM * 0.4,
+            upAxis: 'Y',
+          });
+          candidate = bendResult.point;
         }
 
         // A surface click ends on that surface. The riser is only for a plane click
@@ -997,9 +1004,128 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
     });
   }
 
+  // ── Revit-Style Corner XYZ Navigation Triad (UCS Indicator) ─────────
+  let triadCanvas = null;
+  let triadCtx = null;
+  let triadContainer = null;
+
+  function initXyzTriad(container) {
+    if (triadContainer || !container) return;
+    triadContainer = document.createElement('div');
+    triadContainer.className = 'revit-xyz-triad';
+    triadContainer.style.cssText = `
+      position: absolute;
+      bottom: 24px;
+      left: 24px;
+      width: 90px;
+      height: 90px;
+      pointer-events: none;
+      z-index: 100;
+      user-select: none;
+    `;
+
+    triadCanvas = document.createElement('canvas');
+    triadCanvas.width = 180;
+    triadCanvas.height = 180;
+    triadCanvas.style.cssText = 'width: 90px; height: 90px; display: block;';
+    triadContainer.appendChild(triadCanvas);
+    container.appendChild(triadContainer);
+    triadCtx = triadCanvas.getContext('2d');
+    renderXyzTriad();
+  }
+
+  function renderXyzTriad() {
+    if (!triadCtx) return;
+    const camera = engine.world?.camera?.three;
+    if (!camera) return;
+
+    triadCtx.clearRect(0, 0, 180, 180);
+
+    // Subtle dark circular background
+    triadCtx.beginPath();
+    triadCtx.arc(90, 90, 84, 0, Math.PI * 2);
+    triadCtx.fillStyle = 'rgba(15, 23, 42, 0.82)';
+    triadCtx.fill();
+    triadCtx.lineWidth = 1.5;
+    triadCtx.strokeStyle = 'rgba(99, 102, 241, 0.4)';
+    triadCtx.stroke();
+
+    // "XYZ" header badge
+    triadCtx.font = 'bold 10px system-ui, -apple-system, sans-serif';
+    triadCtx.fillStyle = '#94a3b8';
+    triadCtx.textAlign = 'center';
+    triadCtx.textBaseline = 'top';
+    triadCtx.fillText('XYZ AXIS', 90, 10);
+
+    const cx = 90;
+    const cy = 96;
+    const armLength = 50;
+
+    // Camera view rotation matrix
+    const matrix = new THREE.Matrix4();
+    matrix.extractRotation(camera.matrixWorldInverse);
+
+    const axes = [
+      { name: 'X', color: '#ef4444', dir: new THREE.Vector3(1, 0, 0) },
+      { name: 'Y', color: '#22c55e', dir: new THREE.Vector3(0, 1, 0) }, // Elevation (Up)
+      { name: 'Z', color: '#3b82f6', dir: new THREE.Vector3(0, 0, 1) },
+    ];
+
+    // Project each direction into camera view space
+    const projected = axes.map((a) => {
+      const v = a.dir.clone().applyMatrix4(matrix);
+      return {
+        name: a.name,
+        color: a.color,
+        vx: v.x,
+        vy: -v.y, // Screen Y is inverted
+        depth: v.z,
+      };
+    });
+
+    // Sort by depth so closer axes render on top
+    projected.sort((a, b) => a.depth - b.depth);
+
+    for (const axis of projected) {
+      const ex = cx + axis.vx * armLength;
+      const ey = cy + axis.vy * armLength;
+
+      // Draw axis stem
+      triadCtx.beginPath();
+      triadCtx.moveTo(cx, cy);
+      triadCtx.lineTo(ex, ey);
+      triadCtx.lineWidth = 3.5;
+      triadCtx.strokeStyle = axis.color;
+      triadCtx.lineCap = 'round';
+      triadCtx.stroke();
+
+      // Draw endpoint bead with letter
+      triadCtx.beginPath();
+      triadCtx.arc(ex, ey, 9.5, 0, Math.PI * 2);
+      triadCtx.fillStyle = axis.color;
+      triadCtx.fill();
+      triadCtx.lineWidth = 1.5;
+      triadCtx.strokeStyle = '#ffffff';
+      triadCtx.stroke();
+
+      triadCtx.font = 'bold 11px system-ui, -apple-system, sans-serif';
+      triadCtx.fillStyle = '#ffffff';
+      triadCtx.textAlign = 'center';
+      triadCtx.textBaseline = 'middle';
+      triadCtx.fillText(axis.name, ex, ey);
+    }
+
+    // Origin bead
+    triadCtx.beginPath();
+    triadCtx.arc(cx, cy, 3.5, 0, Math.PI * 2);
+    triadCtx.fillStyle = '#f8fafc';
+    triadCtx.fill();
+  }
+
   // Camera Orbit update handler: continuously update live line while user is orbiting/panning
   function handleCameraUpdate() {
     refreshPivotMarker();
+    renderXyzTriad();
     if (activeRunPoints.length > 0 && lastNdc) {
       void updateCursorAtNdc(lastNdc);
     }
@@ -1074,6 +1200,7 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
     set activeElevation(val) {
       activeElevation = Number(val) || 0;
       workPlaneGrid.position.y = activeElevation;
+      workPlaneAxes.position.y = activeElevation;
       updateActiveRunVisuals();
     },
 
@@ -1082,6 +1209,7 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
     },
     set workPlaneVisible(val) {
       workPlaneGrid.visible = Boolean(val);
+      workPlaneAxes.visible = Boolean(val);
     },
 
     get activePoints() {
@@ -1119,9 +1247,11 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
       if (prevPt) {
         const minRadiusM = getNecBendRadiusM(diameterRegistry.getSelected()?.label);
         const bendResult = constrainConduitBendAngle(prevPt, lastPt, target, {
-          allowedAnglesDeg: [0, 11.25, 15, 22.5, 30, 45, 60, 90],
-          toleranceDeg: 7.5,
-          enforceSpecificAngles: isSpecificAnglesEnforced,
+          allowedAnglesDeg: [0, 45, 90],
+          toleranceDeg: 18.0,
+          enforceSpecificAngles: isSpecificAnglesEnforced || isOrthoActive,
+          cartesianReference: true,
+          allow45: true,
           minTangentM: minRadiusM * 0.4,
           upAxis: 'Y',
         });
@@ -1226,6 +1356,7 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
     attach(container) {
       syncViewportMode();
       bindSelectionPivot();
+      initXyzTriad(container);
       pointerTarget = engine.world?.renderer?.three?.domElement || container;
       pointerTarget.addEventListener('pointerdown', handlePointerDown);
       pointerTarget.addEventListener('pointermove', handlePointerMove);
@@ -1246,6 +1377,12 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
       target.removeEventListener('contextmenu', handleContextMenu);
       if (engine.world?.camera?.controls) {
         engine.world.camera.controls.removeEventListener('update', handleCameraUpdate);
+      }
+      if (triadContainer && triadContainer.parentElement) {
+        triadContainer.parentElement.removeChild(triadContainer);
+        triadContainer = null;
+        triadCanvas = null;
+        triadCtx = null;
       }
       overlayGroup.clear();
       scene.remove(overlayGroup);

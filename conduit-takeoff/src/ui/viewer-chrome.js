@@ -273,11 +273,17 @@ export function createViewerChrome({ state, els, api }) {
               const dz = targetPt.z - lastPt.z;
               angleDeg = ((Math.atan2(dz, dx) * 180 / Math.PI) + 360) % 360;
             }
+            const activeAngle = change.liveBendAngle !== undefined && change.activePoints.length >= 2 ? change.liveBendAngle : angleDeg;
+            const angleLabel = change.cartesianHeading
+              ? `${activeAngle.toFixed(1)}° ${change.cartesianHeading}`
+              : `${activeAngle.toFixed(1)}°`;
+
             mepHud.update({
               screenX: change.screenPos.x,
               screenY: change.screenPos.y,
               lengthM: change.liveSegment || 0,
-              angleDeg: change.liveBendAngle !== undefined && change.activePoints.length >= 2 ? change.liveBendAngle : angleDeg,
+              angleDeg: activeAngle,
+              angleLabel,
               isAngleSnapped: Boolean(change.isAngleSnapped || change.isVertical || (angleDeg % 45 < 2 || angleDeg % 45 > 43)),
               elevationM: drawingTool.activeElevation,
               visible: true,
