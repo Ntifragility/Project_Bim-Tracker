@@ -71,6 +71,282 @@ body {
   outline: none;
 }
 
+/* ─────────────────────────────────────────────
+   Revit-style ribbon shell (tray) + docked side panels.
+   The ribbon is a top container only: every control inside it is an
+   EXISTING node moved at runtime (viewer-chrome.js setupRibbonShell),
+   so all selectors below restyle — none recreate — the glass idiom
+   (same --bg-sidebar blur, --glass-border, --accent tokens as the
+   sidebar/excel panels). No new commands; tabs are plain hidden toggles.
+   Docks: #sidebar (left, element properties) and #excel-panel (right,
+   highlight toolbars + summary + excel table) collapse to slim rails.
+   ───────────────────────────────────────────── */
+
+#ribbon {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  background: var(--bg-sidebar);
+  backdrop-filter: blur(16px) saturate(120%);
+  -webkit-backdrop-filter: blur(16px) saturate(120%);
+  border-bottom: 1px solid var(--glass-border);
+  box-shadow: 0 8px 32px 0 var(--glass-shadow);
+}
+
+.ribbon-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px 6px;
+}
+
+.ribbon-logo {
+  font-size: 1.25rem;
+}
+
+.ribbon-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  background: linear-gradient(135deg, #ffffff 30%, var(--accent) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.ribbon-title em {
+  font-style: normal;
+  font-weight: 500;
+  color: var(--text-secondary);
+  -webkit-text-fill-color: var(--text-secondary);
+  margin-left: 6px;
+  font-size: 0.85rem;
+  letter-spacing: 0.5px;
+}
+
+.ribbon-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 16px;
+}
+
+.ribbon-tab {
+  padding: 8px 18px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  color: var(--text-secondary);
+  font: 600 0.85rem var(--font-sans);
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.ribbon-tab:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ribbon-tab.active {
+  color: #ffffff;
+  background: var(--accent);
+  box-shadow: 0 2px 10px rgba(99, 102, 241, 0.4);
+}
+
+.ribbon-panels {
+  border-top: 1px solid var(--glass-border);
+  background: rgba(0, 0, 0, 0.18);
+  max-height: 264px;
+  overflow-y: auto;
+}
+
+.ribbon-panel {
+  display: none;
+  gap: 16px;
+  align-items: flex-start;
+  padding: 12px 16px 14px;
+}
+
+.ribbon-panel.active {
+  display: flex;
+}
+
+.ribbon-panel[hidden] {
+  display: none !important;
+}
+
+.ribbon-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 220px;
+  max-width: 340px;
+  padding-right: 16px;
+  border-right: 1px solid var(--glass-border);
+}
+
+.ribbon-group:last-child {
+  border-right: none;
+  padding-right: 0;
+}
+
+.ribbon-group-wide {
+  min-width: 300px;
+  max-width: 480px;
+}
+
+/* Moved subtrees keep their own layout; constrain + scroll inside ribbon */
+.ribbon-group .control-group,
+.ribbon-group .routing-group,
+.ribbon-group .loader-buttons,
+.ribbon-group .control-options {
+  width: 100%;
+}
+
+.ribbon-group .control-group[data-sidebar-panel] {
+  display: flex !important;
+  flex-direction: column;
+  animation: none;
+}
+
+.ribbon-group .btn {
+  width: 100%;
+  padding: 9px 12px;
+  font-size: 0.82rem;
+}
+
+.ribbon-group .routing-button-grid {
+  grid-template-columns: 1fr 1fr;
+}
+
+.ribbon-group .tagging-mode-tabs {
+  margin-bottom: 2px;
+}
+
+.ribbon-group .batch-tagging-workbench,
+.ribbon-group #tag-management-pane {
+  max-height: 200px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.ribbon-group .tray-system-manager {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.ribbon-group .tray-system-list,
+.ribbon-group .tray-system-component-list {
+  max-height: 110px;
+}
+
+.ribbon-group .tag-validation-report {
+  max-height: 190px;
+  overflow-y: auto;
+}
+
+.ribbon-group .ifc-edit-panel {
+  max-height: 200px;
+  overflow-y: auto;
+  margin-top: 0;
+}
+
+.ribbon-group .routing-controls {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.ribbon-group .loaded-models-list-panel {
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.options-bar-slot {
+  display: flex;
+  gap: 8px;
+  padding: 0 16px;
+}
+
+.options-bar-slot:empty {
+  display: none;
+}
+
+/* Docks: sidebar + excel panel become slim side rails under the ribbon */
+#app:has(#ribbon) #sidebar,
+#app:has(#ribbon) #excel-panel {
+  top: 148px;
+  height: calc(100vh - 164px);
+}
+
+#app:has(#ribbon) #sidebar {
+  width: 300px;
+}
+
+#app:has(#ribbon) #excel-panel {
+  width: 340px;
+}
+
+/* When the ribbon panels region grows, docks stay clear of it */
+#app:has(#ribbon) #viewer-container {
+  padding-top: 132px;
+}
+
+@media (max-width: 768px) {
+  #ribbon {
+    position: fixed;
+  }
+
+  .ribbon-panel.active {
+    flex-direction: column;
+  }
+
+  .ribbon-group {
+    min-width: 0;
+    max-width: none;
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--glass-border);
+    padding-right: 0;
+    padding-bottom: 12px;
+  }
+
+  .ribbon-group:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+
+  #app:has(#ribbon) #sidebar,
+  #app:has(#ribbon) #excel-panel {
+    top: auto;
+    bottom: 16px;
+    height: calc(100vh - 220px);
+  }
+}
+
+/* Dock restyle: sidebar keeps element properties; excel panel keeps
+   highlight toolbars + tray-selection summary + excel table */
+#sidebar .sidebar-nav-tabs,
+#sidebar section.control-group[data-sidebar-panel] {
+  /* After setupRibbonShell moves the model/controls/routing/loaded
+     sections into the ribbon, only element-props-group remains docked.
+     Nav tabs stay visible but inert for the moved panels. */
+}
+
+#sidebar section.element-props-group {
+  display: flex !important;
+  flex-direction: column;
+}
+
+#excel-panel .excel-config-group {
+  max-height: min(40vh, 380px);
+}
+
 .viewer-context-menu {
   position: fixed;
   z-index: 1000;

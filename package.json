@@ -8,12 +8,16 @@
     "apps/*"
   ],
   "scripts": {
+    "predev": "node scripts/build-viewport-wasm.mjs",
     "dev": "vite",
+    "predev:conduit": "node scripts/build-viewport-wasm.mjs",
+    "prebuild": "node scripts/build-viewport-wasm.mjs",
+    "prebuild:conduit": "node scripts/build-viewport-wasm.mjs",
     "dev:conduit": "vite conduit-takeoff --open",
     "build": "vite build",
     "build:conduit": "vite build conduit-takeoff",
     "preview": "vite preview",
-    "test": "node --test packages/routing-core/test/*.test.js packages/conduit-core/test/*.test.js packages/viewport-core/test/*.test.mjs"
+    "test": "node --test --test-force-exit packages/routing-core/test/*.test.js packages/conduit-core/test/*.test.js crates/viewport-core/test/self-test.mjs packages/viewer-core/test/*.test.js packages/excel-io/test/*.test.js"
   },
   "devDependencies": {
     "vite": "^8.0.12"

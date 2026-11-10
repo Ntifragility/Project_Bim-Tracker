@@ -2,7 +2,7 @@
 
 Status: implemented (vectors) — Rust crates land in Phase 3/5
 Branch: `spec/vectors-tray`
-Owner folders: `spec/vectors/tray/`, `docs/specs/tray/`, `scripts/run-tray-vectors.mjs`
+Owner folders: `spec/vectors/tray/`, `docs/specs/tray/`, `scripts/run-tray-wasm-vectors.mjs`
 
 ## Goal
 
@@ -21,8 +21,9 @@ they describe real behaviour) and against the Rust crates in Phase 3/5
 | `spec/vectors/tray/routing.json` | 26 | `packages/routing-core/src/*.js` (vector, centerline, graph, diagnostics, pathfinding) |
 | `spec/vectors/tray/ifc-io.json` | 25 | `src/ifc/ifc-tag-exporter.js`, `src/ifc/ifc-safe-editor.js` (jsOnly, shape-only) |
 
-91 cases total, all passing against legacy JS via
-`node scripts/run-tray-vectors.mjs`.
+91 cases total, run post-legacy via
+`node scripts/run-tray-wasm-vectors.mjs` (legacy runners retired at the
+8.1 parity gate with `legacy/`).
 
 ## Rules
 

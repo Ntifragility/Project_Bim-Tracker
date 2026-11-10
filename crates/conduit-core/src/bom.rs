@@ -23,14 +23,14 @@ pub const KERF_WASTE_M: f64 = 0.003;
 pub const MAX_PULL_DISTANCE_M: f64 = 30.48;
 
 /// One planned stock stick.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct StickPlan {
     pub cuts: Vec<f64>,
     pub waste_m: f64,
 }
 
 /// FFD cutting plan (legacy `optimizeStickCutting` result parity).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct CuttingPlan {
     pub sticks_needed: usize,
     pub total_length_m: f64,
@@ -122,7 +122,7 @@ pub fn optimize_stick_cutting(cuts: &[f64], stock_m: f64, kerf_m: f64) -> Cuttin
 }
 
 /// BOM options (legacy `computeDetailedBom` options parity).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BomOptions {
     pub stock_length_m: f64,
     pub waste_factor_pct: f64,
@@ -138,7 +138,7 @@ impl Default for BomOptions {
 }
 
 /// One run's hardware row.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RunBom {
     pub run_id: String,
     pub name: String,
@@ -157,7 +157,7 @@ pub struct RunBom {
 }
 
 /// One trade-size summary row.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SizeBom {
     pub size: String,
     pub mm: f64,
@@ -174,7 +174,7 @@ pub struct SizeBom {
 }
 
 /// Grand totals.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BomTotals {
     pub runs: usize,
     pub length_m: f64,
@@ -189,7 +189,7 @@ pub struct BomTotals {
 
 /// Detailed BOM (legacy `computeDetailedBom` shape parity, rounded report
 /// fields only — internals keep full precision).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DetailedBom {
     pub stock_length_m: f64,
     pub totals: BomTotals,

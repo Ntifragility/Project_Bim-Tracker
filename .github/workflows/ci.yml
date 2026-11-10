@@ -7,6 +7,19 @@ on:
     branches: [main]
 
 jobs:
+  viewport-wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      # The built wasm is committed (like public/web-ifc.wasm) so npm-only
+      # flows work out of the box. This job rebuilds from source and fails on
+      # drift, so a stale binary can never slip through silently.
+      - run: node scripts/build-viewport-wasm.mjs
+      - run: git diff --exit-code -- public/assets/viewport_core.wasm
+
   baseline:
     runs-on: ubuntu-latest
     steps:
@@ -24,6 +37,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -41,3 +58,5 @@ jobs:
       - run: wasm-pack build bindings/conduit-wasm --target bundler
       - run: wasm-pack build bindings/tray-wasm --target bundler
       - run: python3 scripts/check-boundaries.py
+      - run: npm ci
+      - run: node scripts/parity-harness.mjs --quick --allow-expected

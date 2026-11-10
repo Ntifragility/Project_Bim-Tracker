@@ -6,6 +6,8 @@ license.workspace = true
 
 [dependencies]
 geom-core = { path = "../geom-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [lib]
 name = "tray_routing"

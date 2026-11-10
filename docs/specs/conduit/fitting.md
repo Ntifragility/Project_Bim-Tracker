@@ -2,7 +2,7 @@
 
 Status: draft
 Branch: `rust/conduit-fitting`
-Owner folders: `crates/conduit-core/` (fitting module only), `spec/vectors/conduit/fitting-engine.json`, `docs/specs/conduit/`, `scripts/run-conduit-fitting-vectors.mjs`
+Owner folders: `crates/conduit-core/` (fitting module only), `spec/vectors/conduit/fitting-engine.json`, `docs/specs/conduit/`, `scripts/run-conduit-wasm-vectors.mjs`
 
 ## Goal
 
@@ -66,9 +66,9 @@ inside the core (edge converts).
 
 ## Acceptance criteria
 
-Stored as `spec/vectors/conduit/fitting-engine.json`, run against legacy
-JS via `node scripts/run-conduit-fitting-vectors.mjs` and against this
-crate via `cargo test`:
+Stored as `spec/vectors/conduit/fitting-engine.json`, run post-legacy via
+`node scripts/run-conduit-wasm-vectors.mjs` (legacy runners retired at the
+8.1 parity gate with `legacy/`) and against this crate via `cargo test`:
 
 | Area | Cases | Covers |
 |---|---|---|

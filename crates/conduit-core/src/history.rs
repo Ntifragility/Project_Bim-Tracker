@@ -11,7 +11,7 @@
 pub const MAX_UNDO_DEPTH: usize = 200;
 
 /// History stacks of opaque command labels.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct History {
     pub undo: Vec<String>,
     pub redo: Vec<String>,

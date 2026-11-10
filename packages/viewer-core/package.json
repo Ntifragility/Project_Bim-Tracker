@@ -3,5 +3,12 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Improved engine layer over That Open libraries (scaffold, task 1.1)"
+  "description": "Improved engine layer over That Open libraries",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./coordinates": "./src/coordinates.js",
+    "./engine": "./src/engine.js",
+    "./vite-plugin": "./src/vite-plugin.js"
+  }
 }

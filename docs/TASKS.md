@@ -41,35 +41,35 @@ Phases and dependencies come from `ARCHITECTURE.md` section 7. Only one agent at
 | 4.1 | `conduit-core` network, command stack, registries | `rust/conduit-network` | 3.1 | | done |
 | 4.2 | Snap engine | `rust/conduit-snap` | 4.1 | opencode | done |
 | 4.3 | Fitting solver (NEC bends) | `rust/conduit-fitting` | 4.1 | opencode | done |
-| 4.4 | BOM and stick optimizer | `rust/conduit-bom` | 4.1 | | done |
-| 4.5 | Takeoff, CSV export, project I/O | `rust/conduit-takeoff-io` | 4.2, 4.3, 4.4 | | todo |
-| 4.6 | `conduit-wasm` binding; switch `apps/conduit-takeoff` behind a flag | `rust/conduit-wasm` | 4.5 | | todo |
+| 4.4 | BOM and stick optimizer | `rust/conduit-bom` | 4.1 | opencode | done |
+| 4.5 | Takeoff, CSV export, project I/O | `rust/conduit-takeoff-io` | 4.2, 4.3, 4.4 | opencode | done |
+| 4.6 | `conduit-wasm` binding; switch `apps/conduit-takeoff` behind a flag | `rust/conduit-wasm` | 4.5 | | done |
 
 ## Phase 5: Tray
 | ID | Task | Branch | Depends on | Owner | Status |
 |---|---|---|---|---|---|
-| 5.1 | `tray-tagging` (scheme, classifier, validator, assignment state: saved/pending/undo, register rows) | `rust/tray-tagging` | 3.1, 3.2 | | todo |
-| 5.2 | `tray-routing` (centerline, graph, pathfinding, continuity) | `rust/tray-routing` | 3.1 | | todo |
-| 5.3 | `tray-wasm` binding; switch `apps/tray-viewer` behind a flag | `rust/tray-wasm` | 5.1, 5.2 | | todo |
+| 5.1 | `tray-tagging` (scheme, classifier, validator, assignment state: saved/pending/undo, register rows) | `rust/tray-tagging` | 3.1, 3.2 | | done |
+| 5.2 | `tray-routing` (centerline, graph, pathfinding, continuity) | `rust/tray-routing` | 3.1 | | done |
+| 5.3 | `tray-wasm` binding; switch `apps/tray-viewer` behind a flag | `rust/tray-wasm` | 5.1, 5.2 | | done |
 
 ## Phase 6: Viewer (independent of 4 and 5)
 | ID | Task | Branch | Depends on | Owner | Status |
 |---|---|---|---|---|---|
-| 6.1 | `viewer-core`: extract engine, coordinates and Vite asset plugin with unchanged behaviour; remove `@covillaf` alias | `viewer/extract-engine` | 1.1 | | todo |
-| 6.1b | Move Rust `viewport-core` (from 0.7) to `crates/viewport-core`; stop committing `pkg/`; per-instance state; split generic gestures from conduit tool decisions; add auto-orbit (with toggle) and surface-pick normal to the viewer-core interface | `viewer/viewport` | 6.1 | | todo |
-| 6.2 | Compatibility smoke tests on a public sample IFC (use the `?ifc=` deep link) | `viewer/smoke-tests` | 6.1 | | todo |
-| 6.3+ | Improvement specs (section planes, ghost isolate, undo, PNG export, ...), one branch each | `viewer/<topic>` | 6.2 | | todo |
+| 6.1 | `viewer-core`: extract engine, coordinates and Vite asset plugin with unchanged behaviour; remove `@covillaf` alias | `viewer/extract-engine` | 1.1 | antigravity | done |
+| 6.1b | Move Rust `viewport-core` (from 0.7) to `crates/viewport-core`; stop committing `pkg/`; per-instance state; split generic gestures from conduit tool decisions; add auto-orbit (with toggle) and surface-pick normal to the viewer-core interface | `viewer/viewport` | 6.1 | antigravity | done |
+| 6.2 | Compatibility smoke tests on a public sample IFC (use the `?ifc=` deep link) | `viewer/smoke-tests` | 6.1 | antigravity | done |
+| 6.3+ | Improvement specs (section planes, ghost isolate, undo, PNG export, ...), one branch each | `viewer/<topic>` | 6.2 | antigravity | done |
 
 ## Phase 7: Apps
 | ID | Task | Branch | Depends on | Owner | Status |
 |---|---|---|---|---|---|
-| 7.1 | Split `src/main.js` into feature modules (tray app) | `app/split-main-js` | 1.1 | | todo |
-| 7.2 | Split conduit app UI modules | `app/conduit-ui-split` | 1.1 | | todo |
-| 7.3 | `packages/excel-io` optional package (workbook upload, mapping export). The live Excel bridge stays frozen | `app/excel-io` | 7.1 | | todo |
-| 7.4 | Safe IFC Editor and manual metadata (port last) | `app/safe-ifc-editor` | 3.2, 7.1 | | todo |
-| 7.5 | Optional UI items kept for owner's decision: wireframe (viewer-core), dark-mode toggle (app UI), Basic House sample (`samples/`) | `app/optional-ui` | 6.1, 7.1 | | todo |
+| 7.1 | Split `src/main.js` into feature modules (tray app) | `app/split-main-js` | 1.1 | antigravity | done |
+| 7.2 | Split conduit app UI modules | `app/conduit-ui-split` | 1.1 | | done |
+| 7.3 | `packages/excel-io` optional package (workbook upload, mapping export). The live Excel bridge stays frozen | `app/excel-io` | 7.1 | antigravity | done |
+| 7.4 | Safe IFC Editor and manual metadata (port last) | `app/safe-ifc-editor` | 3.2, 7.1 | | done |
+| 7.5 | Optional UI items kept for owner's decision: wireframe (viewer-core), dark-mode toggle (app UI), Basic House sample (`samples/`) | `app/optional-ui` | 6.1, 7.1 | antigravity | done |
 
 ## Phase 8: Parity gate
 | ID | Task | Branch | Depends on | Owner | Status |
 |---|---|---|---|---|---|
-| 8.1 | Run parity checklist (`ARCHITECTURE.md` section 7); delete `legacy/` | `infra/remove-legacy` | 4.6, 5.3, 6.2, 7.1, 7.2 | | todo |
+| 8.1 | Run parity checklist (`ARCHITECTURE.md` section 7); delete `legacy/` | `infra/remove-legacy` | 4.6, 5.3, 6.2, 7.1, 7.2, 7.4 | | done |

@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import {
-  buildConnectivityGraph,
-  diagnoseGraph,
-  shortestPath,
+  buildConnectivityGraph as jsBuildConnectivityGraph,
+  diagnoseGraph as jsDiagnoseGraph,
+  shortestPath as jsShortestPath,
 } from '../../packages/routing-core/src/index.js';
 import { extractTraySegments } from './ifc-extractor.js';
 
@@ -25,7 +25,13 @@ function disposeGroup(group) {
   group.clear();
 }
 
-export function initRoutingController({ world, getLoadedModels, onClear }) {
+export function initRoutingController({ world, getLoadedModels, onClear, routingBackend }) {
+  const route = routingBackend ?? {
+    buildConnectivityGraph: jsBuildConnectivityGraph,
+    diagnoseGraph: jsDiagnoseGraph,
+    shortestPath: jsShortestPath,
+  };
+  const { buildConnectivityGraph, diagnoseGraph, shortestPath } = route;
   const overlay = new THREE.Group();
   overlay.name = 'routing-diagnostic-overlay';
   world.scene.three.add(overlay);
