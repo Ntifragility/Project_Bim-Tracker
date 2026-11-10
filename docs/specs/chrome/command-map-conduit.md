@@ -1,68 +1,161 @@
 # Command map — conduit takeoff
 
-Status: draft | Parent: `revit-chrome-design.md` (R1: ribbon owns commands).
-Every row: old control id → new `{tab, group, size, command}`. Adapter calls
-the existing handler directly; no `data-forward` clicks.
+Status: approved | Parent: `revit-chrome-design.md` (R1: ribbon owns commands).
+
+Every row: old control id → new `{tab, group, size, command-id}`.
+The conduit adapter (`conduit-takeoff/src/ui/conduit-adapter.js`) maps each
+command-id to the existing handler directly. No `data-forward` clicks.
+
+**Waste-factor field:** `waste-factor-input` is a numeric `<input>`, not a
+button. It stays in the Quantities dock panel (display, not moved to ribbon).
+The Quantities ribbon tab shows a static hint text only. This is consistent
+with Revit's approach of keeping numeric input fields in properties panels.
+
+**Run-summary displays:** `top-active-run-summary`, `top-run-length`,
+`top-run-sticks`, `active-run-info`, `runs-count-badge`, `run-list`
+stay in the dock. The `Modify | Run` contextual tab hosts only interactive
+controls (selects, inputs, buttons). Displays never move to the ribbon.
+
+---
+
+## QAT (Quick Access Toolbar)
+
+| Command id | Icon | Existing handler |
+|---|---|---|
+| `conduit.proj-save` | `save` | `project-io.js` save project |
+| `conduit.trace-undo` | `undo` | `draw-toolbar.js` undo point |
+| `conduit.trace-redo` | `redo` | `draw-toolbar.js` redo point |
+
+---
 
 ## Tab: Model
 
-| Old id | Group | Size | Command | Existing handler |
+### Group: Source
+
+| Old id | Size | Command id | Icon | Existing handler |
 |---|---|---|---|---|
-| `btn-open-ifc` (+`file-input`) | Source | big | `conduit.open-ifc` | `model-load.js` open dialog |
-| `btn-fit-view` | Views | small | `conduit.view-fit` | fit to view |
-| `btn-view-top` | Views | small | `conduit.view-top` | top view |
-| `btn-view-front` | Views | small | `conduit.view-front` | front view |
-| `btn-view-right` | Views | small | `conduit.view-right` | right view |
+| `btn-open-ifc` + `file-input` | big | `conduit.open-ifc` | `open` | `model-load.js` open dialog |
+
+### Group: Views
+
+| Old id | Size | Command id | Icon | Existing handler |
+|---|---|---|---|---|
+| `btn-fit-view` | small | `conduit.view-fit` | `reset-view` | fit to view |
+| `btn-view-top` | small | `conduit.view-top` | `camera-top` | top view |
+| `btn-view-front` | small | `conduit.view-front` | `camera-front` | front view |
+| `btn-view-right` | small | `conduit.view-right` | `camera-right` | right view |
+
+---
 
 ## Tab: Trace
 
-| Old id | Group | Size | Command | Existing handler |
+### Group: Tools
+
+| Old id | Size | Command id | Icon | Existing handler |
 |---|---|---|---|---|
-| `btn-draw-mode` | Tools | big | `conduit.trace-draw` | `draw-toolbar.js` draw mode |
-| `btn-ortho` | Tools | small | `conduit.trace-ortho` | ortho toggle |
-| `btn-perp` | Tools | small | `conduit.trace-perp` | perpendicular toggle |
-| `btn-undo` | Tools | small | `conduit.trace-undo` | undo point |
-| `btn-redo` | Tools | small | `conduit.trace-redo` | redo point |
-| `btn-finish-run` | Run | big (split w/ cancel) | `conduit.run-finish` | finish run |
-| `btn-cancel-run` | Run | split | `conduit.run-cancel` | cancel run |
-| `btn-add-vert-up` | Run | small | `conduit.run-vert-up` | vertical up |
-| `btn-add-vert-down` | Run | small | `conduit.run-vert-down` | vertical down |
-| `top-diameter-select` | Size (contextual) | small | `conduit.opt-diameter` | diameter select |
-| `top-elevation-input` | Elevation (contextual) | small | `conduit.opt-elevation` | elevation input |
-| `btn-pick-elevation` | Elevation (contextual) | small | `conduit.opt-pick-elev` | pick elevation |
-| `top-system-select` | System (contextual) | small | `conduit.opt-system` | system select |
-| `btn-toggle-workplane` | Grid (contextual) | small | `conduit.opt-workplane` | workplane toggle |
-| `btn-toggle-autoriser` | Grid (contextual) | small | `conduit.opt-autoriser` | auto-riser toggle |
+| `btn-draw-mode` | big | `conduit.trace-draw` | `trace` | `draw-toolbar.js` draw mode |
+| `btn-ortho` | small | `conduit.trace-ortho` | `ortho` | ortho toggle |
+| `btn-perp` | small | `conduit.trace-perp` | `perp` | perpendicular toggle |
+| `btn-undo` | small | `conduit.trace-undo` | `undo` | undo point |
+| `btn-redo` | small | `conduit.trace-redo` | `redo` | redo point |
+
+### Group: Run
+
+`conduit.run-finish` is the **primary** of a split button;
+`conduit.run-cancel` is the companion (`splitWith: 'conduit.run-cancel'`).
+
+| Old id | Size | Command id | Icon | splitWith | Existing handler |
+|---|---|---|---|---|---|
+| `btn-finish-run` | big (primary) | `conduit.run-finish` | `finish` | `conduit.run-cancel` | finish run |
+| `btn-cancel-run` | split companion | `conduit.run-cancel` | `cancel` | — | cancel run |
+| `btn-add-vert-up` | small | `conduit.run-vert-up` | `vert-up` | — | vertical step up |
+| `btn-add-vert-down` | small | `conduit.run-vert-down` | `vert-down` | — | vertical step down |
+
+---
 
 ## Tab: Quantities
 
-| Old id | Group | Size | Command | Existing handler |
-|---|---|---|---|---|
-| `waste-factor-input` | Takeoff | small | `conduit.qty-waste` | waste factor |
-| (summary table — display) | Takeoff | — | — | stays in dock |
+### Group: Takeoff
+
+No ribbon commands. Waste-factor input, summary table, and run list stay in
+the dock panel. The ribbon panel displays a static hint:
+
+> "Waste %, summary and runs live in the dock panel ▶"
+
+This is a `RibbonGroup` with no `items` — the framework renders only the
+group caption. The hint text is a static `<span>` added by the app branch
+inside the group's DOM slot (not a `Command` or `InputField`).
+
+---
 
 ## Tab: Project
 
-| Old id | Group | Size | Command | Existing handler |
+### Group: Project
+
+| Old id | Size | Command id | Icon | Existing handler |
 |---|---|---|---|---|
-| `btn-load-project` (+`project-file-input`) | Project | big | `conduit.proj-load` | `project-io.js` load |
-| `btn-save` | Project | big | `conduit.proj-save` | save project |
-| `btn-export-csv` | Export | small | `conduit.proj-csv` | CSV export |
-| `btn-export-ifc` | Export | small | `conduit.proj-ifc` | overlay IFC export |
+| `btn-load-project` + `project-file-input` | big | `conduit.proj-load` | `open` | `project-io.js` load |
+| `btn-save` | big | `conduit.proj-save` | `save` | save project |
+
+### Group: Export
+
+| Old id | Size | Command id | Icon | Existing handler |
+|---|---|---|---|---|
+| `btn-export-csv` | small | `conduit.proj-csv` | `csv` | CSV export |
+| `btn-export-ifc` | small | `conduit.proj-ifc` | `export` | overlay IFC export |
+
+---
 
 ## Contextual: Modify | Run (tool-driven)
 
-Shown while a run is being traced or a run is selected. Hosts: diameter,
-elevation, pick, system, workplane, autoriser, finish/cancel, vertical
-step, run length/sticks summary. This replaces the always-visible
-`#ribbon-contextual` options bar — same controls, visibility-gated.
+**Trigger:** `api.showContextual('modify-run')` called from:
+1. `draw-toolbar.js` when draw mode activates (`btn-draw-mode` pressed).
+2. `project-io.js` when a run is selected (`state.selectedRunId != null`).
 
-## QAT (default)
+**Dismiss:** `api.hideContextual()` called from:
+1. `draw-toolbar.js` on `cancelCurrentRun()`.
+2. `project-io.js` when run selection clears (`state.selectedRunId = null`).
 
-`conduit.proj-save`, `conduit.trace-undo`, `conduit.trace-redo`.
+This tab replaces the always-visible `#ribbon-contextual` options bar.
+Same controls, same handlers — now hidden unless a run is active or selected.
 
-## Displays (stay in dock, not commands)
+### Group: Size
 
-`diameter-list`, `active-run-info`, run list, `runs-count-badge`,
-`summary-table-container`, `model-info`, status bar (`status-text`,
-`cursor-coords`), loading overlay.
+Uses `InputField` (kind: 'input', inputType: 'select').
+
+| Old id | Kind | Command/Field id | Icon | Handler |
+|---|---|---|---|---|
+| `top-diameter-select` | InputField (select) | `conduit.opt-diameter` | `diameter` | `draw-toolbar.js` diameter |
+
+### Group: Elevation
+
+| Old id | Kind | Command/Field id | Icon | Handler |
+|---|---|---|---|---|
+| `top-elevation-input` | InputField (number) | `conduit.opt-elevation` | `elevation` | elevation value |
+| `btn-pick-elevation` | Command (small) | `conduit.opt-pick-elev` | `pick` | pick elevation from model |
+
+### Group: System
+
+| Old id | Kind | Command/Field id | Icon | Handler |
+|---|---|---|---|---|
+| `top-system-select` | InputField (select) | `conduit.opt-system` | `run` | system select |
+
+### Group: Grid
+
+| Old id | Kind | Command/Field id | Icon | Handler |
+|---|---|---|---|---|
+| `btn-toggle-workplane` | Command (small) | `conduit.opt-workplane` | `workplane` | workplane toggle |
+| `btn-toggle-autoriser` | Command (small) | `conduit.opt-autoriser` | `autoriser` | auto-riser toggle |
+
+---
+
+## Displays (stay in dock — not commands, not moved)
+
+- `diameter-list` (dock — Trace panel)
+- `active-run-info`, `active-run-actions`, `vertical-step-controls` (dock)
+- `run-list`, `runs-count-badge` (dock — Quantities panel)
+- `waste-factor-input`, `summary-table-container` (dock — Quantities panel)
+- `model-info` (dock — Model panel)
+- `status-text`, `cursor-coords` (status bar, managed by framework slot)
+- `loading-overlay` (overlay)
+- `top-active-run-summary`, `top-run-length`, `top-run-sticks` (dock, not contextual tab)
