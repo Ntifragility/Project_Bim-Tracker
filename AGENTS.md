@@ -23,15 +23,14 @@ Read `ARCHITECTURE.md` first. It defines the modules, allowed dependencies and m
 - Commit after each completed task in the checklist; small, one purpose each.
 - Open a pull request per branch; list: spec implemented, folders touched, test commands run, any `[UNVERIFIED]` item you resolved or could not.
 
-## PR & Merge Policy (tiered autonomy)
+## PR & Merge Policy (full autonomy)
 
-Low-risk branches — agent MAY merge its own PR when all safeguards below pass:
-`fix/*`, `rust/*`, `viewer/*`, `app/*`, `spec/*`.
+Agent MAY merge its own PR on any branch prefix when all safeguards below
+pass. There is no owner-approval gate on merges; quality is enforced by the
+identical gate set on every merge.
 
-High-risk — agent MUST NOT merge; open the PR, report, and stop. Owner merges:
-`infra/*`, `legacy/` deletion (`infra/remove-legacy`), history rewrite,
-`ThatOpenEngine/` move, changes to `AGENTS.md` / `ARCHITECTURE.md` policy
-sections themselves, secrets/licenses/public-hygiene decisions.
+Permanently owner-only (agent: open the PR, report, stop — never merge):
+history rewrite, secrets/licenses/public-hygiene decisions.
 
 Safeguards (all required before an autonomous merge):
 - All Definition-of-Done checks pass locally AND CI is green on the PR
