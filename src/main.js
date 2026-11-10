@@ -19,6 +19,7 @@
 // 9. `model-loader` — needs render callbacks from all panels.
 // 10. `context-menu` — needs selection + appearance fns.
 
+import 'ribbon-chrome/tokens.css';
 import './style.css';
 import * as OBC from '@thatopen/components';
 import { initExcelBridge } from './viewer-socket.js';
@@ -40,6 +41,7 @@ import { initModelLoader } from './ui/model-loader.js';
 import { initViewerChrome } from './ui/viewer-chrome.js';
 import { initContextMenu } from './ui/context-menu.js';
 import { initEscapeHandler } from './ui/escape-handler.js';
+import { initLateralDock } from './ui/lateral-dock.js';
 
 // Legacy export kept for the previous flat `state.js` import surface.
 export { state } from './ui/state.js';
@@ -55,6 +57,10 @@ export async function initApp() {
 
   const ctx = createAppContext();
   api.ctx = ctx;
+  ctx.api = api;
+  if (typeof window !== 'undefined') {
+    window.__TRAY_API__ = api;
+  }
 
   const engine = await createCovillafEngine(dom.container);
   const { components, world, fragments, highlighter, hider } = engine;
@@ -84,6 +90,10 @@ export async function initApp() {
   // 3. Selection (registers map helpers, highlight/isolate, zoom, wiring).
   const selection = initSelection(ctx, dom, api);
   selection.wireSelectionEvents();
+
+  // Lateral Dock: Properties Palette & Project Browser (authentic Revit UI)
+  const lateralDock = initLateralDock(ctx, dom, api);
+  api.lateralDock = lateralDock;
 
   // 4. Appearance (needs selection maps; creates the tag-label manager).
   const appearance = initAppearance(ctx, dom, api);
