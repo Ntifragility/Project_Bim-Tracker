@@ -140,7 +140,7 @@ export function initViewerChrome(ctx, dom, api) {
       });
     }
 
-    dom.toggleGrid.addEventListener('change', () => {
+    dom.toggleGrid?.addEventListener('change', () => {
       // FIX (7.1): the monolith referenced a file-scope `grid` that no
       // module ever defined — every toggle threw `ReferenceError`. Resolve
       // the grid from the same registry the engine created it in.
@@ -153,11 +153,11 @@ export function initViewerChrome(ctx, dom, api) {
       }
     });
 
-    dom.toggleWireframe.addEventListener('change', () => {
+    dom.toggleWireframe?.addEventListener('change', () => {
       api.setWireframe(dom.toggleWireframe.checked);
     });
 
-    dom.toggleDarkMode.addEventListener('change', () => {
+    dom.toggleDarkMode?.addEventListener('change', () => {
       const isDark = dom.toggleDarkMode.checked;
       const color = isDark ? new THREE.Color('#0a0b0e') : new THREE.Color('#f3f4f6');
       ctx.world.scene.three.background = color;

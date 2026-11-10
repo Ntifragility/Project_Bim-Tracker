@@ -82,7 +82,7 @@ body {
   left: 0;
   right: 0;
   height: auto;
-  z-index: 20;
+  z-index: 100;
 }
 
 .options-bar-slot {
@@ -97,8 +97,14 @@ body {
 
 /* Revit lateral dock positioning */
 #app:has(#ribbon) #sidebar.rc-dock-left,
-#app:has(#ribbon) #excel-panel.rc-schedule-panel {
+#app:has(#ribbon) #excel-panel.rc-schedule-panel,
+#sidebar.rc-dock-left {
   top: 148px;
+}
+
+#ribbon[data-rc-collapsed="true"] ~ #sidebar.rc-dock-left,
+#ribbon[data-rc-collapsed="true"] ~ #excel-panel.rc-schedule-panel {
+  top: 52px;
 }
 
 #sidebar.rc-dock-left {
@@ -107,7 +113,7 @@ body {
   bottom: 0;
   left: 0;
   width: 320px;
-  z-index: 15;
+  z-index: 50;
   display: flex;
   flex-direction: column;
   background: var(--rc-chrome-bg, #F0F0F0);

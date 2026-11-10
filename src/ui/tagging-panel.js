@@ -594,18 +594,18 @@ export function initTaggingPanel(ctx, dom, api) {
   }
 
   function wireAssignmentControls() {
-    dom.systemTagInput.addEventListener('input', () => {
+    dom.systemTagInput?.addEventListener('input', () => {
       updateTagAssignmentUi();
     });
 
-    dom.systemTagInput.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' && !dom.btnHighlightSystem.disabled) {
+    dom.systemTagInput?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && !dom.btnHighlightSystem?.disabled) {
         event.preventDefault();
-        dom.btnHighlightSystem.click();
+        dom.btnHighlightSystem?.click();
       }
     });
 
-    dom.btnHighlightSystem.addEventListener('click', async () => {
+    dom.btnHighlightSystem?.addEventListener('click', async () => {
       const systemTag = getEnteredSystemTag();
       const members = api.findSystemMembers(systemTag);
       if (!members.length) {
@@ -618,7 +618,7 @@ export function initTaggingPanel(ctx, dom, api) {
       );
     });
 
-    dom.btnAddTraySelection.addEventListener('click', () => {
+    dom.btnAddTraySelection?.addEventListener('click', () => {
       if (!ctx.selectedIfcElement) return;
       ctx.traySelection.set(
         getAssignmentKey(ctx.selectedIfcElement.modelId, ctx.selectedIfcElement.localId),
@@ -627,7 +627,7 @@ export function initTaggingPanel(ctx, dom, api) {
       updateTagAssignmentUi(`Added element #${ctx.selectedIfcElement.localId} to the tray-system selection.`);
     });
 
-    dom.btnAssignTag.addEventListener('click', async () => {
+    dom.btnAssignTag?.addEventListener('click', async () => {
       const systemTag = getEnteredSystemTag();
       const selectedElements = ctx.traySelection.size
         ? Array.from(ctx.traySelection.values())
@@ -635,7 +635,7 @@ export function initTaggingPanel(ctx, dom, api) {
       await assignElementsToSystem(systemTag, selectedElements);
     });
 
-    dom.btnUnassignTag.addEventListener('click', () => {
+    dom.btnUnassignTag?.addEventListener('click', () => {
       const assignment = getAssignmentForElement();
       if (!assignment) return;
       invalidateBatchUndo();
@@ -647,7 +647,7 @@ export function initTaggingPanel(ctx, dom, api) {
       refreshValidationReportIfOpen();
     });
 
-    dom.btnValidateTags.addEventListener('click', () => {
+    dom.btnValidateTags?.addEventListener('click', () => {
       const result = runTagValidation();
       updateTagAssignmentUi(
         result.valid
@@ -657,7 +657,7 @@ export function initTaggingPanel(ctx, dom, api) {
       );
     });
 
-    dom.btnExportTags.addEventListener('click', async () => {
+    dom.btnExportTags?.addEventListener('click', async () => {
       if (getEffectiveTaggedElements().length === 0) return;
       updateTagAssignmentUi('Reading tray dimensions for the mapping export...');
       dom.btnExportTags.disabled = true;
