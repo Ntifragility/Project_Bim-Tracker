@@ -39,6 +39,7 @@ import { createTrayBackends } from './backend.js';
 import { initModelLoader } from './ui/model-loader.js';
 import { initViewerChrome } from './ui/viewer-chrome.js';
 import { initContextMenu } from './ui/context-menu.js';
+import { initEscapeHandler } from './ui/escape-handler.js';
 
 // Legacy export kept for the previous flat `state.js` import surface.
 export { state } from './ui/state.js';
@@ -142,6 +143,11 @@ export async function initApp() {
   // guard is owned by viewer-chrome; the menu module only wires its items.
   const menu = initContextMenu(ctx, dom, api);
   menu.wireContextMenu();
+
+  // Global ESC: typing/dialog guard → close topmost → clear selection →
+  // deactivate momentary tools (see src/ui/escape-handler.js). Registered
+  // after all panels so existing per-dialog ESC listeners run first.
+  initEscapeHandler(ctx, dom, api);
 
   // 11. Chrome engine wiring that requires the highlighter + renderer.
   chrome.wireChromeControls();
