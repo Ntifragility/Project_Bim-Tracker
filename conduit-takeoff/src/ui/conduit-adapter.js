@@ -450,6 +450,27 @@ export function createConduitRibbonDef(ctx) {
               ],
             ],
           },
+          {
+            id: 'standards',
+            label: 'Standards',
+            items: [
+              [
+                {
+                  id: 'conduit.nec-standards',
+                  label: 'NEC Code\nStandards',
+                  icon: 'report',
+                  size: 'big',
+                  keytip: 'PNC',
+                  tooltip: 'View National Electrical Code (NFPA 70) conduit bending, radii & support rules',
+                  run(c) {
+                    c.api?.openNecDialog?.();
+                    const dialog = getDoc()?.getElementById('nec-inspector-dialog');
+                    if (dialog) dialog.hidden = false;
+                  },
+                },
+              ],
+            ],
+          },
         ],
       },
     ],

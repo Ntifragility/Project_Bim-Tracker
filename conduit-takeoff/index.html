@@ -151,6 +151,59 @@
       <!-- Status Bar is managed by ribbon-chrome (rc-status-bar) -->
     </div>
 
+    <!-- Revit-Style NEC Code Inspector Dialog (NFPA 70 Compliance) -->
+    <div id="nec-inspector-dialog" class="viewer-dialog-backdrop" hidden>
+      <section class="viewer-dialog rc-nec-dialog" role="dialog" aria-modal="true" aria-labelledby="nec-dialog-title">
+        <div class="rc-nec-header">
+          <div class="rc-nec-header-title">
+            <span class="rc-nec-icon">📜</span>
+            <div>
+              <h2 id="nec-dialog-title">National Electrical Code (NFPA 70) — Conduit Standards</h2>
+              <p class="rc-nec-subtitle">Field-bending rules, minimum radii, pull box sizing & support intervals</p>
+            </div>
+          </div>
+          <button id="nec-dialog-close" class="rc-dialog-close" type="button" aria-label="Close">✕</button>
+        </div>
+        <div class="rc-nec-body">
+          <div class="rc-nec-article-card">
+            <div class="rc-nec-badge">NEC 358.26 / 344.26 / 342.26</div>
+            <h3>Bends — Number in One Run (Maximum 360° Rule)</h3>
+            <p>There shall not be more than the equivalent of four quarter bends (<strong>360 degrees total</strong>) between pull points, for example, conduit bodies and boxes.</p>
+            <div class="rc-nec-note">💡 <strong>Field installation rule:</strong> Always install a junction box, pull box, or conduit body (LB/C/T) before cumulative bends exceed 360° to avoid tearing conductor insulation during pull.</div>
+          </div>
+          <div class="rc-nec-article-card">
+            <div class="rc-nec-badge">NEC 358.24 & Chapter 9, Table 2</div>
+            <h3>Bends — How Made & Minimum Centerline Radii</h3>
+            <p>Bends shall be made so that the conduit will not be damaged and the internal diameter will not be effectively reduced. Minimum centerline bend radii for one-shot / shoe benders:</p>
+            <table class="rc-nec-table">
+              <thead><tr><th>Trade Size</th><th>Metric</th><th>Min Radius (Inches)</th><th>Min Radius (mm)</th></tr></thead>
+              <tbody>
+                <tr><td>½"</td><td>16 mm</td><td>4.0"</td><td>102 mm</td></tr>
+                <tr><td>¾"</td><td>21 mm</td><td>4.5"</td><td>114 mm</td></tr>
+                <tr><td>1"</td><td>27 mm</td><td>5.75"</td><td>146 mm</td></tr>
+                <tr><td>1¼"</td><td>35 mm</td><td>7.25"</td><td>184 mm</td></tr>
+                <tr><td>1½"</td><td>41 mm</td><td>8.25"</td><td>210 mm</td></tr>
+                <tr><td>2"</td><td>53 mm</td><td>9.5"</td><td>241 mm</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="rc-nec-article-card">
+            <div class="rc-nec-badge">NEC 314.28</div>
+            <h3>Pull and Junction Boxes Minimum Dimensions</h3>
+            <p>For straight pulls: minimum box length = <strong>8 × trade diameter</strong>. For angle or U-pulls: distance to opposite wall = <strong>6 × trade diameter</strong> plus additional conduits.</p>
+          </div>
+          <div class="rc-nec-article-card">
+            <div class="rc-nec-badge">NEC 358.30</div>
+            <h3>Securing and Supporting</h3>
+            <p>Conduit shall be securely fastened within <strong>3 ft (900 mm)</strong> of each outlet box or termination, and supported at least every <strong>10 ft (3.05 m)</strong>.</p>
+          </div>
+        </div>
+        <div class="rc-nec-footer">
+          <button id="nec-dialog-ok" class="btn btn-primary" type="button">Understood</button>
+        </div>
+      </section>
+    </div>
+
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
