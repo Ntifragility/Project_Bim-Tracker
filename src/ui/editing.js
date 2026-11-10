@@ -141,19 +141,19 @@ export function initEditing(ctx, dom, api) {
       { property: 'SOP', valueType: 'IFCIDENTIFIER', value: '' },
     ]);
 
-    dom.btnAddMetadataRow.addEventListener('click', () => {
+    dom.btnAddMetadataRow?.addEventListener('click', () => {
       createMetadataRow();
       dom.metadataRows.querySelector('.metadata-row:last-child .metadata-property')?.focus();
     });
 
-    dom.btnCopyPreviousMetadata.addEventListener('click', () => {
+    dom.btnCopyPreviousMetadata?.addEventListener('click', () => {
       if (!ctx.lastMetadataTemplate) return;
       dom.metadataPset.value = ctx.lastMetadataTemplate.propertySet;
       replaceMetadataRows(ctx.lastMetadataTemplate.rows);
       renderPendingIfcEdits(`Copied the previous metadata template for element #${ctx.selectedIfcElement?.localId || '-'}.`);
     });
 
-    dom.btnStageMetadata.addEventListener('click', () => {
+    dom.btnStageMetadata?.addEventListener('click', () => {
       const targetElements = (ctx.multiSelectionElements.length >= 2 && ctx.multiSelectionIndex === -1)
         ? ctx.multiSelectionElements
         : (ctx.multiSelectionIndex >= 0 && ctx.multiSelectionElements[ctx.multiSelectionIndex])
@@ -223,7 +223,7 @@ export function initEditing(ctx, dom, api) {
       renderPendingIfcEdits(`Staged ${countLabel}.`);
     });
 
-    dom.btnStagePropertyEdit.addEventListener('click', () => {
+    dom.btnStagePropertyEdit?.addEventListener('click', () => {
       const targetElements = (ctx.multiSelectionElements.length >= 2 && ctx.multiSelectionIndex === -1)
         ? ctx.multiSelectionElements
         : (ctx.multiSelectionIndex >= 0 && ctx.multiSelectionElements[ctx.multiSelectionIndex])
@@ -263,7 +263,7 @@ export function initEditing(ctx, dom, api) {
       renderPendingIfcEdits(`Staged ${countLabel}.`);
     });
 
-    dom.btnStageColorEdit.addEventListener('click', async () => {
+    dom.btnStageColorEdit?.addEventListener('click', async () => {
       const color = normalizeHexColor(dom.ifcEditColor.value);
       if (!color) {
         renderPendingIfcEdits('Choose a valid RGB color.');
@@ -282,7 +282,7 @@ export function initEditing(ctx, dom, api) {
       await api.applyAppearanceColorToCurrentSelection();
     });
 
-    dom.btnClearIfcEdits.addEventListener('click', () => {
+    dom.btnClearIfcEdits?.addEventListener('click', () => {
       ctx.pendingIfcPropertyEdits.clear();
       ctx.pendingIfcColorEdits.clear();
       renderPendingIfcEdits('All pending IFC edits cleared.');

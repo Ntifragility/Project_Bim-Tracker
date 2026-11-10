@@ -78,6 +78,7 @@ export async function initApp() {
 
   // 1. Viewer chrome (tabs, overlay guard, grid/wireframe/dark/orbit/resize).
   const chrome = initViewerChrome(ctx, dom, api);
+  chrome.setupRibbonShell();
   chrome.setupSidebarTabs();
   chrome.guardOverlays();
 
