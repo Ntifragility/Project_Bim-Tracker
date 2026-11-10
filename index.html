@@ -11,44 +11,8 @@
   </head>
   <body>
     <div id="app">
-      <!-- Revit-style ribbon shell (tray has no top bar — container only).
-        All controls below are MOVED here at runtime (appendChild) by
-        viewer-chrome.js setupRibbonShell(); every existing id/listener is
-        preserved. The 4 ribbon-tab buttons are the ONLY new controls — they
-        switch ribbon panels and create no commands.
-        Tab mapping: Model / Tag / Systems / Edit-Export.
-        Docks: left = #sidebar (element properties only), right =
-        #excel-panel (loaded models, tray-system manager, excel table). -->
-      <header id="ribbon" class="ribbon" role="banner">
-        <div class="ribbon-brand">
-          <span class="ribbon-logo" aria-hidden="true">🏗️</span>
-          <span class="ribbon-title">IFC Viewer <em>Tray</em></span>
-        </div>
-        <nav class="ribbon-tabs" role="tablist" aria-label="Tray ribbon tabs">
-          <button class="ribbon-tab active" data-ribbon-tab="model" role="tab" aria-selected="true" aria-controls="ribbon-panel-model" id="ribbon-tab-model" type="button">Model</button>
-          <button class="ribbon-tab" data-ribbon-tab="tag" role="tab" aria-selected="false" aria-controls="ribbon-panel-tag" id="ribbon-tab-tag" type="button">Tag</button>
-          <button class="ribbon-tab" data-ribbon-tab="systems" role="tab" aria-selected="false" aria-controls="ribbon-panel-systems" id="ribbon-tab-systems" type="button">Systems</button>
-          <button class="ribbon-tab" data-ribbon-tab="edit-export" role="tab" aria-selected="false" aria-controls="ribbon-panel-edit-export" id="ribbon-tab-edit-export" type="button">Edit-Export</button>
-        </nav>
-        <div class="ribbon-panels">
-          <section id="ribbon-panel-model" class="ribbon-panel active" role="tabpanel" aria-labelledby="ribbon-tab-model" data-ribbon-panel="model">
-            <div class="ribbon-group" data-ribbon-slot="model-load"></div>
-            <div class="ribbon-group" data-ribbon-slot="model-view"></div>
-          </section>
-          <section id="ribbon-panel-tag" class="ribbon-panel" role="tabpanel" aria-labelledby="ribbon-tab-tag" data-ribbon-panel="tag" hidden>
-            <div class="ribbon-group ribbon-group-wide" data-ribbon-slot="tag-batch"></div>
-            <div class="ribbon-group ribbon-group-wide" data-ribbon-slot="tag-assign"></div>
-          </section>
-          <section id="ribbon-panel-systems" class="ribbon-panel" role="tabpanel" aria-labelledby="ribbon-tab-systems" data-ribbon-panel="systems" hidden>
-            <div class="ribbon-group ribbon-group-wide" data-ribbon-slot="systems-manager"></div>
-            <div class="ribbon-group" data-ribbon-slot="systems-validation"></div>
-          </section>
-          <section id="ribbon-panel-edit-export" class="ribbon-panel" role="tabpanel" aria-labelledby="ribbon-tab-edit-export" data-ribbon-panel="edit-export" hidden>
-            <div class="ribbon-group ribbon-group-wide" data-ribbon-slot="edit-metadata"></div>
-            <div class="ribbon-group" data-ribbon-slot="edit-routing"></div>
-            <div class="ribbon-group" data-ribbon-slot="edit-export"></div>
-          </section>
-        </div>
+      <!-- Revit-style ribbon shell: rendered by ribbon-chrome via createRibbon -->
+      <header id="ribbon" class="ribbon" role="banner" data-rc-host>
         <div id="options-bar-slot" class="options-bar-slot"></div>
       </header>
 

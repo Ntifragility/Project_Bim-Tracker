@@ -504,7 +504,10 @@ export function initSystemManager(ctx, dom, api) {
     const systems = getTraySystemSummaries();
     const visibleSystems = getVisibleTraySystems(systems);
     const selectedStillExists = systems.some((system) => system.tag.toLowerCase() === ctx.selectedTraySystemTag.toLowerCase());
-    if (!selectedStillExists) ctx.selectedTraySystemTag = '';
+    if (!selectedStillExists) {
+      ctx.selectedTraySystemTag = '';
+      if (typeof api.hideContextual === 'function') api.hideContextual();
+    }
 
     if (dom.traySystemManagerSummary) {
       const pendingDeletions = Array.from(ctx.tagAssignments.values()).filter((assignment) => assignment.delete === true).length;
@@ -585,9 +588,18 @@ export function initSystemManager(ctx, dom, api) {
         button.append(tag, meta, stateCounts, models);
 
         button.addEventListener('click', () => {
-          ctx.selectedTraySystemTag = system.tag;
-          dom.systemTagInput.value = system.tag;
-          api.updateTagAssignmentUi(`Selected tray system "${system.tag}".`);
+          if (ctx.selectedTraySystemTag.toLowerCase() === system.tag.toLowerCase()) {
+            ctx.selectedTraySystemTag = '';
+            if (typeof api.hideContextual === 'function') api.hideContextual();
+            api.updateTagAssignmentUi(`Deselected tray system "${system.tag}".`);
+          } else {
+            ctx.selectedTraySystemTag = system.tag;
+            dom.systemTagInput.value = system.tag;
+            if (typeof api.showContextual === 'function') api.showContextual('modify-tray-system');
+            api.updateTagAssignmentUi(`Selected tray system "${system.tag}".`);
+          }
+          renderTraySystemManager();
+          if (typeof api.refreshRibbon === 'function') api.refreshRibbon();
         });
         dom.traySystemList.appendChild(button);
       }
@@ -822,6 +834,8 @@ export function initSystemManager(ctx, dom, api) {
       }
 
       ctx.selectedTraySystemTag = newTag;
+      if (typeof api.showContextual === 'function') api.showContextual('modify-tray-system');
+      if (typeof api.refreshRibbon === 'function') api.refreshRibbon();
       api.renderExcelTable();
       api.refreshValidationReportIfOpen();
       api.updateTagAssignmentUi(`Renamed tray system "${oldTag}" to "${newTag}" for ${members.length} component${members.length === 1 ? '' : 's'}.`, 'success');
@@ -834,6 +848,33 @@ export function initSystemManager(ctx, dom, api) {
   api.renderTraySystemContinuityReport = renderTraySystemContinuityReport;
   api.checkSelectedTraySystemContinuity = checkSelectedTraySystemContinuity;
   api.regenerateSelectedSystemSequence = regenerateSelectedSystemSequence;
+  api.restoreAllPendingTrayDeletions = restoreAllPendingTrayDeletions;
+
+  api.highlightSelectedTraySystem = async () => {
+    if (!ctx.selectedTraySystemTag) return;
+    const members = findSystemMembers(ctx.selectedTraySystemTag);
+    if (!members.length) {
+      api.updateTagAssignmentUi(`Warning: no loaded components belong to tray system "${ctx.selectedTraySystemTag}".`, 'warning');
+      return;
+    }
+    await api.highlightTrayMembers(
+      members,
+      `Highlighted ${members.length} components for tray system "${ctx.selectedTraySystemTag}".`,
+    );
+  };
+
+  api.isolateSelectedTraySystem = async () => {
+    if (!ctx.selectedTraySystemTag) return;
+    const members = findSystemMembers(ctx.selectedTraySystemTag);
+    if (!members.length) {
+      api.updateTagAssignmentUi(`Warning: no loaded components belong to tray system "${ctx.selectedTraySystemTag}".`, 'warning');
+      return;
+    }
+    await api.isolateTrayMembers(
+      members,
+      `Isolated ${members.length} components for tray system "${ctx.selectedTraySystemTag}".`,
+    );
+  };
 
   return {
     findSystemMembers,

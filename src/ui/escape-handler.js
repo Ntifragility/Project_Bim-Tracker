@@ -68,9 +68,29 @@ export function initEscapeHandler(ctx, dom, api) {
       || (ctx.traySelection instanceof Map && ctx.traySelection.size > 0);
   }
 
+  function areKeytipsVisible() {
+    if (typeof document !== 'undefined') {
+      if (document.body?.hasAttribute('data-keytips')) return true;
+      if (document.getElementById('ribbon')?.hasAttribute('data-keytips')) return true;
+    }
+    return Boolean(api.ribbon?.keytipsVisible || api.keytipsVisible);
+  }
+
   function onKeyDown(event) {
     if (event.key !== 'Escape' && event.key !== 'Esc') return;
     if (event.defaultPrevented) return;
+
+    // (0) R5: If ribbon keytips are visible, ribbon dismisses them first.
+    if (areKeytipsVisible()) {
+      event.preventDefault();
+      if (typeof api.setKeytipsVisible === 'function') {
+        api.setKeytipsVisible(false);
+      } else if (typeof document !== 'undefined') {
+        document.body?.removeAttribute('data-keytips');
+        document.getElementById('ribbon')?.removeAttribute('data-keytips');
+      }
+      return;
+    }
 
     const replaceOpen = dom.tagReplaceDialog && !dom.tagReplaceDialog.hidden;
 
@@ -145,6 +165,12 @@ export function initEscapeHandler(ctx, dom, api) {
     if (ctx.selectedTraySystemTag) {
       event.preventDefault();
       ctx.selectedTraySystemTag = '';
+      if (typeof api.hideContextual === 'function') {
+        api.hideContextual();
+      }
+      if (typeof api.renderTraySystemManager === 'function') {
+        api.renderTraySystemManager();
+      }
       if (typeof api.updateTagAssignmentUi === 'function') {
         try {
           api.updateTagAssignmentUi();

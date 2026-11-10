@@ -169,3 +169,10 @@ export const taggedHighlightHexInput = el('tagged-highlight-hex');
 export const taggedHighlightCountBadge = el('tagged-highlight-count');
 export const toggleFloatingLabels = el('toggle-floating-labels');
 export const toggleFloatingLabelsSidebar = el('toggle-floating-labels-sidebar');
+
+// Routing DOM Elements
+export const btnBuildRoutingGraph = el('btn-build-routing-graph');
+export const btnClearRoutingGraph = el('btn-clear-routing-graph');
+export const btnRouteStart = el('btn-route-start');
+export const btnRouteEnd = el('btn-route-end');
+export const btnCalculateRoute = el('btn-calculate-route');
