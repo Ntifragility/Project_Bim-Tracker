@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "workspaces": [
+    "packages/ribbon-chrome",
     "packages/*",
     "apps/*"
   ],
@@ -17,7 +18,7 @@
     "build": "vite build",
     "build:conduit": "vite build conduit-takeoff",
     "preview": "vite preview",
-    "test": "node --test --test-force-exit packages/routing-core/test/*.test.js packages/conduit-core/test/*.test.js crates/viewport-core/test/self-test.mjs packages/viewer-core/test/*.test.js packages/excel-io/test/*.test.js"
+    "test": "node --test --test-force-exit packages/routing-core/test/*.test.js packages/conduit-core/test/*.test.js crates/viewport-core/test/self-test.mjs packages/viewer-core/test/*.test.js packages/excel-io/test/*.test.js packages/ribbon-chrome/test/*.test.js"
   },
   "devDependencies": {
     "vite": "^8.0.12"

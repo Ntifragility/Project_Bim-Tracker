@@ -1,0 +1,545 @@
+/* Revit-style Ribbon Chrome tokens & styles
+   Authoritative reference: docs/specs/chrome/revit-chrome-design.md
+   Scoped strictly to [data-rc-host] */
+
+[data-rc-host] {
+  --rc-chrome-bg: #F0F0F0;
+  --rc-panel-bg: #FFFFFF;
+  --rc-panel-border: #CCCCCC;
+  --rc-tab-active-bg: #FFFFFF;
+  --rc-tab-active-top: #0070C0;
+  --rc-tab-hover-bg: #E0E0E0;
+  --rc-tab-text: #444444;
+  --rc-tab-active-text: #000000;
+  --rc-btn-hover-bg: #E8F0FB;
+  --rc-btn-active-bg: #C5D9F1;
+  --rc-btn-text: #1A1A1A;
+  --rc-btn-disabled-text: #AAAAAA;
+  --rc-btn-disabled-icon: #BBBBBB;
+  --rc-group-caption: #555555;
+  --rc-group-separator: #C8C8C8;
+  --rc-qat-bg: #F0F0F0;
+  --rc-ctx-strip-bg: #D4E8FF;
+  --rc-ctx-strip-text: #003A6E;
+  --rc-ctx-strip-accent: #0070C0;
+  --rc-statusbar-bg: #EEEEEE;
+  --rc-statusbar-text: #444444;
+  --rc-statusbar-border: #CCCCCC;
+  --rc-keytip-bg: #FFFFF0;
+  --rc-keytip-border: #999900;
+  --rc-keytip-text: #333300;
+  --rc-focus-ring: #005499;
+  --rc-split-divider: #A8A8A8;
+
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  user-select: none;
+  box-sizing: border-box;
+}
+
+[data-rc-host] *,
+[data-rc-host] *::before,
+[data-rc-host] *::after {
+  box-sizing: border-box;
+}
+
+/* Accessibility: Focus visible outline R8 */
+[data-rc-host] button:focus-visible,
+[data-rc-host] input:focus-visible,
+[data-rc-host] select:focus-visible {
+  outline: 2px solid var(--rc-focus-ring);
+  outline-offset: 2px;
+}
+
+/* Base Ribbon Shell */
+[data-rc-host] .rc-ribbon {
+  display: flex;
+  flex-direction: column;
+  background: var(--rc-chrome-bg);
+  position: relative;
+  width: 100%;
+}
+
+/* 2.3 QAT — Quick Access Toolbar (h=24px) */
+[data-rc-host] .rc-qat {
+  height: 24px;
+  background: var(--rc-qat-bg);
+  border-bottom: 1px solid var(--rc-panel-border);
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+  position: relative;
+  z-index: 5;
+}
+
+[data-rc-host] .rc-qat-items {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+}
+
+[data-rc-host] .rc-qat-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--rc-btn-text);
+  cursor: pointer;
+  position: relative;
+}
+
+[data-rc-host] .rc-qat-btn:hover:not(:disabled) {
+  background: var(--rc-btn-hover-bg);
+}
+
+[data-rc-host] .rc-qat-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+  color: var(--rc-btn-disabled-icon);
+}
+
+[data-rc-host] .rc-qat-sep {
+  width: 1px;
+  height: 14px;
+  background: var(--rc-group-separator);
+  margin: 0 4px;
+}
+
+[data-rc-host] .rc-qat-customise {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--rc-btn-text);
+  cursor: pointer;
+}
+
+[data-rc-host] .rc-qat-customise:hover {
+  background: var(--rc-btn-hover-bg);
+}
+
+/* 2.4 Tab strip (h=28px) */
+[data-rc-host] .rc-tab-strip {
+  height: 28px;
+  background: var(--rc-chrome-bg);
+  display: flex;
+  align-items: stretch;
+  position: relative;
+  z-index: 4;
+}
+
+[data-rc-host] .rc-tablist {
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+[data-rc-host] .rc-tab {
+  height: 28px;
+  padding: 0 12px;
+  background: transparent;
+  border: none;
+  border-top: 3px solid transparent;
+  color: var(--rc-tab-text);
+  font-family: inherit;
+  font-size: 9pt;
+  font-weight: 400;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+}
+
+[data-rc-host] .rc-tab:hover:not([aria-selected="true"]) {
+  background: var(--rc-tab-hover-bg);
+}
+
+[data-rc-host] .rc-tab[aria-selected="true"] {
+  background: var(--rc-tab-active-bg);
+  color: var(--rc-tab-active-text);
+  font-weight: 600;
+  border-top: 3px solid var(--rc-tab-active-top);
+  border-bottom: none;
+}
+
+[data-rc-host] .rc-collapse-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--rc-btn-text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  margin-left: auto;
+}
+
+[data-rc-host] .rc-collapse-btn:hover {
+  background: var(--rc-tab-hover-bg);
+}
+
+/* 2.8 Contextual strip (h=20px) */
+[data-rc-host] .rc-ctx-strip {
+  height: 20px;
+  background: var(--rc-ctx-strip-bg);
+  border-top: 2px solid var(--rc-ctx-strip-accent);
+  color: var(--rc-ctx-strip-text);
+  font-size: 7pt;
+  font-weight: 600;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  letter-spacing: 0.5px;
+}
+
+/* 2.5 Ribbon panels container (target h=88-96px) */
+[data-rc-host] .rc-panel-container {
+  background: var(--rc-panel-bg);
+  border-bottom: 1px solid var(--rc-panel-border);
+  position: relative;
+}
+
+[data-rc-host][data-rc-collapsed="true"] .rc-panel-container,
+[data-rc-host][data-rc-collapsed="true"] .rc-ctx-strip {
+  display: none !important;
+}
+
+[data-rc-host] .rc-panel {
+  min-height: 88px;
+  height: 96px;
+  display: flex;
+  align-items: stretch;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+[data-rc-host] .rc-panel::-webkit-scrollbar {
+  display: none;
+}
+
+[data-rc-host] .rc-panel[hidden] {
+  display: none !important;
+}
+
+/* 2.6 Groups */
+[data-rc-host] .rc-group {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  border-right: 1px solid var(--rc-group-separator);
+  min-width: 48px;
+  position: relative;
+}
+
+[data-rc-host] .rc-group:last-child {
+  border-right: none;
+}
+
+[data-rc-host] .rc-group-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 4px 6px;
+  gap: 2px;
+}
+
+[data-rc-host] .rc-group-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  height: 100%;
+  justify-content: center;
+}
+
+[data-rc-host] .rc-group-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+[data-rc-host] .rc-group-caption {
+  border-top: 1px solid var(--rc-group-separator);
+  padding: 2px 6px;
+  font-size: 7pt;
+  font-weight: 400;
+  text-transform: uppercase;
+  color: var(--rc-group-caption);
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  min-height: 16px;
+  line-height: 12px;
+}
+
+[data-rc-host] .rc-group-launcher {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--rc-group-caption);
+}
+
+[data-rc-host] .rc-group-launcher:hover {
+  color: var(--rc-tab-active-top);
+}
+
+/* Buttons */
+[data-rc-host] .rc-btn {
+  background: transparent;
+  border: none;
+  border-radius: 2px;
+  color: var(--rc-btn-text);
+  font-family: inherit;
+  cursor: pointer;
+  position: relative;
+  display: inline-flex;
+}
+
+[data-rc-host] .rc-btn:hover:not(:disabled) {
+  background: var(--rc-btn-hover-bg);
+}
+
+[data-rc-host] .rc-btn:active:not(:disabled),
+[data-rc-host] .rc-btn[aria-pressed="true"] {
+  background: var(--rc-btn-active-bg);
+}
+
+[data-rc-host] .rc-btn:disabled {
+  color: var(--rc-btn-disabled-text);
+  cursor: default;
+}
+
+[data-rc-host] .rc-btn:disabled .rc-icon {
+  opacity: 0.4;
+  color: var(--rc-btn-disabled-icon);
+}
+
+/* Big Button (48-64px wide) */
+[data-rc-host] .rc-btn-big {
+  min-width: 48px;
+  max-width: 72px;
+  height: 72px;
+  padding: 4px 6px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+[data-rc-host] .rc-btn-big .rc-icon {
+  width: 32px;
+  height: 32px;
+  margin-bottom: 2px;
+}
+
+[data-rc-host] .rc-btn-big .rc-btn-label {
+  font-size: 9pt;
+  font-weight: 400;
+  line-height: 1.15;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-word;
+}
+
+/* Small Button (h=22px) */
+[data-rc-host] .rc-btn-small {
+  height: 22px;
+  padding: 0 6px;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+[data-rc-host] .rc-btn-small .rc-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+[data-rc-host] .rc-btn-small .rc-btn-label {
+  font-size: 8pt;
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+/* 2.7 Split Button */
+[data-rc-host] .rc-split-btn {
+  display: inline-flex;
+  align-items: stretch;
+  border-radius: 2px;
+  position: relative;
+}
+
+[data-rc-host] .rc-split-btn:hover:not(.rc-split-disabled) {
+  background: var(--rc-btn-hover-bg);
+}
+
+[data-rc-host] .rc-split-primary {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+[data-rc-host] .rc-split-divider {
+  width: 1px;
+  background: var(--rc-split-divider);
+  margin: 6px 0;
+}
+
+[data-rc-host] .rc-split-companion {
+  width: 24px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+/* InputField */
+[data-rc-host] .rc-input-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  font-size: 8pt;
+  color: var(--rc-btn-text);
+  position: relative;
+}
+
+[data-rc-host] .rc-input-field label {
+  font-size: 8pt;
+  color: var(--rc-group-caption);
+  white-space: nowrap;
+}
+
+[data-rc-host] .rc-input-field input,
+[data-rc-host] .rc-input-field select {
+  font-family: inherit;
+  font-size: 8pt;
+  height: 20px;
+  padding: 0 4px;
+  border: 1px solid var(--rc-panel-border);
+  border-radius: 2px;
+  background: #FFFFFF;
+  color: var(--rc-btn-text);
+}
+
+/* 2.11 Status bar (h=22px) */
+[data-rc-host] .rc-status-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 22px;
+  background: var(--rc-statusbar-bg);
+  color: var(--rc-statusbar-text);
+  border-top: 1px solid var(--rc-statusbar-border);
+  font-size: 8pt;
+  font-weight: 400;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  z-index: 100;
+}
+
+[data-rc-host] .rc-status-segment {
+  display: inline-flex;
+  align-items: center;
+}
+
+[data-rc-host] .rc-status-sep {
+  padding: 0 8px;
+  color: var(--rc-statusbar-border);
+  user-select: none;
+}
+
+/* 2.9 KeyTip Badge */
+[data-rc-host] .rc-keytip {
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--rc-keytip-bg);
+  border: 1px solid var(--rc-keytip-border);
+  border-radius: 2px;
+  padding: 1px 3px;
+  color: var(--rc-keytip-text);
+  font-size: 7pt;
+  font-weight: 600;
+  font-family: 'Consolas', 'Courier New', monospace;
+  line-height: 1;
+  z-index: 1000;
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+[data-rc-host] .rc-tab .rc-keytip {
+  bottom: 2px;
+}
+
+[data-rc-host] .rc-qat-btn .rc-keytip {
+  bottom: -4px;
+}
+
+/* Icons */
+[data-rc-host] .rc-icon {
+  display: inline-block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+[data-rc-host] .rc-icon-12 {
+  width: 12px;
+  height: 12px;
+}
+
+[data-rc-host] .rc-icon-16 {
+  width: 16px;
+  height: 16px;
+}
+
+[data-rc-host] .rc-icon-32 {
+  width: 32px;
+  height: 32px;
+}

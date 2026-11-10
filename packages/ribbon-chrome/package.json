@@ -1,0 +1,13 @@
+{
+  "name": "ribbon-chrome",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Universal Revit-style ribbon chrome framework",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./tokens.css": "./src/tokens.css",
+    "./sprite.svg": "./src/sprite.svg"
+  }
+}
