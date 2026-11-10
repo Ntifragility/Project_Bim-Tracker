@@ -1412,4 +1412,174 @@ body.sidebar-is-collapsed .revit-options-bar {
   color: var(--error) !important;
 }
 
+/* ─────────────────────────────────────────────────────────────────────────────
+   NEC Code Inspector Dialog Styles (NFPA 70 Compliance)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.viewer-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 11, 14, 0.75);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.viewer-dialog-backdrop[hidden] {
+  display: none !important;
+}
+
+.rc-nec-dialog {
+  background: #ffffff;
+  color: #1a1a1a;
+  border-radius: 6px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.4);
+  max-width: 640px;
+  width: 90vw;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  animation: necFadeIn 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes necFadeIn {
+  from { opacity: 0; transform: scale(0.96) translateY(-8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.rc-nec-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  background: #f0f0f0;
+  border-bottom: 1px solid #cccccc;
+}
+
+.rc-nec-header-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.rc-nec-icon {
+  font-size: 26px;
+}
+
+.rc-nec-header h2 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+  color: #000000;
+}
+
+.rc-nec-subtitle {
+  font-size: 11px;
+  color: #666666;
+  margin: 2px 0 0;
+}
+
+.rc-dialog-close {
+  background: transparent;
+  border: none;
+  font-size: 16px;
+  color: #666666;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.rc-dialog-close:hover {
+  background: #e0e0e0;
+  color: #000000;
+}
+
+.rc-nec-body {
+  padding: 16px 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.rc-nec-article-card {
+  background: #f8f9fa;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+
+.rc-nec-badge {
+  display: inline-block;
+  background: #0070c0;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 3px;
+  margin-bottom: 6px;
+  font-family: var(--font-mono);
+}
+
+.rc-nec-article-card h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0 0 6px;
+}
+
+.rc-nec-article-card p {
+  margin: 0 0 8px;
+  color: #334155;
+}
+
+.rc-nec-note {
+  background: #fef3c7;
+  border-left: 3px solid #f59e0b;
+  color: #92400e;
+  padding: 6px 10px;
+  font-size: 11px;
+  border-radius: 0 4px 4px 0;
+}
+
+.rc-nec-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  margin-top: 6px;
+}
+
+.rc-nec-table th,
+.rc-nec-table td {
+  padding: 5px 8px;
+  text-align: left;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.rc-nec-table th {
+  background: #e2e8f0;
+  font-weight: 600;
+  color: #475569;
+}
+
+.rc-nec-table tr:hover td {
+  background: #f1f5f9;
+}
+
+.rc-nec-footer {
+  padding: 12px 18px;
+  background: #f0f0f0;
+  border-top: 1px solid #cccccc;
+  display: flex;
+  justify-content: flex-end;
+}
+
+
 

@@ -16,6 +16,12 @@ import {
   appendToRun,
   deleteRun,
   nodeById,
+  solveElbowFitting,
+  getNecBendRadiusM,
+  analyzeRunBends,
+  calculateBendAngle,
+  snapToStandardBendAngle,
+  NEC_CONDUIT_ARTICLES,
 } from '@conduit-core';
 
 export function createDrawingTool({ engine, commandStack, diameterRegistry, onStateChange, viewport, surfacePicker }) {
@@ -464,13 +470,51 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
       const isSelected = run.id === selectedRunId;
       const pipeRadius = tradeRadiusM(run.size);
 
-      for (let i = 0; i < points.length - 1; i++) {
-        const cyl = createCylinderSegment(points[i], points[i + 1], pipeRadius, colorHex, isSelected);
-        if (cyl) runGroup.add(cyl);
-      }
+      const minRadiusM = getNecBendRadiusM(run.size);
 
-      for (const pt of points) {
-        runGroup.add(createJoint(pt, pipeRadius, colorHex, isSelected));
+      if (points.length === 2) {
+        // Straight single-stick or straight run
+        const cyl = createCylinderSegment(points[0], points[1], pipeRadius, colorHex, isSelected);
+        if (cyl) runGroup.add(cyl);
+        runGroup.add(createJoint(points[0], pipeRadius, colorHex, isSelected));
+        runGroup.add(createJoint(points[1], pipeRadius, colorHex, isSelected));
+      } else {
+        // Multi-segment run with field-bent circular arcs (NEC Table 2 compliant)
+        let currentStart = points[0];
+
+        for (let i = 1; i < points.length - 1; i++) {
+          const pPrev = points[i - 1];
+          const pCurr = points[i];
+          const pNext = points[i + 1];
+          const elbow = solveElbowFitting(pPrev, pCurr, pNext, minRadiusM, 10);
+
+          if (elbow.isValid && !elbow.isStraight) {
+            // 1. Straight conduit up to the bend's tangent start point
+            const straightCyl = createCylinderSegment(currentStart, elbow.tangentStart, pipeRadius, colorHex, isSelected);
+            if (straightCyl) runGroup.add(straightCyl);
+
+            // 2. Smooth curved arc representing the field bend in the pipe
+            for (let a = 0; a < elbow.arcPoints.length - 1; a++) {
+              const arcCyl = createCylinderSegment(elbow.arcPoints[a], elbow.arcPoints[a + 1], pipeRadius, colorHex, isSelected);
+              if (arcCyl) runGroup.add(arcCyl);
+            }
+
+            currentStart = elbow.tangentEnd;
+          } else {
+            // Collinear or near-zero angle: straight segment through corner
+            const straightCyl = createCylinderSegment(currentStart, pCurr, pipeRadius, colorHex, isSelected);
+            if (straightCyl) runGroup.add(straightCyl);
+            currentStart = pCurr;
+          }
+        }
+
+        // Final straight conduit segment to terminal endpoint
+        const finalCyl = createCylinderSegment(currentStart, points[points.length - 1], pipeRadius, colorHex, isSelected);
+        if (finalCyl) runGroup.add(finalCyl);
+
+        // Terminal joints only at the two extremities of the run
+        runGroup.add(createJoint(points[0], pipeRadius, colorHex, isSelected));
+        runGroup.add(createJoint(points[points.length - 1], pipeRadius, colorHex, isSelected));
       }
 
       completedRunsGroup.add(runGroup);
@@ -704,12 +748,31 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
     if (currentCursorPoint || activeRunPoints.length > 0) {
       const previewInfo = updateActiveRunVisuals();
       if (currentCursorPoint) {
+        let liveBendAngle = 0;
+        let cumulativeRunBends = 0;
+        let exceedsNec360 = false;
+
+        if (activeRunPoints.length >= 2 && previewInfo?.targetPt) {
+          const pPrev = activeRunPoints[activeRunPoints.length - 2];
+          const pLast = activeRunPoints[activeRunPoints.length - 1];
+          liveBendAngle = calculateBendAngle(pPrev, pLast, previewInfo.targetPt);
+          const prior = analyzeRunBends(activeRunPoints, diameterRegistry.getSelected()?.label);
+          cumulativeRunBends = prior.totalDegrees + liveBendAngle;
+          exceedsNec360 = cumulativeRunBends > 360.0;
+        }
+
         onStateChange?.({
           cursor: previewInfo?.targetPt || currentCursorPoint,
           liveSegment: previewInfo?.segDist || 0,
           isVertical: !!previewInfo?.isVertical,
           activePoints: activeRunPoints,
           screenPos: lastScreenPos,
+          liveBendAngle: Math.round(liveBendAngle * 10) / 10,
+          cumulativeRunBends: Math.round(cumulativeRunBends * 10) / 10,
+          exceedsNec360,
+          necWarning: exceedsNec360
+            ? `⚠️ NEC 358.26 Warning: Total bends (${cumulativeRunBends.toFixed(0)}°) exceed 360° maximum between pull points!`
+            : null,
         });
       }
     } else {

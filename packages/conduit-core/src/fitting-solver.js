@@ -195,13 +195,87 @@ export function solveElbowFitting(p1, pCorner, p2, bendRadius, arcSegments = 8) 
 }
 
 /**
+ * Authoritative NFPA 70 / National Electrical Code (NEC) Articles governing conduit bends,
+ * pull points, support, and sizing.
+ */
+export const NEC_CONDUIT_ARTICLES = {
+  BENDS_NUMBER_IN_ONE_RUN: {
+    code: 'NEC 358.26',
+    title: 'Bends — Number in One Run (360° Rule)',
+    relatedArticles: ['NEC 344.26 (RMC)', 'NEC 342.26 (IMC)'],
+    summary: 'There shall not be more than the equivalent of four quarter bends (360 degrees total) between pull points, for example, conduit bodies and boxes.',
+    limitDegrees: 360,
+  },
+  BENDS_HOW_MADE: {
+    code: 'NEC 358.24',
+    title: 'Bends — How Made & Minimum Radii',
+    referenceTable: 'NEC Chapter 9, Table 2',
+    summary: 'Bends shall be made so that the conduit will not be damaged and the internal diameter of the conduit will not be effectively reduced. The radius of the curve of any field bend to the centerline of the conduit shall not be less than indicated in Table 2, Chapter 9.',
+  },
+  PULL_BOXES: {
+    code: 'NEC 314.28',
+    title: 'Pull and Junction Boxes Minimum Dimensions',
+    summary: 'For straight pulls, box length must be at least 8 times the trade diameter. For angle or U-pulls, distance between conduit entries and opposite wall must be at least 6 times the trade diameter.',
+  },
+  SECURING_SUPPORTING: {
+    code: 'NEC 358.30',
+    title: 'Securing and Supporting',
+    summary: 'Conduit shall be securely fastened within 3 ft (900 mm) of each outlet box, junction box, or conduit termination, and supported at least every 10 ft (3.05 m).',
+  },
+};
+
+/**
+ * Standard field-bending angles marked on conduit benders (e.g. Greenlee, Ideal, Klein).
+ */
+export const STANDARD_BEND_ANGLES = [15, 22.5, 30, 45, 60, 90];
+
+/**
+ * Snaps an arbitrary angle to the nearest standard field bender angle if within tolerance.
+ *
+ * @param {number} angleDeg - Raw turn angle in degrees
+ * @param {number} [tolerance=7.5] - Snapping window in degrees
+ * @returns {{ snappedAngle: number, isStandard: boolean }}
+ */
+export function snapToStandardBendAngle(angleDeg, tolerance = 5.0) {
+  if (angleDeg < 5.0) {
+    return { snappedAngle: 0, isStandard: true };
+  }
+  let bestStd = null;
+  let minDiff = Infinity;
+  for (const std of STANDARD_BEND_ANGLES) {
+    const diff = Math.abs(angleDeg - std);
+    if (diff < minDiff) {
+      minDiff = diff;
+      bestStd = std;
+    }
+  }
+  if (minDiff <= tolerance) {
+    return { snappedAngle: bestStd, isStandard: true };
+  }
+  return { snappedAngle: Math.round(angleDeg * 10) / 10, isStandard: false };
+}
+
+/**
+ * Retrieves full NEC code citation information for a given topic.
+ *
+ * @param {string} topicKey
+ * @returns {object|null}
+ */
+export function getNecCodeReference(topicKey) {
+  return NEC_CONDUIT_ARTICLES[topicKey] || null;
+}
+
+/**
  * Calculates cumulative degrees of bend for an entire conduit run.
  * Checks against the NEC 360° maximum limit (NEC 358.26 / 344.26).
  *
  * @param {Array<{ x: number, y: number, z: number }>} points - Ordered points in run
+ * @param {string|number} [sizeLabel='3/4"'] - Conduit size for minimum radius lookup
  * @returns {Object} Cumulative bend analysis
  */
-export function analyzeRunBends(points) {
+export function analyzeRunBends(points, sizeLabel = '3/4"') {
+  const minRadiusM = getNecBendRadiusM(sizeLabel);
+
   if (!points || points.length < 3) {
     return {
       totalDegrees: 0,
@@ -209,6 +283,9 @@ export function analyzeRunBends(points) {
       exceedsNec360: false,
       warning: null,
       bends: [],
+      minRadiusM,
+      necArticles: [NEC_CONDUIT_ARTICLES.BENDS_NUMBER_IN_ONE_RUN, NEC_CONDUIT_ARTICLES.BENDS_HOW_MADE],
+      status: 'COMPLIANT',
     };
   }
 
@@ -223,18 +300,29 @@ export function analyzeRunBends(points) {
     const angle = calculateBendAngle(pPrev, pCurr, pNext);
     if (angle >= 1.0) {
       totalDegrees += angle;
+      const { snappedAngle, isStandard } = snapToStandardBendAngle(angle);
+      const halfAngleRad = (angle * 0.5) * DEG_TO_RAD;
+      const tangentDistM = minRadiusM * Math.tan(halfAngleRad);
+      const arcLengthM = (Math.PI * minRadiusM * angle) / 180.0;
+
       bends.push({
         index: i,
         point: pCurr,
         angleDeg: Number(angle.toFixed(1)),
+        snappedAngle,
+        isStandard,
         isQuarterBend: Math.abs(angle - 90) <= 2.0,
+        radiusM: minRadiusM,
+        tangentDistM: Number(tangentDistM.toFixed(4)),
+        arcLengthM: Number(arcLengthM.toFixed(4)),
+        necArticles: ['NEC 358.24', 'NEC 358.26'],
       });
     }
   }
 
   const exceedsNec360 = totalDegrees > 360.0;
   const warning = exceedsNec360
-    ? `Warning: Run contains ${totalDegrees.toFixed(1)}° of bends (exceeds NEC 360° maximum allowed between pull points).`
+    ? `Warning: Run contains ${totalDegrees.toFixed(1)}° of bends (exceeds NEC 358.26 maximum 360° allowed between pull points).`
     : null;
 
   return {
@@ -243,6 +331,64 @@ export function analyzeRunBends(points) {
     exceedsNec360,
     warning,
     bends,
+    minRadiusM,
+    necArticles: [NEC_CONDUIT_ARTICLES.BENDS_NUMBER_IN_ONE_RUN, NEC_CONDUIT_ARTICLES.BENDS_HOW_MADE],
+    status: exceedsNec360 ? 'NON-COMPLIANT' : 'COMPLIANT',
+  };
+}
+
+/**
+ * Performs a comprehensive NEC code compliance audit for a conduit run.
+ *
+ * @param {Array<{ x: number, y: number, z: number }>} points
+ * @param {string|number} sizeLabel
+ * @param {number} [runLengthM=0]
+ * @returns {Object} Full audit report with NEC citations
+ */
+export function getRunNecAudit(points, sizeLabel = '3/4"', runLengthM = 0) {
+  const bendAnalysis = analyzeRunBends(points, sizeLabel);
+  const minRadius = getNecBendRadiusM(sizeLabel);
+  const radiusInches = (minRadius / 0.0254).toFixed(1);
+  const pullBoxesNeeded = Math.floor(bendAnalysis.totalDegrees / 360.0);
+
+  // Maximum support spacing per NEC 358.30 is 10 ft (3.048 m)
+  const maxSupportIntervalM = 3.048;
+  const recommendedSupports = Math.max(1, Math.ceil(runLengthM / maxSupportIntervalM));
+
+  return {
+    status: bendAnalysis.exceedsNec360 ? 'NON-COMPLIANT' : 'COMPLIANT',
+    tradeSize: sizeLabel,
+    totalBendDegrees: bendAnalysis.totalDegrees,
+    maxAllowedBendDegrees: 360.0,
+    bendCount: bendAnalysis.fittingsCount,
+    bends: bendAnalysis.bends,
+    minRadiusM: minRadius,
+    minRadiusInches: parseFloat(radiusInches),
+    pullBoxesRecommended: pullBoxesNeeded,
+    recommendedSupports,
+    citations: [
+      {
+        article: 'NEC 358.26',
+        title: 'Bends — Number in One Run',
+        requirement: 'Max 360° total bends between pull points',
+        currentValue: `${bendAnalysis.totalDegrees}°`,
+        compliant: !bendAnalysis.exceedsNec360,
+      },
+      {
+        article: 'NEC 358.24 / Ch. 9 Table 2',
+        title: 'Minimum Centerline Bend Radius',
+        requirement: `≥ ${radiusInches}" (${(minRadius * 1000).toFixed(0)} mm) for ${sizeLabel}`,
+        currentValue: `${(minRadius * 1000).toFixed(0)} mm`,
+        compliant: true,
+      },
+      {
+        article: 'NEC 358.30',
+        title: 'Securing & Supporting',
+        requirement: 'Within 3 ft (900 mm) of termination & every 10 ft (3.05 m)',
+        currentValue: `${recommendedSupports} supports estimated`,
+        compliant: true,
+      },
+    ],
   };
 }
 

@@ -7,6 +7,8 @@ import {
   solveElbowFitting,
   analyzeRunBends,
   solveAutoRiser,
+  snapToStandardBendAngle,
+  getRunNecAudit,
 } from '../src/fitting-solver.js';
 
 const close = (actual, expected, tol = 1e-4) =>
@@ -112,7 +114,46 @@ test('analyzeRunBends: cumulative angle tracking and NEC 360° violation check',
   close(analysis2.totalDegrees, 450.0);
   assert.equal(analysis2.fittingsCount, 5);
   assert.equal(analysis2.exceedsNec360, true);
-  assert.ok(analysis2.warning.includes('exceeds NEC 360°'));
+  assert.ok(analysis2.warning.includes('360°'));
+});
+
+test('snapToStandardBendAngle: snaps within window and detects standard angles', () => {
+  // 88.5° snaps to 90°
+  const snap90 = snapToStandardBendAngle(88.5);
+  assert.equal(snap90.snappedAngle, 90);
+  assert.equal(snap90.isStandard, true);
+
+  // 44.1° snaps to 45°
+  const snap45 = snapToStandardBendAngle(44.1);
+  assert.equal(snap45.snappedAngle, 45);
+  assert.equal(snap45.isStandard, true);
+
+  // 29.8° snaps to 30°
+  const snap30 = snapToStandardBendAngle(29.8);
+  assert.equal(snap30.snappedAngle, 30);
+  assert.equal(snap30.isStandard, true);
+
+  // Non-standard angle (e.g. 71.3°) remains non-standard
+  const nonStd = snapToStandardBendAngle(71.3, 5.0);
+  assert.equal(nonStd.isStandard, false);
+});
+
+test('getRunNecAudit: comprehensive NEC compliance audit and article citations', () => {
+  const points = [
+    { x: 0, y: 0, z: 0 },
+    { x: 3, y: 0, z: 0 }, // 90° bend
+    { x: 3, y: 0, z: 3 }, // 90° bend
+    { x: 6, y: 0, z: 3 },
+  ];
+  const audit = getRunNecAudit(points, '3/4"', 9.0);
+  assert.equal(audit.status, 'COMPLIANT');
+  assert.equal(audit.totalBendDegrees, 180.0);
+  assert.equal(audit.maxAllowedBendDegrees, 360.0);
+  assert.equal(audit.bendCount, 2);
+  assert.equal(audit.minRadiusInches, 4.5);
+  assert.ok(audit.citations.some((c) => c.article === 'NEC 358.26' && c.compliant));
+  assert.ok(audit.citations.some((c) => c.article.includes('NEC 358.24')));
+  assert.ok(audit.citations.some((c) => c.article === 'NEC 358.30'));
 });
 
 test('solveAutoRiser: generates intermediate riser transition', () => {

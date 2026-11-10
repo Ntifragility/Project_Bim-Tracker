@@ -6,6 +6,7 @@
 // Takeoff/BOM, Identity Data), view navigation, schedule views, and IFC links.
 
 import { createPropertiesPalette, createProjectBrowser } from 'ribbon-chrome';
+import { getNecBendRadiusM, analyzeRunBends, NEC_CONDUIT_ARTICLES, STANDARD_BEND_ANGLES } from '@conduit-core';
 
 /**
  * Creates and mounts the Revit lateral dock components.
@@ -84,6 +85,14 @@ export function createLateralDock({ state, els, api }) {
     if (schedRunsView) schedRunsView.style.display = 'none';
     if (schedBomView) schedBomView.style.display = 'block';
   });
+
+  // NEC Code Inspector Dialog wiring
+  const necDialog = document.getElementById('nec-inspector-dialog');
+  const btnNecClose = document.getElementById('nec-dialog-close');
+  const btnNecOk = document.getElementById('nec-dialog-ok');
+  btnNecClose?.addEventListener('click', () => { if (necDialog) necDialog.hidden = true; });
+  btnNecOk?.addEventListener('click', () => { if (necDialog) necDialog.hidden = true; });
+  api.openNecDialog = () => { if (necDialog) necDialog.hidden = false; };
 
   // ─────────────────────────────────────────────────────────────────────────────
   // 1. Properties Palette
@@ -219,11 +228,31 @@ export function createLateralDock({ state, els, api }) {
       const takeoff = backend.computeRunTakeoff(state.network, run.id);
       const diam = state.diameterRegistry.getByLabel(run.size) || { label: run.size, mm: 21 };
       const runNodes = (run.nodeIds || []).map((nid) => backend.nodeById(state.network, nid)).filter(Boolean);
-      const bendAnalysis = backend.analyzeRunBends(runNodes);
+      const bendAnalysis = analyzeRunBends(runNodes, run.size);
       const pullBoxes = Math.floor(bendAnalysis.totalDegrees / 360);
       const refElev = runNodes[0]?.z ?? tool?.activeElevation ?? 2.80;
       const lengthM = takeoff ? takeoff.length : 0;
       const sticks = takeoff ? takeoff.sticks : 0;
+      const minRadiusM = getNecBendRadiusM(run.size);
+      const minRadiusMm = Math.round(minRadiusM * 1000);
+      const minRadiusIn = (minRadiusM / 0.0254).toFixed(1);
+
+      const constraintParams = [
+        { name: 'Reference Elevation', value: `${refElev.toFixed(2)} m`, type: 'text' },
+        { name: 'Workplane state', value: tool?.workPlaneVisible ? 'Active (Grid Visible)' : 'Active (Grid Hidden)', readonly: true },
+        { name: 'NEC 358.26 (Bends Limit)', value: `${bendAnalysis.totalDegrees}° / 360° (${bendAnalysis.exceedsNec360 ? 'NON-COMPLIANT' : 'COMPLIANT'})`, readonly: true },
+        { name: 'NEC 358.24 (Min Radius)', value: `${minRadiusMm} mm (${minRadiusIn}") [Ch.9 Table 2]`, readonly: true },
+        { name: 'NEC 358.30 (Support Spacing)', value: 'Every 10 ft (3.05 m) max', readonly: true },
+      ];
+
+      // Add individual field bends to parameter grid for inspection & editing
+      (bendAnalysis.bends || []).forEach((b, idx) => {
+        constraintParams.push({
+          name: `Bend #${idx + 1} Angle`,
+          value: `${b.angleDeg}°`,
+          options: ['15°', '22.5°', '30°', '45°', '60°', '90°'],
+        });
+      });
 
       palette.setElement({
         id: run.id,
@@ -234,20 +263,21 @@ export function createLateralDock({ state, els, api }) {
         type: run.size,
         types: typeOptions,
         parameters: {
-          'Constraints': [
-            { name: 'Reference Elevation', value: `${refElev.toFixed(2)} m`, type: 'text' },
-            { name: 'Workplane state', value: tool?.workPlaneVisible ? 'Active (Grid Visible)' : 'Active (Grid Hidden)', readonly: true },
-          ],
+          'Constraints': constraintParams,
           'Dimensions': [
             { name: 'Trade Size', value: run.size, options: allDiameters.map((d) => d.label) },
             { name: 'Outer Diameter', value: `${diam.mm} mm`, readonly: true },
             { name: 'Run Length', value: `${lengthM.toFixed(2)} m (${(lengthM / 0.3048).toFixed(1)} ft)`, readonly: true },
             { name: 'Stick Count', value: `${sticks} (10 ft stocks)`, readonly: true },
+            { name: 'Total Field Bends', value: `${bendAnalysis.bends?.length || 0} (${bendAnalysis.totalDegrees}° total)`, readonly: true },
+            { name: 'Fabrication Method', value: 'Field-Bent (No bought elbows)', readonly: true },
           ],
           'Takeoff / BOM': [
             { name: 'Waste Factor %', value: `${Math.round(state.settings.wasteFactor * 100)}`, type: 'number' },
-            { name: 'Fittings count', value: `${bendAnalysis.bends?.length || 0} (${bendAnalysis.totalDegrees}° bends)`, readonly: true },
-            { name: 'Pull Boxes', value: `${pullBoxes} (${bendAnalysis.exceedsNec360 ? 'Exceeds 360°' : 'Compliant'})`, readonly: true },
+            { name: 'Field Bends Count', value: `${bendAnalysis.bends?.length || 0} (${bendAnalysis.totalDegrees}° bends)`, readonly: true },
+            { name: 'Pull Boxes Required', value: `${pullBoxes} (${bendAnalysis.exceedsNec360 ? 'Exceeds 360°' : 'Compliant'})`, readonly: true },
+            { name: 'Couplings Required', value: `${Math.max(0, sticks - 1)} (to join 10 ft sticks)`, readonly: true },
+            { name: 'NEC Standards', value: 'NEC 358.24, 358.26, 314.28, 358.30', readonly: true },
           ],
           'Identity Data': [
             { name: 'Run ID', value: run.id, readonly: true },
@@ -266,9 +296,12 @@ export function createLateralDock({ state, els, api }) {
       }
       runningDist += liveData.liveSegment || 0;
       const sticks = Math.ceil(runningDist / state.settings.stickLengthM) || 0;
-      const bendAnalysis = backend.analyzeRunBends(liveData.points);
+      const bendAnalysis = analyzeRunBends(liveData.points, selectedDiam.label);
       const pullBoxes = Math.floor(bendAnalysis.totalDegrees / 360);
       const activeElev = tool?.activeElevation ?? 2.80;
+      const minRadiusM = getNecBendRadiusM(selectedDiam.label);
+      const minRadiusMm = Math.round(minRadiusM * 1000);
+      const minRadiusIn = (minRadiusM / 0.0254).toFixed(1);
 
       palette.setElement({
         id: 'active-run',
@@ -282,12 +315,15 @@ export function createLateralDock({ state, els, api }) {
           'Constraints': [
             { name: 'Reference Elevation', value: `${activeElev.toFixed(2)} m`, type: 'text' },
             { name: 'Workplane state', value: tool?.workPlaneVisible ? 'Active (Grid Visible)' : 'Active (Grid Hidden)', readonly: true },
+            { name: 'NEC 358.26 (Bends Limit)', value: `${bendAnalysis.totalDegrees}° / 360° (${bendAnalysis.exceedsNec360 ? 'NON-COMPLIANT' : 'COMPLIANT'})`, readonly: true },
+            { name: 'NEC 358.24 (Min Radius)', value: `${minRadiusMm} mm (${minRadiusIn}") [Ch.9 Table 2]`, readonly: true },
           ],
           'Dimensions': [
             { name: 'Trade Size', value: selectedDiam.label, options: allDiameters.map((d) => d.label) },
             { name: 'Outer Diameter', value: `${selectedDiam.mm} mm`, readonly: true },
             { name: 'Run Length', value: `${runningDist.toFixed(2)} m`, readonly: true },
             { name: 'Stick Count', value: `${sticks} (10 ft stocks)`, readonly: true },
+            { name: 'Fabrication', value: 'Field-Bent (Direct on Pipe)', readonly: true },
           ],
           'Takeoff / BOM': [
             { name: 'Waste Factor %', value: `${Math.round(state.settings.wasteFactor * 100)}`, type: 'number' },
@@ -304,6 +340,10 @@ export function createLateralDock({ state, els, api }) {
     } else {
       // ── C. Idle state (no selection) ──
       const activeElev = tool?.activeElevation ?? 2.80;
+      const minRadiusM = getNecBendRadiusM(selectedDiam.label);
+      const minRadiusMm = Math.round(minRadiusM * 1000);
+      const minRadiusIn = (minRadiusM / 0.0254).toFixed(1);
+
       palette.setElement({
         id: 'conduit-system',
         name: 'Conduit System',
@@ -316,12 +356,15 @@ export function createLateralDock({ state, els, api }) {
           'Constraints': [
             { name: 'Reference Elevation', value: `${activeElev.toFixed(2)} m`, type: 'text' },
             { name: 'Workplane state', value: tool?.workPlaneVisible ? 'Active (Grid Visible)' : 'Active (Grid Hidden)', readonly: true },
+            { name: 'NEC Standard Limit', value: '360° max cumulative bends (NEC 358.26)', readonly: true },
+            { name: 'NEC Table 2 Radius', value: `${minRadiusMm} mm (${minRadiusIn}") for ${selectedDiam.label}`, readonly: true },
           ],
           'Dimensions': [
             { name: 'Trade Size', value: selectedDiam.label, options: allDiameters.map((d) => d.label) },
             { name: 'Outer Diameter', value: `${selectedDiam.mm} mm`, readonly: true },
             { name: 'Run Length', value: '0.00 m', readonly: true },
             { name: 'Stick Count', value: '0 (10 ft stocks)', readonly: true },
+            { name: 'Fabrication', value: 'Field-Bent (No factory elbows)', readonly: true },
           ],
           'Takeoff / BOM': [
             { name: 'Waste Factor %', value: `${Math.round(state.settings.wasteFactor * 100)}`, type: 'number' },
