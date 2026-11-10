@@ -6,6 +6,7 @@
 // Cross-module calls go through the shared `api` object (7.1 pattern).
 // `window.__drawingTool` is preserved (conduit HUD + external diagnostics).
 
+import 'ribbon-chrome/tokens.css';
 import './style.css';
 import { collectEls } from './ui/dom.js';
 import { createConduitBackend } from './backend.js';

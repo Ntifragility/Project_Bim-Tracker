@@ -49,12 +49,17 @@ export function createProjectIo({ state, els, engine, api }) {
     if (drawingTool.activePoints.length > 0) {
       drawingTool.cancelCurrentRun();
       api.updateUndoRedoButtons(drawingTool);
+      if (!drawingTool.isDrawingMode && !state.selectedRunId) {
+        api.hideContextual?.();
+      }
+      api.refreshRibbon?.();
       return 'cancel-run';
     }
     if (drawingTool.isPickElevationActive) {
       drawingTool.isPickElevationActive = false;
       els.btnPickElevation?.classList.remove('active');
       els.statusText.textContent = 'Elevation eyedropper cancelled';
+      api.refreshRibbon?.();
       return 'cancel-pick';
     }
     // (3) Clear selection.
@@ -63,6 +68,10 @@ export function createProjectIo({ state, els, engine, api }) {
       drawingTool.selectedRunId = null;
       drawingTool.renderRuns(state.network);
       api.renderRunsList(drawingTool);
+      if (!drawingTool.isDrawingMode && (!drawingTool.activePoints || drawingTool.activePoints.length === 0)) {
+        api.hideContextual?.();
+      }
+      api.refreshRibbon?.();
       return 'clear-selection';
     }
     // (4) Stand down trace tools; sticky prefs untouched.
@@ -74,6 +83,8 @@ export function createProjectIo({ state, els, engine, api }) {
     els.btnPerp?.classList.remove('active');
     api.updateUndoRedoButtons(drawingTool);
     els.statusText.textContent = 'Trace off: look around. Click Trace to place pipe';
+    api.hideContextual?.();
+    api.refreshRibbon?.();
     return 'stand-down';
   }
 

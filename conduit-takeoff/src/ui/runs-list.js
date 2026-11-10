@@ -60,6 +60,12 @@ export function createRunsList({ state, els, api }) {
         drawingTool.selectedRunId = state.selectedRunId;
         drawingTool.renderRuns(state.network);
         renderRunsList(drawingTool);
+        if (state.selectedRunId) {
+          api.showContextual?.('modify-run');
+        } else if (!drawingTool.isDrawingMode && (!drawingTool.activePoints || drawingTool.activePoints.length === 0)) {
+          api.hideContextual?.();
+        }
+        api.refreshRibbon?.();
       });
 
       // Delete run
@@ -72,7 +78,13 @@ export function createRunsList({ state, els, api }) {
           description: `Delete ${run.name || run.id}`,
           execute() {
             state.network = nextNet;
-            if (state.selectedRunId === run.id) state.selectedRunId = null;
+            if (state.selectedRunId === run.id) {
+              state.selectedRunId = null;
+              if (!drawingTool.isDrawingMode && (!drawingTool.activePoints || drawingTool.activePoints.length === 0)) {
+                api.hideContextual?.();
+              }
+              api.refreshRibbon?.();
+            }
             drawingTool.renderRuns(state.network);
             renderRunsList(drawingTool);
             api.renderSummary();

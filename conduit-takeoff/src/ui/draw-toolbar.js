@@ -9,8 +9,9 @@ export function createDrawToolbar({ state, els, api }) {
   function updateUndoRedoButtons(drawingToolRef) {
     const tool = drawingToolRef || window.__drawingTool;
     const canUndo = Boolean((tool?.activePoints?.length > 0) || state.commandStack.canUndo());
-    els.btnUndo.disabled = !canUndo;
-    els.btnRedo.disabled = !state.commandStack.canRedo();
+    if (els.btnUndo) els.btnUndo.disabled = !canUndo;
+    if (els.btnRedo) els.btnRedo.disabled = !state.commandStack.canRedo();
+    api.refreshRibbon?.();
   }
 
   function diameterSwatch(color) {
@@ -78,43 +79,61 @@ export function createDrawToolbar({ state, els, api }) {
 
   function wireDrawControls(drawingTool) {
     // Drawing Toolbar Actions
-    els.btnDrawMode.addEventListener('click', () => {
+    els.btnDrawMode?.addEventListener('click', () => {
       drawingTool.isDrawingMode = !drawingTool.isDrawingMode;
       els.btnDrawMode.classList.toggle('active', drawingTool.isDrawingMode);
-      els.statusText.textContent = drawingTool.isDrawingMode
-        ? 'Trace on: click a surface to place pipe'
-        : 'Trace off: look around. Click Trace to place pipe';
+      if (drawingTool.isDrawingMode) {
+        api.showContextual?.('modify-run');
+      } else if (!state.selectedRunId && (!drawingTool.activePoints || drawingTool.activePoints.length === 0)) {
+        api.hideContextual?.();
+      }
+      if (els.statusText) {
+        els.statusText.textContent = drawingTool.isDrawingMode
+          ? 'Trace on: click a surface to place pipe'
+          : 'Trace off: look around. Click Trace to place pipe';
+      }
+      api.refreshRibbon?.();
     });
 
-    els.btnOrtho.addEventListener('click', () => {
+    els.btnOrtho?.addEventListener('click', () => {
       drawingTool.isOrthoActive = !drawingTool.isOrthoActive;
       els.btnOrtho.classList.toggle('active', drawingTool.isOrthoActive);
+      api.refreshRibbon?.();
     });
 
-    els.btnPerp.addEventListener('click', () => {
+    els.btnPerp?.addEventListener('click', () => {
       drawingTool.isPerpendicularActive = !drawingTool.isPerpendicularActive;
       els.btnPerp.classList.toggle('active', drawingTool.isPerpendicularActive);
-      els.statusText.textContent = drawingTool.isPerpendicularActive
-        ? '⊥ Perpendicular to XY lock active: moving cursor draws vertical riser'
-        : 'Perpendicular lock released';
+      if (els.statusText) {
+        els.statusText.textContent = drawingTool.isPerpendicularActive
+          ? '⊥ Perpendicular to XY lock active: moving cursor draws vertical riser'
+          : 'Perpendicular lock released';
+      }
+      api.refreshRibbon?.();
     });
 
-    els.btnAddVertUp.addEventListener('click', () => {
-      const step = Math.abs(Number(els.inputVerticalLen.value) || 2.0);
+    els.btnAddVertUp?.addEventListener('click', () => {
+      const step = Math.abs(Number(els.inputVerticalLen?.value) || 2.0);
       const added = drawingTool.addVerticalStep(step);
       if (added) {
         if (els.topElevationInput) els.topElevationInput.value = drawingTool.activeElevation.toFixed(2);
-        els.statusText.textContent = `Added vertical riser +${step} m straight UP (Elevation: ${drawingTool.activeElevation.toFixed(2)} m)`;
+        if (els.statusText) {
+          els.statusText.textContent = `Added vertical riser +${step} m straight UP (Elevation: ${drawingTool.activeElevation.toFixed(2)} m)`;
+        }
       }
+      api.refreshRibbon?.();
     });
 
-    els.btnAddVertDown.addEventListener('click', () => {
-      const step = Math.abs(Number(els.inputVerticalLen.value) || 2.0);
+    els.btnAddVertDown?.addEventListener('click', () => {
+      const step = Math.abs(Number(els.inputVerticalLen?.value) || 2.0);
       const added = drawingTool.addVerticalStep(-step);
       if (added) {
         if (els.topElevationInput) els.topElevationInput.value = drawingTool.activeElevation.toFixed(2);
-        els.statusText.textContent = `Added vertical riser -${step} m straight DOWN (Elevation: ${drawingTool.activeElevation.toFixed(2)} m)`;
+        if (els.statusText) {
+          els.statusText.textContent = `Added vertical riser -${step} m straight DOWN (Elevation: ${drawingTool.activeElevation.toFixed(2)} m)`;
+        }
       }
+      api.refreshRibbon?.();
     });
 
     // Revit-Style Top Options Bar Controls
@@ -123,7 +142,10 @@ export function createDrawToolbar({ state, els, api }) {
         state.diameterRegistry.setSelected(e.target.value);
         renderDiameterPicker();
         const sel = state.diameterRegistry.getSelected();
-        els.statusText.textContent = `Selected conduit diameter: ${sel?.label || e.target.value}`;
+        if (els.statusText) {
+          els.statusText.textContent = `Selected conduit diameter: ${sel?.label || e.target.value}`;
+        }
+        api.refreshRibbon?.();
       });
     }
 
@@ -132,7 +154,10 @@ export function createDrawToolbar({ state, els, api }) {
         const val = Number(e.target.value);
         if (!Number.isNaN(val)) {
           drawingTool.activeElevation = val;
-          els.statusText.textContent = `Active Middle Elevation set to: ${val.toFixed(2)} m`;
+          if (els.statusText) {
+            els.statusText.textContent = `Active Middle Elevation set to: ${val.toFixed(2)} m`;
+          }
+          api.refreshRibbon?.();
         }
       });
     }
@@ -141,9 +166,12 @@ export function createDrawToolbar({ state, els, api }) {
       els.btnPickElevation.addEventListener('click', () => {
         drawingTool.isPickElevationActive = !drawingTool.isPickElevationActive;
         els.btnPickElevation.classList.toggle('active', drawingTool.isPickElevationActive);
-        els.statusText.textContent = drawingTool.isPickElevationActive
-          ? 'Sampling elevation: click any element in the 3D model to set offset'
-          : 'Elevation eyedropper cancelled';
+        if (els.statusText) {
+          els.statusText.textContent = drawingTool.isPickElevationActive
+            ? 'Sampling elevation: click any element in the 3D model to set offset'
+            : 'Elevation eyedropper cancelled';
+        }
+        api.refreshRibbon?.();
       });
     }
 
@@ -151,9 +179,12 @@ export function createDrawToolbar({ state, els, api }) {
       els.btnToggleWorkplane.addEventListener('click', () => {
         drawingTool.workPlaneVisible = !drawingTool.workPlaneVisible;
         els.btnToggleWorkplane.classList.toggle('active', drawingTool.workPlaneVisible);
-        els.statusText.textContent = drawingTool.workPlaneVisible
-          ? 'Grid workplane helper visible'
-          : 'Grid workplane hidden';
+        if (els.statusText) {
+          els.statusText.textContent = drawingTool.workPlaneVisible
+            ? 'Grid workplane helper visible'
+            : 'Grid workplane hidden';
+        }
+        api.refreshRibbon?.();
       });
     }
 
@@ -162,9 +193,12 @@ export function createDrawToolbar({ state, els, api }) {
         drawingTool.autoRiserEnabled = !drawingTool.autoRiserEnabled;
         els.btnToggleAutoriser.classList.toggle('active', drawingTool.autoRiserEnabled);
         els.btnToggleAutoriser.textContent = drawingTool.autoRiserEnabled ? '⚡ Auto-Riser: ON' : '⚡ Auto-Riser: OFF';
-        els.statusText.textContent = drawingTool.autoRiserEnabled
-          ? 'Revit Auto-Riser enabled: changing elevation mid-run will generate vertical risers'
-          : 'Auto-Riser disabled';
+        if (els.statusText) {
+          els.statusText.textContent = drawingTool.autoRiserEnabled
+            ? 'Revit Auto-Riser enabled: changing elevation mid-run will generate vertical risers'
+            : 'Auto-Riser disabled';
+        }
+        api.refreshRibbon?.();
       });
     }
 
@@ -172,37 +206,47 @@ export function createDrawToolbar({ state, els, api }) {
       els.topBtnFinish.addEventListener('click', () => {
         const system = els.topSystemSelect?.value || 'Power';
         drawingTool.finishCurrentRun(() => state.network, (n) => { state.network = n; }, system);
+        api.hideContextual?.();
+        api.refreshRibbon?.();
       });
     }
 
     if (els.topBtnCancel) {
       els.topBtnCancel.addEventListener('click', () => {
         drawingTool.cancelCurrentRun();
+        api.hideContextual?.();
+        api.refreshRibbon?.();
       });
     }
 
-    els.btnUndo.addEventListener('click', () => {
+    els.btnUndo?.addEventListener('click', () => {
       if (drawingTool.activePoints.length > 0) {
         drawingTool.undoLastPoint();
         updateUndoRedoButtons(drawingTool);
       } else if (state.commandStack.canUndo()) {
         state.commandStack.undo();
       }
+      api.refreshRibbon?.();
     });
 
-    els.btnRedo.addEventListener('click', () => {
+    els.btnRedo?.addEventListener('click', () => {
       if (state.commandStack.canRedo()) {
         state.commandStack.redo();
       }
+      api.refreshRibbon?.();
     });
 
-    els.btnFinishRun.addEventListener('click', () => {
+    els.btnFinishRun?.addEventListener('click', () => {
       const system = els.topSystemSelect?.value || 'Power';
       drawingTool.finishCurrentRun(() => state.network, (n) => { state.network = n; }, system);
+      api.hideContextual?.();
+      api.refreshRibbon?.();
     });
 
-    els.btnCancelRun.addEventListener('click', () => {
+    els.btnCancelRun?.addEventListener('click', () => {
       drawingTool.cancelCurrentRun();
+      api.hideContextual?.();
+      api.refreshRibbon?.();
     });
   }
 
