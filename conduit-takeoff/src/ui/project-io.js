@@ -29,10 +29,67 @@ export function createProjectIo({ state, els, engine, api }) {
     URL.revokeObjectURL(url);
   }
 
+  // Global ESC precedence chain (revit-ribbon): (1) typing guard — HUD
+  // typing or focus in INPUT/TEXTAREA/SELECT → blur only, nothing else;
+  // (2) cancel in-progress capture — activePoints.length > 0 →
+  // cancelCurrentRun(), pick-elevation → off + .active removed; (3) clear
+  // selection — state.selectedRunId → null + rerender; (4) stand down
+  // trace tools — isDrawingMode/isOrthoActive/isPerpendicularActive →
+  // false + .active removed + status text. Sticky prefs (workplane,
+  // autoRiser, diameter, elevation) and sidebar tabs are never touched.
+  function handleEscape(drawingTool) {
+    // (1) Typing guard.
+    if (api.isHudTyping?.()) return 'typing';
+    const active = document.activeElement;
+    if (active && ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName)) {
+      active.blur();
+      return 'typing';
+    }
+    // (2) Cancel in-progress capture.
+    if (drawingTool.activePoints.length > 0) {
+      drawingTool.cancelCurrentRun();
+      api.updateUndoRedoButtons(drawingTool);
+      return 'cancel-run';
+    }
+    if (drawingTool.isPickElevationActive) {
+      drawingTool.isPickElevationActive = false;
+      els.btnPickElevation?.classList.remove('active');
+      els.statusText.textContent = 'Elevation eyedropper cancelled';
+      return 'cancel-pick';
+    }
+    // (3) Clear selection.
+    if (state.selectedRunId !== null && state.selectedRunId !== undefined) {
+      state.selectedRunId = null;
+      drawingTool.selectedRunId = null;
+      drawingTool.renderRuns(state.network);
+      api.renderRunsList(drawingTool);
+      return 'clear-selection';
+    }
+    // (4) Stand down trace tools; sticky prefs untouched.
+    drawingTool.isDrawingMode = false;
+    drawingTool.isOrthoActive = false;
+    drawingTool.isPerpendicularActive = false;
+    els.btnDrawMode?.classList.remove('active');
+    els.btnOrtho?.classList.remove('active');
+    els.btnPerp?.classList.remove('active');
+    api.updateUndoRedoButtons(drawingTool);
+    els.statusText.textContent = 'Trace off: look around. Click Trace to place pipe';
+    return 'stand-down';
+  }
+
   function wireProjectControls(drawingTool) {
     // Keyboard Shortcuts
     window.addEventListener('keydown', (e) => {
-      if (e.target.tagName === 'INPUT') return;
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) {
+        // Drive-by fix: the old guard swallowed Escape (and Enter/v/z)
+        // while typing. Let Escape route through the precedence chain so
+        // step 1 can blur; other shortcuts stay inert while typing.
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          handleEscape(drawingTool);
+        }
+        return;
+      }
 
       if ((e.key.toLowerCase() === 'v' || e.key.toLowerCase() === 'z') && !e.ctrlKey) {
         drawingTool.isPerpendicularActive = !drawingTool.isPerpendicularActive;
@@ -49,9 +106,11 @@ export function createProjectIo({ state, els, engine, api }) {
         const system = els.topSystemSelect?.value || 'Power';
         drawingTool.finishCurrentRun(() => state.network, (n) => { state.network = n; }, system);
       } else if (e.key === 'Escape') {
-        drawingTool.cancelCurrentRun();
-        api.updateUndoRedoButtons(drawingTool);
-        engine.highlighter?.clear('select')?.catch(() => {});
+        e.preventDefault();
+        const outcome = handleEscape(drawingTool);
+        if (outcome === 'cancel-run') {
+          engine.highlighter?.clear('select')?.catch(() => {});
+        }
       } else if (e.ctrlKey && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         if (e.shiftKey) {
@@ -165,5 +224,5 @@ export function createProjectIo({ state, els, engine, api }) {
 
   api.downloadFile = downloadFile;
 
-  return { downloadFile, wireProjectControls };
+  return { downloadFile, handleEscape, wireProjectControls };
 }

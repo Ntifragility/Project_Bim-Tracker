@@ -24,6 +24,144 @@ export function createViewerChrome({ state, els, api }) {
     els.loadingOverlay.hidden = true;
   }
 
+  // Map each ribbon tab to the dock (sidebar) panel it focuses. The ribbon
+  // adds no commands: proxies below forward clicks to existing handlers.
+  const RIBBON_TAB_TO_PANEL = {
+    model: 'model',
+    trace: 'draw',
+    quantities: 'summary',
+    project: null, // Project tab has no dock panel; keep current panel open.
+  };
+
+  // Sync one direction of ribbon-tab <-> dock (sidebar) tab selection.
+  function setRibbonTab(name) {
+    const tabs = Array.from(document.querySelectorAll('.ribbon-tab-btn'));
+    const panels = Array.from(document.querySelectorAll('.ribbon-panel'));
+    tabs.forEach((t) => {
+      const isSelected = t.dataset.ribbonTab === name;
+      t.classList.toggle('active', isSelected);
+      t.setAttribute('aria-selected', isSelected);
+    });
+    panels.forEach((p) => {
+      p.classList.toggle('active', p.dataset.ribbonPanel === name);
+    });
+    const ribbon = document.getElementById('ribbon');
+    if (ribbon) ribbon.dataset.activeTab = name;
+  }
+
+  function setDockPanel(name) {
+    if (!name) return;
+    els.tabs.forEach((t) => {
+      const isSelected = t.dataset.tabTarget === name;
+      t.classList.toggle('active', isSelected);
+      t.setAttribute('aria-selected', isSelected);
+    });
+    els.panels.forEach((p) => {
+      p.classList.toggle('active', p.dataset.sidebarPanel === name);
+    });
+  }
+
+  function wireRibbonShim() {
+    const ribbonTabs = Array.from(document.querySelectorAll('.ribbon-tab-btn'));
+    if (ribbonTabs.length === 0) return { setRibbonTab };
+    // Resolved lazily: wireChrome() runs before bootEngine() creates the
+    // tool, so read it at event time (main.js call order is untouched).
+    const getTool = () => window.__drawingTool;
+
+    // Tab click: activate the ribbon panel and focus the matching dock
+    // panel (sidebar buttons keep their handlers; this only mirrors state).
+    ribbonTabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        const name = tab.dataset.ribbonTab;
+        setRibbonTab(name);
+        setDockPanel(RIBBON_TAB_TO_PANEL[name]);
+      });
+    });
+
+    // Sidebar clicks keep the ribbon in sync (existing handlers untouched).
+    els.tabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        const target = tab.dataset.tabTarget;
+        const entry = Object.entries(RIBBON_TAB_TO_PANEL).find(([, panel]) => panel === target);
+        if (entry) setRibbonTab(entry[0]);
+      });
+    });
+
+    // Draw-mode lifecycle events switch the dock to Draw; keep the ribbon
+    // Trace group in view too.
+    const syncTrace = () => setRibbonTab('trace');
+    if (els.btnDrawMode) {
+      els.btnDrawMode.addEventListener('click', () => {
+        if (getTool()?.isDrawingMode) syncTrace();
+      });
+    }
+
+    // Ribbon proxies forward to the real buttons: click for buttons,
+    // click-through + focus for hidden file inputs. Disabled targets stay
+    // disabled (the proxy mirrors the disabled state on init + on change).
+    const proxies = Array.from(document.querySelectorAll('.ribbon-proxy[data-forward]'));
+    const mirrorDisabled = (proxy, target) => {
+      if ('disabled' in target) proxy.disabled = target.disabled;
+      proxy.classList.toggle('active', target.classList.contains('active'));
+      proxy.setAttribute('aria-disabled', target.disabled ? 'true' : 'false');
+    };
+    proxies.forEach((proxy) => {
+      const target = document.getElementById(proxy.dataset.forward);
+      if (!target) return;
+      mirrorDisabled(proxy, target);
+      new MutationObserver(() => mirrorDisabled(proxy, target)).observe(target, {
+        attributes: true,
+        attributeFilter: ['disabled', 'class'],
+      });
+      proxy.addEventListener('click', () => {
+        if (target.disabled) return;
+        if (target.tagName === 'INPUT' && target.type === 'hidden') {
+          target.click();
+          return;
+        }
+        target.click();
+        if (target.tagName === 'INPUT' || target.tagName === 'SELECT') target.focus({ preventScroll: true });
+      });
+    });
+
+    // Keep ribbon Trace proxies' .active state in sync when draw flags
+    // change outside a ribbon click (sidebar clicks, keyboard shortcuts).
+    const getFlag = (id) => {
+      const tool = getTool();
+      if (id === 'btn-draw-mode') return tool?.isDrawingMode;
+      if (id === 'btn-ortho') return tool?.isOrthoActive;
+      if (id === 'btn-perp') return tool?.isPerpendicularActive;
+      return undefined;
+    };
+    const syncProxyActive = () => {
+      proxies.forEach((proxy) => {
+        const flag = getFlag(proxy.dataset.forward);
+        if (flag === undefined) return;
+        const target = document.getElementById(proxy.dataset.forward);
+        proxy.classList.toggle('active', Boolean(flag || target?.classList.contains('active')));
+      });
+    };
+    ['btn-draw-mode', 'btn-ortho', 'btn-perp'].forEach((id) => {
+      document.getElementById(id)?.addEventListener('click', () => queueMicrotask(syncProxyActive));
+    });
+
+    return { setRibbonTab };
+  }
+
+  // `mepHud` is created inside bootEngine; keep a module-level ref so
+  // isHudTyping() (ESC step 1) can ask it without touching call order.
+  let mepHudRef = null;
+
+  // Exposed for project-io's ESC chain (step 1 typing guard) and tests:
+  // HUD typing state OR focus inside an editable control.
+  function isHudTyping() {
+    try {
+      if (typeof mepHudRef?.isInputActive === 'function' && mepHudRef.isInputActive()) return true;
+    } catch { /* HUD unavailable — fall through to focus check */ }
+    const active = document.activeElement;
+    return Boolean(active && ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName));
+  }
+
   function wireChrome() {
     // Sidebar Tabs Navigation
     els.tabs.forEach((tab) => {
@@ -40,9 +178,14 @@ export function createViewerChrome({ state, els, api }) {
       });
     });
 
+    wireRibbonShim();
+
     // Sidebar Toggle
     els.sidebarToggle.addEventListener('click', () => {
       els.sidebar.classList.toggle('collapsed');
+      // Drive the ribbon offset below (the ribbon precedes the dock in the
+      // DOM, so a body class is used instead of a sibling selector).
+      document.body.classList.toggle('sidebar-is-collapsed', els.sidebar.classList.contains('collapsed'));
     });
 
     // Update undo/redo state listeners
@@ -164,6 +307,7 @@ export function createViewerChrome({ state, els, api }) {
         drawingTool.commitDistance(distM);
       },
     });
+    mepHudRef = mepHud;
 
     window.__drawingTool = drawingTool;
     drawingTool.attach(els.viewerContainer);
@@ -173,6 +317,8 @@ export function createViewerChrome({ state, els, api }) {
 
   api.showLoading = showLoading;
   api.hideLoading = hideLoading;
+  api.isHudTyping = isHudTyping;
+  api.setRibbonTab = setRibbonTab;
 
-  return { showLoading, hideLoading, wireChrome, bootEngine };
+  return { showLoading, hideLoading, isHudTyping, setRibbonTab, wireChrome, bootEngine };
 }
