@@ -162,195 +162,356 @@ body {
 }
 
 /* ==========================================================================
-   Glassmorphic Sidebar
+   Revit-Style Lateral Dock (Properties Palette & Project Browser)
    ========================================================================== */
 
+#sidebar.rc-lateral-dock,
+#sidebar.dock,
 #sidebar {
-  width: var(--sidebar-width);
-  height: calc(100vh - 32px);
+  width: 300px;
   position: absolute;
-  top: 16px;
-  left: 16px;
-  z-index: 10;
+  top: 148px;
+  bottom: 22px;
+  left: 0;
+  z-index: 50;
   display: flex;
   flex-direction: column;
-  background: var(--bg-sidebar);
-  backdrop-filter: blur(16px) saturate(120%);
-  -webkit-backdrop-filter: blur(16px) saturate(120%);
-  border: 1px solid var(--glass-border);
-  border-radius: 16px;
-  box-shadow: 0 8px 32px 0 var(--glass-shadow);
-  padding: 16px;
-  overflow-x: hidden;
-  transition: transform 0.4s var(--ease-out);
+  background: var(--rc-chrome-bg, #F0F0F0);
+  border-right: 1px solid var(--rc-panel-border, #CCCCCC);
+  border-top: 1px solid var(--rc-panel-border, #CCCCCC);
+  box-shadow: 2px 0 6px rgba(0, 0, 0, 0.08);
+  padding: 0;
+  overflow: visible;
+  transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), top 0.2s ease;
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  font-size: 11px;
+  color: #1A1A1A;
+  box-sizing: border-box;
+}
+
+/* Adjust top position when ribbon is collapsed */
+#ribbon[data-rc-collapsed="true"] ~ #sidebar {
+  top: 52px;
 }
 
 #sidebar.collapsed {
-  transform: translateX(calc(-100% - 16px));
+  transform: translateX(-100%);
 }
 
-/* Sidebar toggle handle */
+/* Dock toggle handle */
+.rc-dock-toggle,
 .sidebar-toggle {
   position: absolute;
-  top: 24px;
-  right: -42px;
-  width: 42px;
-  height: 48px;
-  background: var(--bg-sidebar);
-  backdrop-filter: blur(16px) saturate(120%);
-  -webkit-backdrop-filter: blur(16px) saturate(120%);
-  border: 1px solid var(--glass-border);
+  top: 6px;
+  right: -24px;
+  width: 24px;
+  height: 36px;
+  background: var(--rc-chrome-bg, #F0F0F0);
+  border: 1px solid var(--rc-panel-border, #CCCCCC);
   border-left: none;
-  border-radius: 0 12px 12px 0;
-  color: var(--text-primary);
+  border-radius: 0 3px 3px 0;
+  color: #444444;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 11;
-  box-shadow: 4px 0 16px rgba(0, 0, 0, 0.3);
-  transition: all 0.3s ease;
+  z-index: 55;
+  box-shadow: 2px 0 5px rgba(0, 0, 0, 0.08);
+  font-size: 11px;
+  padding: 0;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
+.rc-dock-toggle:hover,
 .sidebar-toggle:hover {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--rc-btn-hover-bg, #E8F0FB);
+  color: #000000;
 }
 
-.sidebar-toggle span {
-  font-size: 1rem;
-  transition: transform 0.3s ease;
-}
-
+#sidebar.collapsed .rc-dock-toggle span,
 #sidebar.collapsed .sidebar-toggle span {
   transform: rotate(180deg);
 }
 
-/* Header */
-.sidebar-header {
-  margin-bottom: 14px;
-  border-bottom: 1px solid var(--glass-border);
-  padding-bottom: 12px;
-}
-
-.logo {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.logo-icon {
-  font-size: 1.5rem;
-}
-
-.logo h1 {
-  font-size: 1.3rem;
-  font-weight: 700;
-  letter-spacing: -0.5px;
-  background: linear-gradient(135deg, #ffffff 30%, var(--accent) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.subtitle {
-  font-size: 0.78rem;
-  color: var(--text-secondary);
-  margin-top: 4px;
-  font-weight: 350;
-  letter-spacing: 1px;
-}
-
-/* ==========================================================================
-   Sidebar Tabs
-   ========================================================================== */
-
-.sidebar-nav-tabs {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 4px;
-  background: rgba(0, 0, 0, 0.3);
-  padding: 4px;
-  border-radius: 10px;
-  border: 1px solid var(--glass-border);
-  margin-bottom: 16px;
-}
-
-.sidebar-tab-btn {
+/* Dock Panels Container */
+.rc-dock-panels {
+  flex: 1;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  background: #FFFFFF;
+}
+
+.rc-dock-pane {
+  flex: 1;
+  display: none;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.rc-dock-pane.active {
+  display: flex;
+}
+
+/* Bottom Revit Dock Tabs */
+.rc-dock-tabs {
+  height: 26px;
+  min-height: 26px;
+  background: var(--rc-chrome-bg, #F0F0F0);
+  border-top: 1px solid var(--rc-panel-border, #CCCCCC);
+  display: flex;
+  align-items: stretch;
+  padding: 0 2px;
+  gap: 2px;
+  user-select: none;
+  box-sizing: border-box;
+}
+
+.rc-dock-tab {
+  flex: 1;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  padding: 8px 2px;
+  gap: 4px;
   background: transparent;
   border: none;
-  border-radius: 8px;
-  color: var(--text-secondary);
-  font: 500 0.72rem var(--font-sans);
+  border-top: 2px solid transparent;
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  color: #555555;
   cursor: pointer;
-  transition: all 0.2s var(--ease-in-out);
+  padding: 0 4px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
 }
 
-.sidebar-tab-btn span {
-  font-size: 0.95rem;
-  line-height: 1;
+.rc-dock-tab:hover {
+  background: #E5E5E5;
+  color: #1A1A1A;
 }
 
-.sidebar-tab-btn:hover {
-  color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.sidebar-tab-btn.active {
+.rc-dock-tab.active {
+  background: #FFFFFF;
   color: #000000;
-  background: var(--accent);
-  box-shadow: 0 2px 10px var(--accent-glow);
   font-weight: 600;
+  border-top: 2px solid var(--rc-tab-active-top, #0070C0);
 }
 
-/* ==========================================================================
-   Sidebar Content & Panels
-   ========================================================================== */
-
-.sidebar-content {
-  flex-grow: 1;
-  overflow-y: auto;
-  padding-right: 4px;
+/* Schedules Pane Styling (Revit-style) */
+.rc-schedule-header {
+  background: var(--rc-chrome-bg, #F0F0F0);
+  border-bottom: 1px solid var(--rc-panel-border, #CCCCCC);
+  padding: 4px 8px;
   display: flex;
-  flex-direction: column;
-  gap: 20px;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 28px;
 }
 
-/* Scrollbar */
-.sidebar-content::-webkit-scrollbar { width: 4px; }
-.sidebar-content::-webkit-scrollbar-track { background: transparent; }
-.sidebar-content::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 2px; }
-.sidebar-content::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
-
-/* Panel toggle */
-.control-group[data-sidebar-panel] {
-  display: none !important;
-}
-
-.control-group[data-sidebar-panel].active {
-  display: flex !important;
-  flex-direction: column;
-  gap: 14px;
-  animation: fadeInPanel 0.25s var(--ease-in-out) forwards;
-}
-
-@keyframes fadeInPanel {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.control-group h3 {
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 1.5px;
-  color: var(--text-muted);
+.rc-schedule-title {
+  font-size: 11px;
   font-weight: 600;
+  color: #333333;
+}
+
+.rc-schedule-subtabs {
+  display: flex;
+  gap: 2px;
+}
+
+.rc-sched-subtab {
+  font-family: inherit;
+  font-size: 10px;
+  padding: 2px 6px;
+  background: #E8E8E8;
+  border: 1px solid #CCCCCC;
+  border-radius: 2px;
+  cursor: pointer;
+  color: #333333;
+}
+
+.rc-sched-subtab:hover {
+  background: #DFDFDF;
+}
+
+.rc-sched-subtab.active {
+  background: #FFFFFF;
+  font-weight: 600;
+  border-color: #0070C0;
+  color: #0070C0;
+}
+
+.rc-sched-view {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  font-size: 11px;
+  background: #FFFFFF;
+}
+
+.rc-sched-view h4 {
+  font-size: 11px;
+  font-weight: 600;
+  color: #333333;
+  margin-bottom: 6px;
+}
+
+/* Run item cards inside Revit Dock */
+.run-item-card {
+  background: #FFFFFF;
+  border: 1px solid #E0E0E0;
+  border-radius: 2px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.run-item-card:hover {
+  background: #F0F4FA;
+  border-color: #B8D0ED;
+}
+
+.run-item-card.selected {
+  background: #E8F0FB;
+  border-color: #0070C0;
+}
+
+.run-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  font-size: 11px;
+  color: #1A1A1A;
+}
+
+.run-item-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.run-item-del-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 2px;
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.run-item-del-btn:hover {
+  opacity: 1;
+  background: #FFE8E8;
+  color: #CC0000;
+}
+
+.run-item-stats {
+  display: flex;
+  gap: 8px;
+  font-size: 10px;
+  color: #666666;
+  margin-top: 4px;
+  align-items: center;
+}
+
+.nec-bend-badge {
+  font-size: 9px;
+  padding: 1px 4px;
+  border-radius: 2px;
+  font-weight: 600;
+}
+
+.nec-bend-badge.nec-ok {
+  background: #E6F4EA;
+  color: #137333;
+}
+
+.nec-bend-badge.nec-warning {
+  background: #FCE8E6;
+  color: #C5221F;
+}
+
+/* Summary table inside Revit Dock */
+.summary-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  color: #1A1A1A;
+  margin-top: 6px;
+}
+
+.summary-table th {
+  background: #F0F0F0;
+  border-bottom: 1px solid #CCCCCC;
+  padding: 4px 6px;
+  font-weight: 600;
+  color: #333333;
+  text-align: left;
+}
+
+.summary-table td {
+  padding: 4px 6px;
+  border-bottom: 1px solid #F0F0F0;
+}
+
+.summary-table tfoot td {
+  font-weight: 700;
+  border-top: 1px solid #CCCCCC;
+  background: #F8F8F8;
+}
+
+.badge {
+  background: #0070C0;
+  color: #FFFFFF;
+  border-radius: 8px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.summary-settings-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #EBEBEB;
+}
+
+.summary-label {
+  font-size: 11px;
+  color: #444444;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.summary-label .input-number {
+  width: 48px;
+  height: 20px;
+  font-family: inherit;
+  font-size: 11px;
+  border: 1px solid #CCCCCC;
+  border-radius: 2px;
+  padding: 0 4px;
+}
+
+.stick-spec-badge {
+  font-size: 10px;
+  color: #666666;
+  background: #F0F0F0;
+  padding: 2px 6px;
+  border-radius: 2px;
+  border: 1px solid #DDDDDD;
 }
 
 /* ==========================================================================
@@ -1070,25 +1231,7 @@ body.sidebar-is-collapsed .revit-options-bar {
   align-items: center;
 }
 
-/* ==========================================================================
-   Dock (formerly the glassmorphic sidebar — panels/ids unchanged)
-   ========================================================================== */
 
-/* The dock keeps every sidebar selector working (wireChrome, bootEngine
-   fan-out, draw-toolbar, model-load and project-io all query #sidebar and
-   .sidebar-* classes), but narrows to a dock strip beside the canvas. */
-#sidebar.dock {
-  width: 300px;
-  top: auto;
-  bottom: 44px;
-  height: auto;
-  max-height: calc(100vh - 260px);
-  min-height: 220px;
-}
-
-#sidebar-toggle .sidebar-toggle-label {
-  font-size: 0.7rem;
-}
 
 /* ==========================================================================
    Revit-Style Live Floating MEP HUD Overlay

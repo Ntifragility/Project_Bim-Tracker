@@ -70,6 +70,7 @@ export function createDrawToolbar({ state, els, api }) {
         state.diameterRegistry.setSelected(d.id);
         renderDiameterPicker();
         els.statusText.textContent = `Selected conduit diameter: ${d.label}`;
+        api.updatePropertiesPalette?.();
       });
       list.append(option);
     }
@@ -92,6 +93,7 @@ export function createDrawToolbar({ state, els, api }) {
           ? 'Trace on: click a surface to place pipe'
           : 'Trace off: look around. Click Trace to place pipe';
       }
+      api.updatePropertiesPalette?.();
       api.refreshRibbon?.();
     });
 
@@ -145,6 +147,7 @@ export function createDrawToolbar({ state, els, api }) {
         if (els.statusText) {
           els.statusText.textContent = `Selected conduit diameter: ${sel?.label || e.target.value}`;
         }
+        api.updatePropertiesPalette?.();
         api.refreshRibbon?.();
       });
     }
@@ -157,6 +160,7 @@ export function createDrawToolbar({ state, els, api }) {
           if (els.statusText) {
             els.statusText.textContent = `Active Middle Elevation set to: ${val.toFixed(2)} m`;
           }
+          api.updatePropertiesPalette?.();
           api.refreshRibbon?.();
         }
       });
@@ -184,6 +188,7 @@ export function createDrawToolbar({ state, els, api }) {
             ? 'Grid workplane helper visible'
             : 'Grid workplane hidden';
         }
+        api.updatePropertiesPalette?.();
         api.refreshRibbon?.();
       });
     }

@@ -30,162 +30,122 @@
         </div>
       </div>
 
-      <!-- Dock (formerly glassmorphic sidebar): tab panels unchanged, only
-           restyled; existing .sidebar-tab-btn handlers still own switching. -->
-      <aside id="sidebar" class="dock">
-        <button id="sidebar-toggle" class="sidebar-toggle" title="Toggle Dock">
+      <!-- Revit-Style Lateral Dock (Properties Palette & Project Browser) -->
+      <aside id="sidebar" class="rc-lateral-dock dock" data-rc-host>
+        <button id="sidebar-toggle" class="rc-dock-toggle sidebar-toggle" title="Toggle Dock" aria-label="Toggle Lateral Dock" type="button">
           <span>◀</span>
         </button>
 
-        <header class="sidebar-header">
-          <div class="logo">
-            <span class="logo-icon">⚡</span>
-            <h1>Conduit Takeoff</h1>
-          </div>
-          <p class="subtitle">Trace · Measure · Export</p>
-        </header>
+        <!-- Dock Panes (Properties, Browser, Schedules) -->
+        <div class="rc-dock-panels">
+          <!-- Properties Palette Host -->
+          <div id="dock-properties-container" class="rc-dock-pane active"></div>
 
-        <!-- Sidebar Tabs -->
-        <nav class="sidebar-nav-tabs" role="tablist" aria-label="Sidebar sections">
-          <button class="sidebar-tab-btn active" data-tab-target="model" role="tab" aria-selected="true" type="button">
-            <span>🏗️</span> Model
+          <!-- Project Browser Host -->
+          <div id="dock-browser-container" class="rc-dock-pane" style="display: none;"></div>
+
+          <!-- Schedules / Quantities Pane -->
+          <div id="dock-schedules-container" class="rc-dock-pane" style="display: none;">
+            <div class="rc-schedule-header">
+              <span class="rc-schedule-title">Schedules &amp; Quantities</span>
+              <div class="rc-schedule-subtabs">
+                <button id="btn-sched-runs" class="rc-sched-subtab active" type="button">Run List</button>
+                <button id="btn-sched-bom" class="rc-sched-subtab" type="button">BOM Schedule</button>
+              </div>
+            </div>
+
+            <!-- Run List View -->
+            <div id="rc-sched-runs-view" class="rc-sched-view active">
+              <div class="run-list-header">
+                <h4>Conduit Run List</h4>
+                <span id="runs-count-badge" class="badge">0</span>
+              </div>
+              <div id="run-list" class="run-list">
+                <p class="text-muted">No runs drawn yet. Click on the 3D model to begin tracing.</p>
+              </div>
+            </div>
+
+            <!-- Contractor BOM View -->
+            <div id="rc-sched-bom-view" class="rc-sched-view" style="display: none;">
+              <div class="summary-settings-bar">
+                <label for="waste-factor-input" class="summary-label">Waste %:
+                  <input id="waste-factor-input" type="number" min="0" max="100" value="0" class="input-number" />
+                </label>
+                <span class="stick-spec-badge">Stick: 10 ft (3.048 m)</span>
+              </div>
+              <h4>Contractor BOM Schedule</h4>
+              <div id="summary-table-container">
+                <p class="text-muted">Draw runs to see the summary.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Authentic Revit Dock Bottom Tabs -->
+        <nav class="rc-dock-tabs" role="tablist" aria-label="Dock Navigation">
+          <button id="tab-dock-properties" class="rc-dock-tab active" data-dock-tab="properties" type="button" role="tab" aria-selected="true">
+            Properties
           </button>
-          <button class="sidebar-tab-btn" data-tab-target="draw" role="tab" aria-selected="false" type="button">
-            <span>✏️</span> Draw
+          <button id="tab-dock-browser" class="rc-dock-tab" data-dock-tab="browser" type="button" role="tab" aria-selected="false">
+            Project Browser
           </button>
-          <button class="sidebar-tab-btn" data-tab-target="summary" role="tab" aria-selected="false" type="button">
-            <span>📊</span> Summary
+          <button id="tab-dock-schedules" class="rc-dock-tab" data-dock-tab="schedules" type="button" role="tab" aria-selected="false">
+            Schedules
           </button>
         </nav>
 
-        <div class="sidebar-content">
-          <!-- Model Panel -->
-          <section class="control-group active" data-sidebar-panel="model">
-            <h3>Source IFC</h3>
-            <div class="loader-buttons">
-              <button id="btn-open-ifc" class="btn btn-primary" type="button">
-                <span class="btn-icon">📂</span>
-                Open IFC File
-              </button>
-              <input id="file-input" type="file" accept=".ifc" hidden />
-            </div>
+        <!-- Hidden backward-compatibility elements so collectEls() keeps resolving smoothly -->
+        <div id="legacy-controls" hidden style="display: none;" aria-hidden="true">
+          <button class="sidebar-tab-btn" data-tab-target="model" type="button"></button>
+          <button class="sidebar-tab-btn" data-tab-target="draw" type="button"></button>
+          <button class="sidebar-tab-btn" data-tab-target="summary" type="button"></button>
 
-            <div id="model-info" class="model-info-card" hidden>
-              <div class="model-info-row">
-                <span class="model-info-label">File</span>
-                <span id="model-name" class="model-info-value">—</span>
-              </div>
-              <div class="model-info-row">
-                <span class="model-info-label">Size</span>
-                <span id="model-size" class="model-info-value">—</span>
-              </div>
-              <div class="model-info-row">
-                <span class="model-info-label">Unit</span>
-                <span id="model-unit" class="model-info-value">—</span>
-              </div>
-              <div class="model-info-row">
-                <span class="model-info-label">Schema</span>
-                <span id="model-schema" class="model-info-value">—</span>
-              </div>
+          <section class="control-group" data-sidebar-panel="model">
+            <button id="btn-open-ifc" type="button"></button>
+            <input id="file-input" type="file" accept=".ifc" />
+            <div id="model-info" hidden>
+              <span id="model-name">—</span>
+              <span id="model-size">—</span>
+              <span id="model-unit">—</span>
+              <span id="model-schema">—</span>
             </div>
-
-            <h3>View Controls</h3>
-            <div class="toolbar-row">
-              <button id="btn-fit-view" class="btn-tool" type="button" title="Fit to View">⊞</button>
-              <button id="btn-view-top" class="btn-tool" type="button" title="Top View">⬆</button>
-              <button id="btn-view-front" class="btn-tool" type="button" title="Front View">◻</button>
-              <button id="btn-view-right" class="btn-tool" type="button" title="Right View">▷</button>
-            </div>
+            <button id="btn-fit-view" type="button"></button>
+            <button id="btn-view-top" type="button"></button>
+            <button id="btn-view-front" type="button"></button>
+            <button id="btn-view-right" type="button"></button>
           </section>
 
-          <!-- Draw Panel -->
           <section class="control-group" data-sidebar-panel="draw">
-            <div class="draw-tools-header">
-              <h3>Drawing Tools</h3>
-              <div class="toolbar-row">
-                <button id="btn-draw-mode" class="btn-tool" type="button" title="Trace Conduit (Click on model to place points, Enter to finish, Esc to cancel)">✏️ Trace</button>
-                <button id="btn-ortho" class="btn-tool" type="button" title="Ortho lock: keep the next segment on one axis">📐 Ortho</button>
-                <button id="btn-perp" class="btn-tool" type="button" title="Perpendicular to XY plane (Vertical Riser / Press 'V' or 'Z')">⊥ Perpendicular</button>
-                <button id="btn-undo" class="btn-tool" type="button" title="Undo (Ctrl+Z)" disabled>↶</button>
-                <button id="btn-redo" class="btn-tool" type="button" title="Redo (Ctrl+Y)" disabled>↷</button>
-              </div>
+            <button id="btn-draw-mode" type="button"></button>
+            <button id="btn-ortho" type="button"></button>
+            <button id="btn-perp" type="button"></button>
+            <button id="btn-undo" type="button"></button>
+            <button id="btn-redo" type="button"></button>
+            <div id="diameter-list"></div>
+            <div id="active-run-info" hidden>
+              <span id="run-length">0.000</span>
+              <span id="run-sticks">0</span>
+              <span id="run-segments">0</span>
             </div>
-
-            <h3>Diameter (Trade Size)</h3>
-            <div id="diameter-list" class="diameter-list">
-              <p class="text-muted">Loading diameters…</p>
+            <div id="active-run-actions" hidden>
+              <button id="btn-finish-run" type="button"></button>
+              <button id="btn-cancel-run" type="button"></button>
             </div>
-
-            <h3>Active Run</h3>
-            <div id="active-run-info" class="active-run-card" hidden>
-              <div class="run-stat">
-                <span class="run-stat-label">Length</span>
-                <span id="run-length" class="run-stat-value">0.000</span>
-              </div>
-              <div class="run-stat">
-                <span class="run-stat-label">Sticks</span>
-                <span id="run-sticks" class="run-stat-value">0</span>
-              </div>
-              <div class="run-stat">
-                <span class="run-stat-label">Segments</span>
-                <span id="run-segments" class="run-stat-value">0</span>
-              </div>
-            </div>
-
-            <div class="run-finish-actions" id="active-run-actions" hidden>
-              <button id="btn-finish-run" class="btn btn-primary btn-sm" type="button">✔ Finish Run (Enter)</button>
-              <button id="btn-cancel-run" class="btn btn-ghost btn-sm" type="button">✖ Cancel (Esc)</button>
-            </div>
-
-            <div class="vertical-step-controls" id="vertical-step-controls" hidden>
-              <label class="summary-label">Step (m):
-                <input id="input-vertical-len" type="number" step="0.5" value="2.0" class="input-number" style="width:55px;" />
-              </label>
-              <button id="btn-add-vert-up" class="btn btn-secondary btn-sm" type="button" title="Add vertical segment straight UP">⬆ +Up</button>
-              <button id="btn-add-vert-down" class="btn btn-secondary btn-sm" type="button" title="Add vertical segment straight DOWN">⬇ -Down</button>
-            </div>
-
-            <div class="run-list-header">
-              <h3>Drawn Runs</h3>
-              <span id="runs-count-badge" class="badge">0</span>
-            </div>
-            <div id="run-list" class="run-list">
-              <p class="text-muted">No runs drawn yet. Click on the 3D model to begin tracing.</p>
+            <div id="vertical-step-controls" hidden>
+              <input id="input-vertical-len" type="number" step="0.5" value="2.0" />
+              <button id="btn-add-vert-up" type="button"></button>
+              <button id="btn-add-vert-down" type="button"></button>
             </div>
           </section>
 
-          <!-- Summary Panel -->
-          <section class="control-group" data-sidebar-panel="summary">
-            <div class="summary-settings-bar">
-              <label for="waste-factor-input" class="summary-label">Waste %:
-                <input id="waste-factor-input" type="number" min="0" max="100" value="0" class="input-number" />
-              </label>
-              <span class="stick-spec-badge">Stick: 10 ft (3.048 m)</span>
-            </div>
+          <section class="control-group" data-sidebar-panel="summary"></section>
 
-            <h3>Takeoff Summary</h3>
-            <div id="summary-table-container">
-              <p class="text-muted">Draw runs to see the summary.</p>
-            </div>
-          </section>
+          <input id="project-file-input" type="file" accept=".json,.conduit.json" />
+          <button id="btn-load-project" type="button"></button>
+          <button id="btn-save" type="button"></button>
+          <button id="btn-export-csv" type="button"></button>
+          <button id="btn-export-ifc" type="button"></button>
         </div>
-
-        <!-- Bottom Toolbar -->
-        <footer class="sidebar-footer">
-          <input id="project-file-input" type="file" accept=".json,.conduit.json" hidden />
-          <button id="btn-load-project" class="btn btn-secondary btn-sm" type="button" title="Open .conduit.json project">
-            <span class="btn-icon">📂</span> Open
-          </button>
-          <button id="btn-save" class="btn btn-secondary btn-sm" type="button" title="Save .conduit.json project" disabled>
-            <span class="btn-icon">💾</span> Save
-          </button>
-          <button id="btn-export-csv" class="btn btn-secondary btn-sm" type="button" title="Export CSV" disabled>
-            <span class="btn-icon">📊</span> CSV
-          </button>
-          <button id="btn-export-ifc" class="btn btn-secondary btn-sm" type="button" title="Export Overlay IFC for Revizto" disabled>
-            <span class="btn-icon">📦</span> IFC
-          </button>
-        </footer>
       </aside>
 
       <!-- Status Bar is managed by ribbon-chrome (rc-status-bar) -->

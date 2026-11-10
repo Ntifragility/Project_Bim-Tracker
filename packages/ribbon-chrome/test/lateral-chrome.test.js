@@ -386,3 +386,181 @@ test('Project Browser: node selection, visibility toggle, and search filtering',
 
   browser.destroy();
 });
+
+test('Conduit Takeoff Lateral Dock: Properties Palette categories and Project Browser tree', () => {
+  const { doc } = setupMockDom();
+  const paletteContainer = doc.createElement('div');
+  const browserContainer = doc.createElement('div');
+
+  let appliedChanges = null;
+  const categories = ['Constraints', 'Dimensions', 'Takeoff / BOM', 'Identity Data'];
+
+  const palette = createPropertiesPalette(paletteContainer, {
+    title: 'Properties',
+    categories,
+    onApply(changes) {
+      appliedChanges = changes;
+    }
+  });
+
+  const conduitElement = {
+    id: 'run-1',
+    name: 'Conduit Run 1',
+    family: 'Conduit Run',
+    type: '3/4"',
+    types: [
+      { id: '1/2"', name: 'EMT - 1/2" (16 mm)' },
+      { id: '3/4"', name: 'EMT - 3/4" (21 mm)' },
+      { id: '1"', name: 'EMT - 1" (27 mm)' },
+      { id: '2"', name: 'EMT - 2" (53 mm)' }
+    ],
+    parameters: {
+      'Constraints': [
+        { name: 'Reference Elevation', value: '2.80 m', type: 'text' },
+        { name: 'Workplane state', value: 'Active (Grid Visible)', readonly: true }
+      ],
+      'Dimensions': [
+        { name: 'Trade Size', value: '3/4"', options: ['1/2"', '3/4"', '1"', '2"'] },
+        { name: 'Outer Diameter', value: '23.4 mm', readonly: true },
+        { name: 'Run Length', value: '12.45 m (40.8 ft)', readonly: true },
+        { name: 'Stick Count', value: '5 (10 ft stocks)', readonly: true }
+      ],
+      'Takeoff / BOM': [
+        { name: 'Waste Factor %', value: '10', type: 'number' },
+        { name: 'Fittings count', value: '2 (90° bends)', readonly: true },
+        { name: 'Pull Boxes', value: '0 (Compliant)', readonly: true }
+      ],
+      'Identity Data': [
+        { name: 'Run ID', value: 'run-1', readonly: true },
+        { name: 'System Type', value: 'Power', options: ['Power', 'Lighting', 'Controls', 'Fire Alarm', 'Low Voltage'] },
+        { name: 'Comments', value: 'Feeder run to Panel A', type: 'text' }
+      ]
+    }
+  };
+
+  palette.setElement(conduitElement);
+
+  // Check 4 categories exist
+  const allGroups = Array.from(paletteContainer.querySelectorAll('.rc-param-group'));
+  for (const cat of categories) {
+    const groupEl = allGroups.find(g => g.getAttribute('data-category') === cat);
+    assert.ok(groupEl, `Category group ${cat} should exist`);
+  }
+
+  // Check dimensions and parameters
+  const allRows = Array.from(paletteContainer.querySelectorAll('.rc-param-row'));
+  const elevRow = allRows.find(r => r.getAttribute('data-param-name') === 'Reference Elevation');
+  assert.ok(elevRow);
+  const elevInput = elevRow.querySelector('.rc-param-input');
+  assert.ok(elevInput);
+  assert.equal(elevInput.value, '2.80 m');
+
+  const sticksRow = allRows.find(r => r.getAttribute('data-param-name') === 'Stick Count');
+  assert.ok(sticksRow);
+  const sticksVal = sticksRow.querySelector('.rc-param-readonly');
+  assert.ok(sticksVal);
+  assert.equal(sticksVal.textContent, '5 (10 ft stocks)');
+
+  // Edit parameter and click Apply
+  elevInput.value = '3.50 m';
+  elevInput.dispatchEvent({ type: 'input' });
+
+  const applyBtn = paletteContainer.querySelector('.rc-btn-apply');
+  assert.equal(applyBtn.disabled, false);
+  applyBtn.click();
+
+  assert.ok(appliedChanges);
+  assert.equal(appliedChanges['Reference Elevation'], '3.50 m');
+  assert.equal(applyBtn.disabled, true);
+
+  palette.destroy();
+
+  // Test Conduit Project Browser tree
+  let selectedView = null;
+  let visToggled = null;
+
+  const conduitTree = [
+    {
+      id: 'views',
+      label: 'Views (all)',
+      type: 'category',
+      expanded: true,
+      children: [
+        {
+          id: 'views-3d',
+          label: '3D Views',
+          type: 'folder',
+          expanded: true,
+          children: [
+            { id: 'view-3d-default', label: '{3D}', type: 'view' },
+            { id: 'view-top', label: 'Top View', type: 'view' },
+            { id: 'view-front', label: 'Front View', type: 'view' },
+            { id: 'view-right', label: 'Right View', type: 'view' }
+          ]
+        }
+      ]
+    },
+    {
+      id: 'schedules',
+      label: 'Schedules / Quantities',
+      type: 'category',
+      expanded: true,
+      children: [
+        { id: 'sch-run-list', label: 'Conduit Run List', type: 'schedule' },
+        { id: 'sch-contractor-bom', label: 'Contractor BOM Schedule', type: 'schedule' }
+      ]
+    },
+    {
+      id: 'links',
+      label: 'Revit / IFC Links',
+      type: 'category',
+      expanded: true,
+      children: [
+        {
+          id: 'link-ifc-model',
+          label: 'Electrical_Model.ifc',
+          type: 'link',
+          hasVisibility: true,
+          visible: true
+        }
+      ]
+    }
+  ];
+
+  const browser = createProjectBrowser(browserContainer, {
+    activeModel: 'Electrical_Model.ifc',
+    tree: conduitTree,
+    onNodeSelect(node) {
+      selectedView = node;
+    },
+    onVisibilityToggle(node, visible) {
+      visToggled = { id: node.id, visible };
+    }
+  });
+
+  const root = browserContainer.querySelector('.rc-project-browser');
+  const title = root.querySelector('.rc-browser-title');
+  assert.equal(title.textContent, 'Project Browser - [Electrical_Model.ifc]');
+
+  // Select {3D} view
+  const view3d = root.querySelector('[data-node-id="view-3d-default"]');
+  assert.ok(view3d);
+  view3d.click();
+  assert.equal(selectedView.id, 'view-3d-default');
+
+  // Select Contractor BOM schedule
+  const bomNode = root.querySelector('[data-node-id="sch-contractor-bom"]');
+  assert.ok(bomNode);
+  bomNode.click();
+  assert.equal(selectedView.id, 'sch-contractor-bom');
+
+  // Toggle IFC link visibility
+  const linkNode = root.querySelector('[data-node-id="link-ifc-model"]');
+  assert.ok(linkNode);
+  const visBtn = linkNode.querySelector('.rc-tree-visibility-btn');
+  assert.ok(visBtn);
+  visBtn.click();
+  assert.deepEqual(visToggled, { id: 'link-ifc-model', visible: false });
+
+  browser.destroy();
+});
