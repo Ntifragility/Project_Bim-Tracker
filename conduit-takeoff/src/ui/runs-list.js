@@ -62,9 +62,11 @@ export function createRunsList({ state, els, api }) {
         renderRunsList(drawingTool);
         if (state.selectedRunId) {
           api.showContextual?.('modify-run');
+          api.switchDockTab?.('properties');
         } else if (!drawingTool.isDrawingMode && (!drawingTool.activePoints || drawingTool.activePoints.length === 0)) {
           api.hideContextual?.();
         }
+        api.updatePropertiesPalette?.(state.selectedRunId);
         api.refreshRibbon?.();
       });
 
@@ -88,12 +90,14 @@ export function createRunsList({ state, els, api }) {
             drawingTool.renderRuns(state.network);
             renderRunsList(drawingTool);
             api.renderSummary();
+            api.updatePropertiesPalette?.(state.selectedRunId);
           },
           undo() {
             state.network = prevNet;
             drawingTool.renderRuns(state.network);
             renderRunsList(drawingTool);
             api.renderSummary();
+            api.updatePropertiesPalette?.(state.selectedRunId);
           },
         };
 

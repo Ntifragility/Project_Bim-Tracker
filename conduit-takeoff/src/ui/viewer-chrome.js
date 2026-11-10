@@ -9,6 +9,7 @@
 import { createCovillafEngine } from 'viewer-core';
 import { createRibbon } from 'ribbon-chrome';
 import { createConduitRibbonDef } from './conduit-adapter.js';
+import { createLateralDock } from './lateral-dock.js';
 import { createDrawingTool } from '../drawing-tool.js';
 import { createMepHud } from '../mep-hud.js';
 import { createViewportControls } from '../viewport-controls.js';
@@ -41,6 +42,9 @@ export function createViewerChrome({ state, els, api }) {
       ribbonApi.setTab(name);
     }
     setDockPanel(RIBBON_TAB_TO_PANEL[name]);
+    if (name === 'model') api.switchDockTab?.('browser');
+    else if (name === 'trace') api.switchDockTab?.('properties');
+    else if (name === 'quantities') api.switchDockTab?.('schedules');
   }
 
   function setDockPanel(name) {
@@ -122,17 +126,24 @@ export function createViewerChrome({ state, els, api }) {
         }
       }
 
-      // Ribbon tab click syncs dock panel
+      // Ribbon tab click syncs dock panel and lateral dock tab
       ribbonHost.querySelectorAll('.rc-tab').forEach((tabBtn) => {
         tabBtn.addEventListener('click', () => {
           const tabId = tabBtn.id.replace('rc-tab-', '');
+          if (tabId === 'model') api.switchDockTab?.('browser');
+          else if (tabId === 'trace') api.switchDockTab?.('properties');
+          else if (tabId === 'quantities') api.switchDockTab?.('schedules');
           const panel = RIBBON_TAB_TO_PANEL[tabId];
           if (panel) setDockPanel(panel);
         });
       });
     }
 
-    // 2. Sidebar Tabs Navigation (syncs ribbon tab)
+    // 2. Lateral Dock (Revit Properties Palette & Project Browser)
+    const lateralDock = createLateralDock({ state, els, api });
+    api.lateralDock = lateralDock;
+
+    // 3. Sidebar Tabs Navigation (syncs ribbon tab)
     els.tabs.forEach((tab) => {
       tab.addEventListener('click', () => {
         const target = tab.dataset.tabTarget;
@@ -151,17 +162,18 @@ export function createViewerChrome({ state, els, api }) {
       });
     });
 
-    // 3. Sidebar Toggle
+    // 4. Sidebar Toggle
     els.sidebarToggle.addEventListener('click', () => {
       els.sidebar.classList.toggle('collapsed');
       document.body.classList.toggle('sidebar-is-collapsed', els.sidebar.classList.contains('collapsed'));
     });
 
-    // 4. Update undo/redo state listeners
+    // 5. Update undo/redo state listeners
     state.commandStack.subscribe(() => {
       api.updateUndoRedoButtons();
       api.renderRunsList(window.__drawingTool);
       api.renderSummary();
+      api.updatePropertiesPalette?.(state.selectedRunId);
       ribbonApi?.refresh();
     });
   }
@@ -212,6 +224,10 @@ export function createViewerChrome({ state, els, api }) {
         if (change.activePoints && change.activePoints.length > 0) {
           // Show contextual tab Modify | Run
           ribbonApi?.showContextual('modify-run');
+
+          // Sync lateral dock Properties Palette with in-progress run
+          api.switchDockTab?.('properties');
+          api.updatePropertiesPalette?.(null, { points: change.activePoints, liveSegment: change.liveSegment });
 
           // Automatically switch to draw tab if still on model tab
           const activeTab = document.querySelector('.tab-nav-btn.active');
@@ -277,6 +293,7 @@ export function createViewerChrome({ state, els, api }) {
           // If not in drawing mode and no run selected, hide contextual tab
           if (!drawingTool.isDrawingMode && !state.selectedRunId) {
             ribbonApi?.hideContextual();
+            api.updatePropertiesPalette?.(null);
           }
         }
 
@@ -285,6 +302,7 @@ export function createViewerChrome({ state, els, api }) {
         if (change.networkUpdated) {
           api.renderRunsList(drawingTool);
           api.renderSummary();
+          api.updatePropertiesPalette?.(state.selectedRunId);
         }
 
         ribbonApi?.refresh();
@@ -301,6 +319,10 @@ export function createViewerChrome({ state, els, api }) {
 
     window.__drawingTool = drawingTool;
     drawingTool.attach(els.viewerContainer);
+
+    // Initial render of lateral dock components
+    api.updatePropertiesPalette?.();
+    api.updateProjectBrowserTree?.();
 
     return { engine, drawingTool };
   }

@@ -82,6 +82,8 @@ export function createModelLoad({ state, els, engine, api }) {
     els.statusText.textContent = `Loaded ${file.name} successfully. Ready for tracing.`;
     api.hideLoading();
 
+    api.updateProjectBrowserTree?.();
+
     // Automatically switch to Draw tab
     document.querySelector('[data-tab-target="draw"]')?.click();
   }
