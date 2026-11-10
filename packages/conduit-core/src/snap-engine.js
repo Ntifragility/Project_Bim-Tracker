@@ -358,3 +358,164 @@ export class SnapEngine {
     };
   }
 }
+
+/**
+ * Revit MEP-Style Bend Angle Constraint during interactive layout.
+ *
+ * Constrains the candidate cursor point (pCursor) relative to the incoming segment
+ * (pPrev -> pAnchor) according to standard NEC / Revit bend angles:
+ * [0°, 11.25°, 15°, 22.5°, 30°, 45°, 60°, 90°].
+ *
+ * @param {Point3D} pPrev - Start of incoming segment
+ * @param {Point3D} pAnchor - End of incoming segment (the apex/corner)
+ * @param {Point3D} pCursor - Raw cursor candidate point in 3D
+ * @param {Object} [options]
+ * @param {number[]} [options.allowedAnglesDeg] - Allowed bend angles (default [0, 11.25, 15, 22.5, 30, 45, 60, 90])
+ * @param {number} [options.toleranceDeg] - Angular snap tolerance window (default 6.0°)
+ * @param {boolean} [options.enforceSpecificAngles] - When true, forces snapping to nearest allowed angle
+ * @param {number} [options.minTangentM] - Minimum required straight tangent distance (meters)
+ * @param {'Y'|'Z'} [options.upAxis] - Up axis ('Y' for Three.js, 'Z' for IFC)
+ * @returns {{
+ *   point: Point3D,
+ *   bendAngleDeg: number,
+ *   rawAngleDeg: number,
+ *   isSnapped: boolean,
+ *   isStandard: boolean,
+ *   tangentValid: boolean,
+ *   minTangentM: number,
+ *   distance: number
+ * }}
+ */
+export function constrainConduitBendAngle(
+  pPrev,
+  pAnchor,
+  pCursor,
+  {
+    allowedAnglesDeg = [0, 11.25, 15, 22.5, 30, 45, 60, 90],
+    toleranceDeg = 6.0,
+    enforceSpecificAngles = true,
+    minTangentM = 0,
+    upAxis = 'Y',
+  } = {}
+) {
+  if (!pAnchor || !pCursor) {
+    return {
+      point: pCursor,
+      bendAngleDeg: 0,
+      rawAngleDeg: 0,
+      isSnapped: false,
+      isStandard: false,
+      tangentValid: true,
+      minTangentM: 0,
+      distance: 0,
+    };
+  }
+
+  // If no prior segment, no bend constraint can be evaluated (first segment)
+  if (!pPrev) {
+    return {
+      point: pCursor,
+      bendAngleDeg: 0,
+      rawAngleDeg: 0,
+      isSnapped: false,
+      isStandard: true,
+      tangentValid: true,
+      minTangentM: 0,
+      distance: vec3.distance(pAnchor, pCursor),
+    };
+  }
+
+  // Coordinate projections on the active work plane
+  const dxIn = pAnchor.x - pPrev.x;
+  const dPlaneIn = upAxis === 'Y' ? pAnchor.z - pPrev.z : pAnchor.y - pPrev.y;
+  const inLen = Math.hypot(dxIn, dPlaneIn);
+
+  const dxOut = pCursor.x - pAnchor.x;
+  const dPlaneOut = upAxis === 'Y' ? pCursor.z - pAnchor.z : pCursor.y - pAnchor.y;
+  const outLen = Math.hypot(dxOut, dPlaneOut);
+
+  // If the cursor is extremely close to the anchor, return anchor
+  if (outLen < 0.03) {
+    return {
+      point: { ...pCursor },
+      bendAngleDeg: 0,
+      rawAngleDeg: 0,
+      isSnapped: false,
+      isStandard: true,
+      tangentValid: minTangentM <= 0.03,
+      minTangentM,
+      distance: outLen,
+    };
+  }
+
+  // If incoming segment in horizontal plane has zero length (e.g. was a pure vertical riser)
+  if (inLen < EPSILON) {
+    return {
+      point: { ...pCursor },
+      bendAngleDeg: 90,
+      rawAngleDeg: 90,
+      isSnapped: true,
+      isStandard: true,
+      tangentValid: outLen >= minTangentM,
+      minTangentM,
+      distance: outLen,
+    };
+  }
+
+  // Base incoming heading in radians
+  const headingIn = Math.atan2(dPlaneIn, dxIn);
+  // Candidate outgoing heading in radians
+  const headingOut = Math.atan2(dPlaneOut, dxOut);
+
+  // Deflection angle between incoming vector and outgoing candidate
+  let deltaAngleRad = headingOut - headingIn;
+  // Normalize to (-PI, PI]
+  while (deltaAngleRad > Math.PI) deltaAngleRad -= 2 * Math.PI;
+  while (deltaAngleRad <= -Math.PI) deltaAngleRad += 2 * Math.PI;
+
+  const rawAngleDeg = Math.abs(deltaAngleRad) * RAD_TO_DEG;
+  const turnSign = deltaAngleRad >= 0 ? 1 : -1;
+
+  // Find nearest allowed standard angle
+  let closestAngle = allowedAnglesDeg[0];
+  let minDiff = Infinity;
+  for (const std of allowedAnglesDeg) {
+    const diff = Math.abs(rawAngleDeg - std);
+    if (diff < minDiff) {
+      minDiff = diff;
+      closestAngle = std;
+    }
+  }
+
+  const isSnapped = minDiff <= toleranceDeg;
+  // In Revit "Use specific angles" mode, we force-snap to the closest standard angle
+  // If enforceSpecificAngles is false, we only snap when within tolerance
+  const useAngle = (isSnapped || enforceSpecificAngles) ? closestAngle : rawAngleDeg;
+  const isStandard = isSnapped || (enforceSpecificAngles && minDiff <= 15.0);
+
+  // Compute final snapped heading
+  const finalHeadingRad = headingIn + (turnSign * useAngle * DEG_TO_RAD);
+
+  // Compute tangent distance validity
+  const effectiveLen = Math.max(outLen, minTangentM > 0 && enforceSpecificAngles ? minTangentM : 0);
+  const tangentValid = outLen >= (minTangentM - 0.01);
+
+  // Snapped 3D point
+  const snappedX = pAnchor.x + effectiveLen * Math.cos(finalHeadingRad);
+  const snappedPlane = (upAxis === 'Y' ? pAnchor.z : pAnchor.y) + effectiveLen * Math.sin(finalHeadingRad);
+
+  const snappedPoint = upAxis === 'Y'
+    ? { x: snappedX, y: pCursor.y, z: snappedPlane }
+    : { x: snappedX, y: snappedPlane, z: pCursor.z };
+
+  return {
+    point: snappedPoint,
+    bendAngleDeg: useAngle,
+    rawAngleDeg: Math.round(rawAngleDeg * 10) / 10,
+    isSnapped,
+    isStandard,
+    tangentValid,
+    minTangentM,
+    distance: effectiveLen,
+  };
+}

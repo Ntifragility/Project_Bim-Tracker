@@ -21,6 +21,8 @@ import {
   analyzeRunBends,
   calculateBendAngle,
   snapToStandardBendAngle,
+  constrainConduitBendAngle,
+  STANDARD_BEND_ANGLES,
   NEC_CONDUIT_ARTICLES,
 } from '@conduit-core';
 
@@ -160,10 +162,28 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
   vertGuideLine.visible = false;
   overlayGroup.add(vertGuideLine);
 
+  // Revit-Style Polar Angle Snap Guide Ray
+  const angleGuideGeo = new THREE.BufferGeometry();
+  angleGuideGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+  const angleGuideMat = new THREE.LineDashedMaterial({
+    color: 0x00ffff,
+    dashSize: 0.25,
+    gapSize: 0.12,
+    linewidth: 2,
+    depthTest: false,
+    transparent: true,
+    opacity: 0.85,
+  });
+  const angleGuideLine = new THREE.Line(angleGuideGeo, angleGuideMat);
+  angleGuideLine.renderOrder = 997;
+  angleGuideLine.visible = false;
+  overlayGroup.add(angleGuideLine);
+
   // Routing State
   let isDrawingMode = false;
   let isOrthoActive = false;
   let isPerpendicularActive = false;
+  let isSpecificAnglesEnforced = true; // Revit MEP default: enforce specific standard bend angles
   let isPickElevationActive = false;
   let autoRiserEnabled = true;
   let activeElevation = 2.8; // Metres above 0
@@ -364,30 +384,31 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
     if (activeRunPoints.length === 0) {
       rubberbandLine.visible = false;
       vertGuideLine.visible = false;
+      angleGuideLine.visible = false;
       return null;
     }
 
     const colorHex = diameterRegistry.getSelected()?.color || '#f59e0b';
     const pipeRadius = tradeRadiusM();
+    const minRadiusM = getNecBendRadiusM(diameterRegistry.getSelected()?.label);
     rubberbandMat.color.set(colorHex);
 
     for (const pt of activeRunPoints) {
       activeRunGroup.add(createJoint(pt, pipeRadius, colorHex, false));
     }
 
-    if (activeRunPoints.length >= 2) {
-      for (let i = 0; i < activeRunPoints.length - 1; i++) {
-        const cyl = createCylinderSegment(activeRunPoints[i], activeRunPoints[i + 1], pipeRadius, colorHex);
-        if (cyl) activeRunGroup.add(cyl);
-      }
-    }
-
-    // 3. Update the live rubberband segment to target cursor position
     const lastPt = activeRunPoints[activeRunPoints.length - 1];
+    const prevPt = activeRunPoints.length >= 2 ? activeRunPoints[activeRunPoints.length - 2] : null;
+
     let targetPt = currentCursorPoint;
+    let liveBendAngle = 0;
+    let isAngleSnapped = false;
+    let isTangentValid = true;
 
     if (isPerpendicularActive) {
       targetPt = getVerticalProjectionPoint(lastPt, lastNdc);
+      liveBendAngle = 90;
+      isAngleSnapped = true;
 
       const vpos = vertGuideGeo.attributes.position.array;
       vpos[0] = lastPt.x;
@@ -398,24 +419,122 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
       vpos[5] = lastPt.z;
       vertGuideGeo.attributes.position.needsUpdate = true;
       vertGuideLine.visible = true;
-    } else if (isOrthoActive && targetPt && !cursorOnSurface) {
-      const orthoResult = constrainOrtho3D(lastPt, targetPt);
-      targetPt = orthoResult;
-      if (orthoResult.axis === 'Y') {
-        const vpos = vertGuideGeo.attributes.position.array;
-        vpos[0] = lastPt.x;
-        vpos[1] = lastPt.y - 15;
-        vpos[2] = lastPt.z;
-        vpos[3] = lastPt.x;
-        vpos[4] = lastPt.y + 15;
-        vpos[5] = lastPt.z;
-        vertGuideGeo.attributes.position.needsUpdate = true;
-        vertGuideLine.visible = true;
+      angleGuideLine.visible = false;
+    } else if (targetPt && !cursorOnSurface) {
+      vertGuideLine.visible = false;
+      if (prevPt) {
+        // Enforce relative bend angle constraint relative to incoming segment!
+        const bendResult = constrainConduitBendAngle(prevPt, lastPt, targetPt, {
+          allowedAnglesDeg: [0, 11.25, 15, 22.5, 30, 45, 60, 90],
+          toleranceDeg: 7.5,
+          enforceSpecificAngles: isSpecificAnglesEnforced,
+          minTangentM: minRadiusM * 0.4,
+          upAxis: 'Y',
+        });
+        targetPt = bendResult.point;
+        liveBendAngle = bendResult.bendAngleDeg;
+        isAngleSnapped = bendResult.isSnapped;
+        isTangentValid = bendResult.tangentValid;
+
+        // Render dashed polar guide ray along the snapped heading
+        if (isAngleSnapped && targetPt) {
+          const gdx = targetPt.x - lastPt.x;
+          const gdz = targetPt.z - lastPt.z;
+          const glen = Math.hypot(gdx, gdz);
+          if (glen > 0.05) {
+            const rayScale = Math.max(glen * 1.5, 8.0);
+            const apos = angleGuideGeo.attributes.position.array;
+            apos[0] = lastPt.x;
+            apos[1] = lastPt.y;
+            apos[2] = lastPt.z;
+            apos[3] = lastPt.x + (gdx / glen) * rayScale;
+            apos[4] = lastPt.y;
+            apos[5] = lastPt.z + (gdz / glen) * rayScale;
+            angleGuideGeo.attributes.position.needsUpdate = true;
+            angleGuideLine.computeLineDistances?.();
+            angleGuideLine.visible = true;
+          } else {
+            angleGuideLine.visible = false;
+          }
+        } else {
+          angleGuideLine.visible = false;
+        }
+      } else if (isOrthoActive) {
+        const orthoResult = constrainOrtho3D(lastPt, targetPt);
+        targetPt = orthoResult;
+        liveBendAngle = 0;
+        isAngleSnapped = true;
+        angleGuideLine.visible = false;
+        if (orthoResult.axis === 'Y') {
+          const vpos = vertGuideGeo.attributes.position.array;
+          vpos[0] = lastPt.x;
+          vpos[1] = lastPt.y - 15;
+          vpos[2] = lastPt.z;
+          vpos[3] = lastPt.x;
+          vpos[4] = lastPt.y + 15;
+          vpos[5] = lastPt.z;
+          vertGuideGeo.attributes.position.needsUpdate = true;
+          vertGuideLine.visible = true;
+        }
       } else {
-        vertGuideLine.visible = false;
+        angleGuideLine.visible = false;
       }
     } else {
       vertGuideLine.visible = false;
+      angleGuideLine.visible = false;
+    }
+
+    // Render active run geometry + live elbow arc preview
+    if (activeRunPoints.length >= 2) {
+      let currentStart = activeRunPoints[0];
+      for (let i = 1; i < activeRunPoints.length - 1; i++) {
+        const pP = activeRunPoints[i - 1];
+        const pC = activeRunPoints[i];
+        const pN = activeRunPoints[i + 1];
+        const elbow = solveElbowFitting(pP, pC, pN, minRadiusM, 8);
+        if (elbow.isValid && !elbow.isStraight) {
+          const straightCyl = createCylinderSegment(currentStart, elbow.tangentStart, pipeRadius, colorHex);
+          if (straightCyl) activeRunGroup.add(straightCyl);
+          for (let a = 0; a < elbow.arcPoints.length - 1; a++) {
+            const arcCyl = createCylinderSegment(elbow.arcPoints[a], elbow.arcPoints[a + 1], pipeRadius, colorHex);
+            if (arcCyl) activeRunGroup.add(arcCyl);
+          }
+          currentStart = elbow.tangentEnd;
+        } else {
+          const straightCyl = createCylinderSegment(currentStart, pC, pipeRadius, colorHex);
+          if (straightCyl) activeRunGroup.add(straightCyl);
+          currentStart = pC;
+        }
+      }
+
+      // Live elbow at the active corner (between prevPt, lastPt, and targetPt)
+      if (targetPt && prevPt) {
+        const liveElbow = solveElbowFitting(prevPt, lastPt, targetPt, minRadiusM, 8);
+        if (liveElbow.isValid && !liveElbow.isStraight) {
+          const straightIn = createCylinderSegment(currentStart, liveElbow.tangentStart, pipeRadius, colorHex);
+          if (straightIn) activeRunGroup.add(straightIn);
+
+          for (let a = 0; a < liveElbow.arcPoints.length - 1; a++) {
+            const arcCyl = createCylinderSegment(liveElbow.arcPoints[a], liveElbow.arcPoints[a + 1], pipeRadius, colorHex, false, 0.75);
+            if (arcCyl) activeRunGroup.add(arcCyl);
+          }
+
+          const rubberCyl = createCylinderSegment(liveElbow.tangentEnd, targetPt, pipeRadius, isTangentValid ? colorHex : '#ef4444', false, 0.45);
+          if (rubberCyl) activeRunGroup.add(rubberCyl);
+        } else {
+          const straightIn = createCylinderSegment(currentStart, lastPt, pipeRadius, colorHex);
+          if (straightIn) activeRunGroup.add(straightIn);
+
+          const rubberCyl = createCylinderSegment(lastPt, targetPt, pipeRadius, isTangentValid ? colorHex : '#ef4444', false, 0.45);
+          if (rubberCyl) activeRunGroup.add(rubberCyl);
+        }
+      } else {
+        const straightIn = createCylinderSegment(currentStart, lastPt, pipeRadius, colorHex);
+        if (straightIn) activeRunGroup.add(straightIn);
+      }
+    } else if (activeRunPoints.length === 1 && targetPt) {
+      const rubberCyl = createCylinderSegment(lastPt, targetPt, pipeRadius, colorHex, false, 0.45);
+      if (rubberCyl) activeRunGroup.add(rubberCyl);
     }
 
     if (targetPt) {
@@ -427,18 +546,25 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
       pos[4] = targetPt.y;
       pos[5] = targetPt.z;
       rubberbandGeo.attributes.position.needsUpdate = true;
+      rubberbandMat.color.set(isTangentValid ? colorHex : '#ef4444');
       rubberbandLine.visible = true;
 
-      const preview = createCylinderSegment(lastPt, targetPt, pipeRadius, colorHex, false, 0.42);
-      if (preview) activeRunGroup.add(preview);
-
       snapDot.position.set(targetPt.x, targetPt.y, targetPt.z);
+      snapDot.material.color.set(isAngleSnapped ? 0x00ffff : 0xf59e0b);
       snapDot.visible = true;
 
       const segDist = Math.hypot(targetPt.x - lastPt.x, targetPt.y - lastPt.y, targetPt.z - lastPt.z);
-      return { segDist, targetPt, isVertical: isPerpendicularActive || targetPt.axis === 'Y' };
+      return {
+        segDist,
+        targetPt,
+        isVertical: isPerpendicularActive || targetPt.axis === 'Y',
+        liveBendAngle,
+        isAngleSnapped,
+        isTangentValid,
+      };
     } else {
       rubberbandLine.visible = false;
+      angleGuideLine.visible = false;
       return null;
     }
   }
@@ -748,14 +874,12 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
     if (currentCursorPoint || activeRunPoints.length > 0) {
       const previewInfo = updateActiveRunVisuals();
       if (currentCursorPoint) {
-        let liveBendAngle = 0;
+        let liveBendAngle = previewInfo?.liveBendAngle || 0;
+        let isAngleSnapped = Boolean(previewInfo?.isAngleSnapped);
         let cumulativeRunBends = 0;
         let exceedsNec360 = false;
 
         if (activeRunPoints.length >= 2 && previewInfo?.targetPt) {
-          const pPrev = activeRunPoints[activeRunPoints.length - 2];
-          const pLast = activeRunPoints[activeRunPoints.length - 1];
-          liveBendAngle = calculateBendAngle(pPrev, pLast, previewInfo.targetPt);
           const prior = analyzeRunBends(activeRunPoints, diameterRegistry.getSelected()?.label);
           cumulativeRunBends = prior.totalDegrees + liveBendAngle;
           exceedsNec360 = cumulativeRunBends > 360.0;
@@ -765,6 +889,8 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
           cursor: previewInfo?.targetPt || currentCursorPoint,
           liveSegment: previewInfo?.segDist || 0,
           isVertical: !!previewInfo?.isVertical,
+          isAngleSnapped,
+          isTangentValid: previewInfo?.isTangentValid !== false,
           activePoints: activeRunPoints,
           screenPos: lastScreenPos,
           liveBendAngle: Math.round(liveBendAngle * 10) / 10,
@@ -826,8 +952,21 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
         if (!target) return;
 
         let candidate = target;
-        if (!target.onSurface && isOrthoActive) {
-          candidate = constrainOrtho3D(lastPt, target);
+        if (!target.onSurface) {
+          const prevPt = activeRunPoints.length >= 2 ? activeRunPoints[activeRunPoints.length - 2] : null;
+          if (prevPt) {
+            const minRadiusM = getNecBendRadiusM(diameterRegistry.getSelected()?.label);
+            const bendResult = constrainConduitBendAngle(prevPt, lastPt, target, {
+              allowedAnglesDeg: [0, 11.25, 15, 22.5, 30, 45, 60, 90],
+              toleranceDeg: 7.5,
+              enforceSpecificAngles: isSpecificAnglesEnforced,
+              minTangentM: minRadiusM * 0.4,
+              upAxis: 'Y',
+            });
+            candidate = bendResult.point;
+          } else if (isOrthoActive) {
+            candidate = constrainOrtho3D(lastPt, target);
+          }
         }
 
         // A surface click ends on that surface. The riser is only for a plane click
@@ -901,6 +1040,19 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
       updateActiveRunVisuals();
     },
 
+    get isSpecificAnglesEnforced() {
+      return isSpecificAnglesEnforced;
+    },
+    set isSpecificAnglesEnforced(val) {
+      isSpecificAnglesEnforced = Boolean(val);
+      updateActiveRunVisuals();
+    },
+
+    setAngleMode(mode) {
+      isSpecificAnglesEnforced = mode === 'specific';
+      updateActiveRunVisuals();
+    },
+
     get isPickElevationActive() {
       return isPickElevationActive;
     },
@@ -962,7 +1114,19 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
     commitDistance(distM) {
       if (activeRunPoints.length === 0 || !currentCursorPoint) return false;
       const lastPt = activeRunPoints[activeRunPoints.length - 1];
-      const target = currentCursorPoint;
+      const prevPt = activeRunPoints.length >= 2 ? activeRunPoints[activeRunPoints.length - 2] : null;
+      let target = currentCursorPoint;
+      if (prevPt) {
+        const minRadiusM = getNecBendRadiusM(diameterRegistry.getSelected()?.label);
+        const bendResult = constrainConduitBendAngle(prevPt, lastPt, target, {
+          allowedAnglesDeg: [0, 11.25, 15, 22.5, 30, 45, 60, 90],
+          toleranceDeg: 7.5,
+          enforceSpecificAngles: isSpecificAnglesEnforced,
+          minTangentM: minRadiusM * 0.4,
+          upAxis: 'Y',
+        });
+        target = bendResult.point;
+      }
       const dx = target.x - lastPt.x;
       const dy = target.y - lastPt.y;
       const dz = target.z - lastPt.z;
