@@ -39,9 +39,6 @@ stroke icons, 16px + 32px from one path set, `currentColor`).
 | `isolate` | Single square framed alone in a larger field | — (new) |
 | `color` | Paint swatch / palette outline | — (new) |
 | `metadata` | Card with horizontal lines (like a form) | — (new) |
-| `camera-top` | Rectangle with upward arrow (top-down view glyph) | ⬆ / "Top" |
-| `camera-front` | Rectangle with frontward arrow (front view glyph) | ◻ / "Front" |
-| `camera-right` | Rectangle with rightward arrow (right view glyph) | ▷ / "Right" |
 
 ---
 
@@ -60,6 +57,9 @@ stroke icons, 16px + 32px from one path set, `currentColor`).
 | `route-end` | Flag-B: pennant flag with letter B | — / "End" |
 | `regen` | Circular refresh arrows (two half-circles) | — / "Regen" |
 | `restore` | Clock with counterclockwise arrow (restore/history) | — / "Restore" |
+| `camera-top` | Rectangle with upward arrow (top-down view glyph) | ⬆ / "Top" |
+| `camera-front` | Rectangle with frontward arrow (front view glyph) | ◻ / "Front" |
+| `camera-right` | Rectangle with rightward arrow (right view glyph) | ▷ / "Right" |
 
 ---
 
@@ -70,14 +70,15 @@ stroke icons, 16px + 32px from one path set, `currentColor`).
 | `trace` | Polyline with node dots at vertices | ✏️ / "Trace" |
 | `ortho` | Right-angle glyph (two lines at 90°) | 📐 / "Ortho" |
 | `perp` | Perpendicular symbol (T rotated 90°) | ⊥ / "Perp" |
-| `run` | Single horizontal line segment with arrow at end (conduit run) | — / "Run" |
-| `finish` | Checkmark / tick mark (bold stroke) | ✓ / "Finish" |
-| `cancel` | X mark / cross (two diagonal strokes) | ✗ / "Cancel" |
-| `vert-up` | Arrow stepping upward with a horizontal ledge (vertical rise) | ↑ / "Up" |
-| `vert-down` | Arrow stepping downward with a horizontal ledge (vertical drop) | ↓ / "Down" |
-| `diameter` | Circle with a diameter line bisecting it horizontally, Ø glyph | Ø / "Diam" |
-| `elevation` | Horizontal datum line with vertical double-headed arrow above it | — / "Elev" |
-| `pick` | Crosshair / precision cursor with central dot | ⊕ / "Pick" |
-| `csv` | Document outline with two horizontal ruled lines and comma symbol | — / "CSV" |
-| `workplane` | Horizontal perspective grid / plane (two vanishing lines on a flat surface) | — / "Plane" |
-| `autoriser` | Vertical pipe segment with small automatic-arc indicator at top | — / "Riser" |
+| `run` | Single horizontal pipe segment with end caps | — / "Run" |
+| `vert-up` | Vertical arrow pointing up with conduit tick | ⬆ / "+Up" |
+| `vert-down` | Vertical arrow pointing down with conduit tick | ⬇ / "-Down" |
+| `finish` | Checkmark inside a rounded-square badge | ✓ / "Finish" |
+| `cancel` | ×-cross inside a rounded-square badge | ✗ / "Cancel" |
+| `diameter` | Circle outline with caliper marks at 3 and 9 o'clock | — / "Size" |
+| `elevation` | Horizontal level datum line with up/down tick marks | — / "Elevation" |
+| `pick` | Eyedropper / target crosshair with dot | ⊕ / "Pick" |
+| `workplane` | Grid plane (3×3 dots on a tilted plane) | — / "Workplane" |
+| `autoriser` | Vertical arrow with "A" auto badge | — / "Auto-riser" |
+| `project` | Briefcase outline | 📁 / "Project" |
+| `csv` | Table grid outline with outward arrow | 📊 / "CSV" |
