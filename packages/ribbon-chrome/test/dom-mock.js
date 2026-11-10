@@ -127,9 +127,28 @@ export class MockElement {
     return this._parent || null;
   }
 
+  get firstChild() {
+    return this.childNodes.length > 0 ? this.childNodes[0] : null;
+  }
+
   get firstElementChild() {
     const ch = this.children;
     return ch.length > 0 ? ch[0] : null;
+  }
+
+  get options() {
+    return this.childNodes.filter(n => n instanceof MockElement && n.tagName === 'OPTION');
+  }
+
+  get selectedIndex() {
+    const opts = this.options;
+    return opts.findIndex(o => o.value === this._value || o.hasAttribute('selected'));
+  }
+  set selectedIndex(idx) {
+    const opts = this.options;
+    if (opts[idx]) {
+      this.value = opts[idx].value;
+    }
   }
 
   setAttribute(name, val) {
@@ -174,6 +193,21 @@ export class MockElement {
       child._parent = null;
     }
     return child;
+  }
+
+  remove() {
+    if (this._parent) {
+      this._parent.removeChild(this);
+    }
+  }
+
+  replaceChildren(...newChildren) {
+    while (this.childNodes.length > 0) {
+      this.removeChild(this.childNodes[0]);
+    }
+    for (const child of newChildren) {
+      this.appendChild(child);
+    }
   }
 
   addEventListener(type, listener, useCapture = false) {

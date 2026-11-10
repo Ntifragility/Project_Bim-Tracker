@@ -68,6 +68,7 @@ export function initModelLoader(ctx, dom, hooks) {
     if (ctx.loadedModels.length === 0) {
       if (modelsPlaceholder) modelsPlaceholder.style.display = 'block';
       loadedModelsList.style.display = 'none';
+      hooks.updateProjectBrowser?.() || ctx.api?.updateProjectBrowser?.();
       return;
     }
 
@@ -209,6 +210,8 @@ export function initModelLoader(ctx, dom, hooks) {
 
       dom.loadedModelsList.appendChild(li);
     });
+
+    hooks.updateProjectBrowser?.() || ctx.api?.updateProjectBrowser?.();
   }
 
   // Loader function
@@ -481,6 +484,7 @@ export function initModelLoader(ctx, dom, hooks) {
 
   api.loadSampleModel = loadSampleModel;
   api.fitModelsToView = fitModelsToView;
+  api.fitModelToView = fitModelToView;
 
   return {
     loadModel,

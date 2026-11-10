@@ -29,6 +29,85 @@ export function initPropertiesPanel(ctx, dom, api) {
     return String(value);
   }
 
+  function syncRevitPropertiesPalette({
+    expressId,
+    typeName,
+    name,
+    globalId,
+    modelName,
+    groups = new Map(),
+    assignment = null,
+    existing = null,
+    count = 1,
+  }) {
+    if (!api.propertiesPalette) return;
+
+    let width = null;
+    let height = null;
+    let length = null;
+    let level = null;
+    let elevation = null;
+
+    for (const group of groups.values()) {
+      for (const [k, v] of Object.entries(group.entries || {})) {
+        const keyLower = k.toLowerCase();
+        if (!width && (keyLower === 'width' || keyLower === 'nominalwidth' || keyLower === 'overallwidth' || keyLower === 'crosssectionwidth')) {
+          width = formatPropValue(v);
+        }
+        if (!height && (keyLower === 'height' || keyLower === 'nominalheight' || keyLower === 'overallheight' || keyLower === 'crosssectionheight')) {
+          height = formatPropValue(v);
+        }
+        if (!length && (keyLower === 'length' || keyLower === 'nominallength' || keyLower === 'grosslength')) {
+          length = formatPropValue(v);
+        }
+        if (!level && (keyLower.includes('level') || keyLower.includes('storey') || keyLower.includes('story'))) {
+          level = formatPropValue(v);
+        }
+        if (!elevation && (keyLower.includes('elevation') || keyLower.includes('offset'))) {
+          elevation = formatPropValue(v);
+        }
+      }
+    }
+
+    const systemTag = assignment?.systemTag || existing?.systemTag || '-';
+    const service = assignment?.service || 'Power';
+    const status = assignment?.status || 'Active';
+
+    const paletteData = {
+      id: String(expressId),
+      name: name || `Tray #${expressId}`,
+      family: typeName?.includes('Fitting') ? 'Cable Tray Fitting' : 'Cable Tray',
+      type: typeName || 'IfcCableTraySegment',
+      types: [typeName || 'IfcCableTraySegment', 'IfcCableTrayFitting', 'IfcFlowSegment'],
+      count: count || 1,
+      filterLabel: `${typeName || 'IfcCableTraySegment'} (${count || 1})`,
+      parameters: {
+        'Constraints': [
+          { name: 'Reference Level', value: level || 'Level 1', readonly: true },
+          { name: 'Elevation', value: elevation || '2.750 m', readonly: false },
+        ],
+        'Dimensions': [
+          { name: 'Width', value: width || '300 mm', readonly: false },
+          { name: 'Height', value: height || '100 mm', readonly: false },
+          { name: 'Length', value: length || '3.048 m', readonly: true },
+        ],
+        'Electrical': [
+          { name: 'System Tag', value: systemTag, readonly: false },
+          { name: 'Service', value: service, readonly: false },
+          { name: 'Status', value: status, readonly: false },
+        ],
+        'Identity Data': [
+          { name: 'Entity', value: typeName || 'IfcElement', readonly: true },
+          { name: 'GlobalId', value: globalId || '-', readonly: true },
+          { name: 'Express ID', value: String(expressId), readonly: true },
+          { name: 'Model', value: modelName || '-', readonly: true },
+        ],
+      },
+    };
+
+    api.propertiesPalette.setElement(paletteData);
+  }
+
   // Render a single property set group (collapsible <details>)
   function renderPsetGroup(name, entries, isQuantity = false) {
     const entryKeys = Object.keys(entries);
@@ -288,6 +367,23 @@ export function initPropertiesPanel(ctx, dom, api) {
       renderPsetGroup(groupName, entries, isQuantity);
     });
     syncProjectTagPropertyGroup(model, localId);
+
+    const element = { modelId: model.modelId || model.uuid, localId: Number(localId) };
+    const assignment = api.getAssignmentForElement ? api.getAssignmentForElement(element) : null;
+    const existing = ctx.loadedModels.find((entry) =>
+      entry.model.modelId === element.modelId || entry.model.uuid === element.modelId
+    )?.existingProjectTags?.get(element.localId);
+
+    syncRevitPropertiesPalette({
+      expressId: localId,
+      typeName: getModernIfcTypeName(itemData),
+      name,
+      globalId,
+      modelName,
+      groups,
+      assignment,
+      existing,
+    });
   }
 
   function collectModernPropertySets(value, groups = new Map(), visited = new Set()) {
@@ -381,6 +477,23 @@ export function initPropertiesPanel(ctx, dom, api) {
       }
       syncProjectTagPropertyGroup(model, expressId);
 
+      const element = { modelId: model.modelId || model.uuid, localId: Number(expressId) };
+      const assignment = api.getAssignmentForElement ? api.getAssignmentForElement(element) : null;
+      const existing = ctx.loadedModels.find((entry) =>
+        entry.model.modelId === element.modelId || entry.model.uuid === element.modelId
+      )?.existingProjectTags?.get(element.localId);
+
+      syncRevitPropertiesPalette({
+        expressId,
+        typeName,
+        name: props?.Name?.value,
+        globalId: props?.GlobalId?.value,
+        modelName,
+        groups: new Map(),
+        assignment,
+        existing,
+      });
+
       // If no psets found at all, show a note
       if (dom.propPsetsContainer.children.length === 0) {
         dom.propPsetsContainer.innerHTML = '<div style="color: var(--text-muted); font-size: 0.8rem; padding: 8px 0; text-align: center;">No property sets found for this element.</div>';
@@ -465,6 +578,40 @@ export function initPropertiesPanel(ctx, dom, api) {
     dom.propModel.textContent = modelText;
     dom.propModel.title = models.size === 1 ? modelText : Array.from(models).join(', ');
     if (models.size !== 1) dom.propModel.classList.add('prop-value-varies'); else dom.propModel.classList.remove('prop-value-varies');
+
+    if (api.propertiesPalette) {
+      api.propertiesPalette.setElement({
+        id: 'multi',
+        name: `${elements.length} Elements`,
+        family: 'Cable Tray',
+        type: typeText,
+        types: [typeText],
+        count: elements.length,
+        filterLabel: `${typeText} (${elements.length})`,
+        parameters: {
+          'Constraints': [
+            { name: 'Reference Level', value: '<Varies>', readonly: true },
+            { name: 'Elevation', value: '<Varies>', readonly: false },
+          ],
+          'Dimensions': [
+            { name: 'Width', value: '<Varies>', readonly: false },
+            { name: 'Height', value: '<Varies>', readonly: false },
+            { name: 'Length', value: '<Varies>', readonly: true },
+          ],
+          'Electrical': [
+            { name: 'System Tag', value: tagText || '<Varies>', readonly: false },
+            { name: 'Service', value: '<Varies>', readonly: false },
+            { name: 'Status', value: '<Varies>', readonly: false },
+          ],
+          'Identity Data': [
+            { name: 'Entity', value: typeText, readonly: true },
+            { name: 'GlobalId', value: '<Varies>', readonly: true },
+            { name: 'Express ID', value: '<Varies>', readonly: true },
+            { name: 'Model', value: modelText, readonly: true },
+          ],
+        },
+      });
+    }
 
     const cappedElements = elements.slice(0, 50);
     const elementPsetsList = [];
@@ -590,11 +737,18 @@ export function initPropertiesPanel(ctx, dom, api) {
     ctx.multiSelectionElements = [];
     ctx.multiSelectionIndex = -1;
     if (dom.multiSelectHeader) dom.multiSelectHeader.style.display = 'none';
-    dom.elementPropsPanel.classList.add('empty');
-    dom.elementPropsPanel.classList.remove('active');
-    dom.elementPropsPanel.querySelector('.element-props-placeholder').style.display = 'flex';
-    dom.elementPropsPanel.querySelector('.element-props-content').style.display = 'none';
-    dom.propPsetsContainer.innerHTML = '';
+    if (dom.elementPropsPanel) {
+      dom.elementPropsPanel.classList.add('empty');
+      dom.elementPropsPanel.classList.remove('active');
+      const placeholder = dom.elementPropsPanel.querySelector('.element-props-placeholder');
+      if (placeholder) placeholder.style.display = 'flex';
+      const content = dom.elementPropsPanel.querySelector('.element-props-content');
+      if (content) content.style.display = 'none';
+    }
+    if (dom.propPsetsContainer) dom.propPsetsContainer.innerHTML = '';
+    if (api.propertiesPalette) {
+      api.propertiesPalette.clear();
+    }
   }
 
   api.displayElementProperties = displayElementProperties;
