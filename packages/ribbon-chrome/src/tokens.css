@@ -543,3 +543,637 @@
   width: 32px;
   height: 32px;
 }
+
+/* ==========================================================================
+   Autodesk Revit Lateral Dock Components (Properties Palette & Project Browser)
+   Authentic Revit Light Theme: #FFFFFF / #F0F0F0 backgrounds, crisp #CCCCCC borders, Segoe UI
+   ========================================================================== */
+
+/* Properties Palette */
+[data-rc-host] .rc-properties-palette,
+.rc-properties-palette {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 240px;
+  background: #FFFFFF;
+  border: 1px solid #CCCCCC;
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  font-size: 11px;
+  color: #1A1A1A;
+  box-sizing: border-box;
+  user-select: none;
+}
+
+[data-rc-host] .rc-prop-titlebar,
+.rc-prop-titlebar {
+  height: 26px;
+  min-height: 26px;
+  background: #F0F0F0;
+  border-bottom: 1px solid #CCCCCC;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  font-weight: 600;
+  font-size: 11px;
+  color: #333333;
+}
+
+[data-rc-host] .rc-prop-title,
+.rc-prop-title {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-rc-host] .rc-prop-tools,
+.rc-prop-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+[data-rc-host] .rc-prop-dock-btn,
+[data-rc-host] .rc-prop-close-btn,
+.rc-prop-dock-btn,
+.rc-prop-close-btn {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+  color: #555555;
+  padding: 0;
+}
+
+[data-rc-host] .rc-prop-dock-btn:hover,
+[data-rc-host] .rc-prop-close-btn:hover,
+.rc-prop-dock-btn:hover,
+.rc-prop-close-btn:hover {
+  background: #E0E0E0;
+  color: #000000;
+}
+
+/* Type Selector & Filter Row */
+[data-rc-host] .rc-prop-header,
+.rc-prop-header {
+  padding: 6px 8px;
+  background: #FFFFFF;
+  border-bottom: 1px solid #CCCCCC;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+[data-rc-host] .rc-type-selector,
+.rc-type-selector {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  background: #F8F8F8;
+  border: 1px solid #CCCCCC;
+  border-radius: 2px;
+}
+
+[data-rc-host] .rc-type-icon,
+.rc-type-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: #0070C0;
+  flex-shrink: 0;
+}
+
+[data-rc-host] .rc-type-select,
+.rc-type-select {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: #1A1A1A;
+  outline: none;
+  cursor: pointer;
+  min-width: 0;
+}
+
+[data-rc-host] .rc-type-select:disabled,
+.rc-type-select:disabled {
+  color: #888888;
+  cursor: default;
+}
+
+[data-rc-host] .rc-prop-filter-row,
+.rc-prop-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+[data-rc-host] .rc-prop-filter,
+.rc-prop-filter {
+  flex: 1;
+  height: 22px;
+  font-family: inherit;
+  font-size: 11px;
+  border: 1px solid #CCCCCC;
+  border-radius: 2px;
+  background: #FFFFFF;
+  padding: 0 4px;
+  min-width: 0;
+}
+
+[data-rc-host] .rc-prop-filter:disabled,
+.rc-prop-filter:disabled {
+  background: #F5F5F5;
+  color: #888888;
+}
+
+[data-rc-host] .rc-edit-type-btn,
+.rc-edit-type-btn {
+  height: 22px;
+  padding: 0 10px;
+  font-family: inherit;
+  font-size: 11px;
+  background: #F0F0F0;
+  border: 1px solid #CCCCCC;
+  border-radius: 2px;
+  color: #1A1A1A;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+[data-rc-host] .rc-edit-type-btn:hover:not(:disabled),
+.rc-edit-type-btn:hover:not(:disabled) {
+  background: #E8F0FB;
+  border-color: #70A0D0;
+}
+
+[data-rc-host] .rc-edit-type-btn:disabled,
+.rc-edit-type-btn:disabled {
+  color: #AAAAAA;
+  cursor: default;
+  background: #F8F8F8;
+  border-color: #E0E0E0;
+}
+
+/* Two-column Parameter Grid */
+[data-rc-host] .rc-param-grid,
+.rc-param-grid {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: #FFFFFF;
+}
+
+[data-rc-host] .rc-param-group,
+.rc-param-group {
+  border-bottom: 1px solid #E5E5E5;
+}
+
+[data-rc-host] .rc-param-group-header,
+.rc-param-group-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: #F0F0F0;
+  border: none;
+  border-bottom: 1px solid #CCCCCC;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: #333333;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+}
+
+[data-rc-host] .rc-param-group-header:hover,
+.rc-param-group-header:hover {
+  background: #E8E8E8;
+}
+
+[data-rc-host] .rc-group-expander,
+.rc-group-expander {
+  display: inline-block;
+  width: 12px;
+  font-size: 8px;
+  text-align: center;
+  color: #555555;
+}
+
+[data-rc-host] .rc-group-title,
+.rc-group-title {
+  font-weight: 600;
+}
+
+[data-rc-host] .rc-param-group.rc-collapsed .rc-param-group-body,
+.rc-param-group.rc-collapsed .rc-param-group-body {
+  display: none;
+}
+
+[data-rc-host] .rc-param-group-body,
+.rc-param-group-body {
+  display: flex;
+  flex-direction: column;
+}
+
+[data-rc-host] .rc-param-row,
+.rc-param-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-bottom: 1px solid #F0F0F0;
+  min-height: 22px;
+  align-items: stretch;
+}
+
+[data-rc-host] .rc-param-row:hover,
+.rc-param-row:hover {
+  background: #F8F9FA;
+}
+
+[data-rc-host] .rc-param-label,
+.rc-param-label {
+  padding: 3px 8px;
+  color: #555555;
+  font-size: 11px;
+  border-right: 1px solid #EBEBEB;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+}
+
+[data-rc-host] .rc-param-value,
+.rc-param-value {
+  padding: 1px 4px;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+[data-rc-host] .rc-param-input,
+.rc-param-input {
+  width: 100%;
+  height: 20px;
+  font-family: inherit;
+  font-size: 11px;
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 0 4px;
+  color: #1A1A1A;
+  border-radius: 2px;
+}
+
+[data-rc-host] .rc-param-input:hover,
+.rc-param-input:hover {
+  border-color: #CCCCCC;
+}
+
+[data-rc-host] .rc-param-input:focus,
+.rc-param-input:focus {
+  border-color: #005499;
+  background: #FFFFFF;
+  outline: none;
+}
+
+[data-rc-host] .rc-param-readonly,
+.rc-param-readonly {
+  padding: 0 4px;
+  color: #777777;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-rc-host] .rc-param-select,
+.rc-param-select {
+  width: 100%;
+  height: 20px;
+  font-family: inherit;
+  font-size: 11px;
+  border: 1px solid #CCCCCC;
+  border-radius: 2px;
+  background: #FFFFFF;
+  color: #1A1A1A;
+  padding: 0 2px;
+}
+
+/* Bottom Bar (Apply / Cancel) */
+[data-rc-host] .rc-prop-bottom-bar,
+.rc-prop-bottom-bar {
+  height: 32px;
+  min-height: 32px;
+  background: #F0F0F0;
+  border-top: 1px solid #CCCCCC;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 8px;
+}
+
+[data-rc-host] .rc-btn-apply,
+[data-rc-host] .rc-btn-cancel,
+.rc-btn-apply,
+.rc-btn-cancel {
+  height: 22px;
+  min-width: 60px;
+  padding: 0 12px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  background: #FFFFFF;
+  border: 1px solid #CCCCCC;
+  border-radius: 2px;
+  cursor: pointer;
+  color: #1A1A1A;
+}
+
+[data-rc-host] .rc-btn-apply:hover:not(:disabled),
+[data-rc-host] .rc-btn-cancel:hover:not(:disabled),
+.rc-btn-apply:hover:not(:disabled),
+.rc-btn-cancel:hover:not(:disabled) {
+  background: #E8F0FB;
+  border-color: #70A0D0;
+}
+
+[data-rc-host] .rc-btn-apply:disabled,
+[data-rc-host] .rc-btn-cancel:disabled,
+.rc-btn-apply:disabled,
+.rc-btn-cancel:disabled {
+  background: #F8F8F8;
+  border-color: #E0E0E0;
+  color: #AAAAAA;
+  cursor: default;
+}
+
+/* Project Browser */
+[data-rc-host] .rc-project-browser,
+.rc-project-browser {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 240px;
+  background: #FFFFFF;
+  border: 1px solid #CCCCCC;
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  font-size: 11px;
+  color: #1A1A1A;
+  box-sizing: border-box;
+  user-select: none;
+}
+
+[data-rc-host] .rc-browser-titlebar,
+.rc-browser-titlebar {
+  height: 26px;
+  min-height: 26px;
+  background: #F0F0F0;
+  border-bottom: 1px solid #CCCCCC;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  font-weight: 600;
+  font-size: 11px;
+  color: #333333;
+}
+
+[data-rc-host] .rc-browser-title,
+.rc-browser-title {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-rc-host] .rc-browser-tools,
+.rc-browser-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+[data-rc-host] .rc-browser-dock-btn,
+[data-rc-host] .rc-browser-close-btn,
+.rc-browser-dock-btn,
+.rc-browser-close-btn {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+  color: #555555;
+  padding: 0;
+}
+
+[data-rc-host] .rc-browser-dock-btn:hover,
+[data-rc-host] .rc-browser-close-btn:hover,
+.rc-browser-dock-btn:hover,
+.rc-browser-close-btn:hover {
+  background: #E0E0E0;
+  color: #000000;
+}
+
+/* Browser Search */
+[data-rc-host] .rc-browser-search,
+.rc-browser-search {
+  padding: 6px 8px;
+  background: #F0F0F0;
+  border-bottom: 1px solid #CCCCCC;
+}
+
+[data-rc-host] .rc-browser-search-box,
+.rc-browser-search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+[data-rc-host] .rc-search-icon,
+.rc-search-icon {
+  position: absolute;
+  left: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #777777;
+  pointer-events: none;
+}
+
+[data-rc-host] .rc-browser-search-input,
+.rc-browser-search-input {
+  width: 100%;
+  height: 22px;
+  font-family: inherit;
+  font-size: 11px;
+  border: 1px solid #CCCCCC;
+  border-radius: 2px;
+  background: #FFFFFF;
+  padding: 0 20px 0 24px;
+  color: #1A1A1A;
+  box-sizing: border-box;
+}
+
+[data-rc-host] .rc-browser-search-input:focus,
+.rc-browser-search-input:focus {
+  border-color: #005499;
+  outline: none;
+}
+
+[data-rc-host] .rc-search-clear-btn,
+.rc-search-clear-btn {
+  position: absolute;
+  right: 4px;
+  width: 16px;
+  height: 16px;
+  border: none;
+  background: transparent;
+  font-size: 10px;
+  color: #888888;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+[data-rc-host] .rc-search-clear-btn:hover,
+.rc-search-clear-btn:hover {
+  color: #000000;
+}
+
+/* Tree View */
+[data-rc-host] .rc-browser-tree,
+.rc-browser-tree {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 0;
+  background: #FFFFFF;
+}
+
+[data-rc-host] .rc-tree-node,
+.rc-tree-node {
+  display: flex;
+  align-items: center;
+  height: 22px;
+  cursor: pointer;
+  padding-right: 6px;
+  border-radius: 1px;
+  color: #1A1A1A;
+}
+
+[data-rc-host] .rc-tree-node:hover,
+.rc-tree-node:hover {
+  background: #F0F4FA;
+}
+
+[data-rc-host] .rc-tree-node.rc-selected,
+.rc-tree-node.rc-selected {
+  background: #C5D9F1;
+  color: #000000;
+}
+
+[data-rc-host] .rc-tree-expander,
+.rc-tree-expander {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: 8px;
+  color: #555555;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+[data-rc-host] .rc-tree-expander:hover,
+.rc-tree-expander:hover {
+  color: #000000;
+}
+
+[data-rc-host] .rc-tree-expander-spacer,
+.rc-tree-expander-spacer {
+  width: 16px;
+  height: 16px;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+[data-rc-host] .rc-tree-icon,
+.rc-tree-icon {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 4px;
+  color: #555555;
+  flex-shrink: 0;
+}
+
+[data-rc-host] .rc-tree-label,
+.rc-tree-label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+}
+
+[data-rc-host] .rc-tree-visibility-btn,
+.rc-tree-visibility-btn {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: #555555;
+  cursor: pointer;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+[data-rc-host] .rc-tree-visibility-btn:hover,
+.rc-tree-visibility-btn:hover {
+  opacity: 1;
+  color: #0070C0;
+}
+
+[data-rc-host] .rc-tree-visibility-btn.rc-hidden,
+.rc-tree-visibility-btn.rc-hidden {
+  opacity: 0.35;
+}
+
+[data-rc-host] .rc-tree-children,
+.rc-tree-children {
+  display: block;
+}
