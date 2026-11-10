@@ -114,9 +114,55 @@ export function initSelection(ctx, dom, api) {
     return ctx.selectedIfcElement ? [{ ...ctx.selectedIfcElement }] : [];
   }
 
-  // Make an IFC element the pivot for subsequent left-mouse orbiting.
+  // Make an IFC element the pivot for the next left-mouse orbit gesture.
+  // The pending center is stored, NOT applied: calling setOrbitPoint here
+  // would recompute target + focal offset in the same frame (camera-controls
+  // 3.1.2: moveTo(center) + setFocalOffset), which re-aims the camera and is
+  // perceived as a jump on plain click. The pending pivot is applied on the
+  // next rotate-type controlstart instead, so plain clicks move nothing and
+  // the first orbit drag rotates around the selected element.
+  function isRotateStart(controls) {
+    if (!controls) return true;
+    const ACTION = controls.constructor?.ACTION;
+    if (!ACTION) return true; // Unknown controls flavor: apply pending pivot for safety.
+    const current = controls.currentAction ?? controls._state;
+    if (typeof current !== 'number') return true;
+    return (
+      (current & ACTION.ROTATE) === ACTION.ROTATE ||
+      (current & ACTION.TOUCH_ROTATE) === ACTION.TOUCH_ROTATE ||
+      (current & ACTION.TOUCH_DOLLY_ROTATE) === ACTION.TOUCH_DOLLY_ROTATE ||
+      (current & ACTION.TOUCH_ZOOM_ROTATE) === ACTION.TOUCH_ZOOM_ROTATE
+    );
+  }
+
+  function applyPendingOrbitTarget() {
+    const pending = ctx.pendingOrbitTarget;
+    if (!pending) return;
+    ctx.pendingOrbitTarget = null;
+    try {
+      ctx.world.camera.controls.setOrbitPoint(pending.x, pending.y, pending.z);
+    } catch (error) {
+      console.warn('[Camera Orbit] Could not apply the pending pivot:', error);
+    }
+  }
+
+  function ensurePendingOrbitListener() {
+    if (ctx.orbitPivotListenerBound) return;
+    try {
+      ctx.world.camera.controls?.addEventListener?.('controlstart', () => {
+        if (!ctx.pendingOrbitTarget) return;
+        if (!isRotateStart(ctx.world.camera.controls)) return;
+        applyPendingOrbitTarget();
+      });
+      ctx.orbitPivotListenerBound = true;
+    } catch {
+      // Headless/smoke contexts may lack controls; clicks stay no-ops there.
+    }
+  }
+
   async function setOrbitTargetToElement(model, expressId) {
     if (!model) return;
+    ensurePendingOrbitListener();
     const bboxer = ctx.components.get(OBC.BoundingBoxer);
     try {
       bboxer.list.clear();
@@ -126,10 +172,12 @@ export function initSelection(ctx, dom, api) {
       if (box && !box.isEmpty()) {
         const center = new THREE.Vector3();
         box.getCenter(center);
-        ctx.world.camera.controls.setOrbitPoint(center.x, center.y, center.z);
+        // Deferred pivot (Option A): store for the next orbit-start.
+        // Zero camera mutation here — plain click selection must not move.
+        ctx.pendingOrbitTarget = { x: center.x, y: center.y, z: center.z };
       }
     } catch (error) {
-      console.warn('[Camera Orbit] Could not set the selected element as pivot:', error);
+      console.warn('[Camera Orbit] Could not store the selected element as pivot:', error);
     } finally {
       bboxer.list.clear();
     }
