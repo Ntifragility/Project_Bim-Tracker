@@ -115,8 +115,10 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
   overlayGroup.add(pivotMarker);
   let pivotToken = 0;
   let lockedPivot = null;
+  let pendingPivot = null;
   let selectionToken = 0;
   let selectionPivotBound = false;
+  let pivotListenerBound = false;
 
   const markerNormal = new THREE.Vector3();
   const markerAxis = new THREE.Vector3(0, 0, 1);
@@ -524,11 +526,49 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
     if (token !== selectionToken) return;
     if (!center) {
       lockedPivot = null;
+      pendingPivot = null;
       pivotMarker.visible = false;
       return;
     }
     lockedPivot = { x: center.x, y: center.y, z: center.z };
-    placePivot(lockedPivot);
+    // Deferred pivot (Option A): a plain highlight must not move the camera.
+    // Store the pivot and let the orbit-start listener apply placePivot once
+    // the user begins a rotate gesture; the gold marker already shows where.
+    pendingPivot = lockedPivot;
+    ensurePivotListener();
+    pivotMarker.position.set(pendingPivot.x, pendingPivot.y, pendingPivot.z);
+    pivotMarker.visible = true;
+    refreshPivotMarker();
+  }
+
+  function isRotateStart(controls) {
+    if (!controls) return true;
+    const ACTION = controls.constructor?.ACTION;
+    if (!ACTION) return true; // Unknown controls flavor: apply pending pivot for safety.
+    const current = controls.currentAction ?? controls._state;
+    if (typeof current !== 'number') return true;
+    return (
+      (current & ACTION.ROTATE) === ACTION.ROTATE ||
+      (current & ACTION.TOUCH_ROTATE) === ACTION.TOUCH_ROTATE ||
+      (current & ACTION.TOUCH_DOLLY_ROTATE) === ACTION.TOUCH_DOLLY_ROTATE ||
+      (current & ACTION.TOUCH_ZOOM_ROTATE) === ACTION.TOUCH_ZOOM_ROTATE
+    );
+  }
+
+  function ensurePivotListener() {
+    if (pivotListenerBound) return;
+    try {
+      engine.world.camera.controls?.addEventListener?.('controlstart', () => {
+        if (!pendingPivot) return;
+        if (!isRotateStart(engine.world.camera.controls)) return;
+        const next = pendingPivot;
+        pendingPivot = null;
+        placePivot(next);
+      });
+      pivotListenerBound = true;
+    } catch {
+      // Headless/smoke contexts may lack controls; the marker is enough there.
+    }
   }
 
   function bindSelectionPivot() {
@@ -536,17 +576,23 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
     if (!selectEvents || selectionPivotBound) return;
     selectionPivotBound = true;
     selectEvents.onHighlight.add(() => {
+      ensurePivotListener();
       void lockPivotToSelection(engine.highlighter?.selection?.select);
     });
     selectEvents.onClear.add(() => {
       selectionToken += 1;
       lockedPivot = null;
+      pendingPivot = null;
       pivotMarker.visible = false;
     });
   }
 
   async function armPivot(event) {
+    // A user-placed (shift+middle) pivot is an explicit orbit gesture, so it
+    // applies immediately; the selection-pending pivot stays deferred until a
+    // rotate-type controlstart.
     if (lockedPivot) {
+      pendingPivot = null;
       placePivot(lockedPivot);
       return;
     }
@@ -575,6 +621,7 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
   function hidePivot() {
     pivotToken += 1;
     if (lockedPivot) {
+      pendingPivot = null;
       placePivot(lockedPivot);
       return;
     }
@@ -593,6 +640,7 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
       event.button === 2 || (event.button === 1 && event.shiftKey)
     );
     if (orbitsAroundSelection) {
+      pendingPivot = null;
       placePivot(lockedPivot);
       return;
     }
