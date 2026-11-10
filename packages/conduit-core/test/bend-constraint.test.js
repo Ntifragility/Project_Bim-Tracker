@@ -9,8 +9,8 @@ test('constrainConduitBendAngle: unconstrained first segment when pPrev is null'
 
   assert.equal(res.bendAngleDeg, 0);
   assert.equal(res.isSnapped, false);
-  assert.equal(res.point.x, 5);
-  assert.equal(res.point.z, 5);
+  assert.ok(Math.abs(res.point.x - 5) < 1e-4);
+  assert.ok(Math.abs(res.point.z - 5) < 1e-4);
 });
 
 test('constrainConduitBendAngle: snaps straight forward 0° bend', () => {
@@ -62,7 +62,10 @@ test('constrainConduitBendAngle: standard field bender angles [15, 22.5, 30, 45,
   for (const angle of testAngles) {
     const rad = (angle + 1.0) * (Math.PI / 180); // 1° offset
     const pCursor = { x: 10 + 5 * Math.cos(rad), y: 0, z: 5 * Math.sin(rad) };
-    const res = constrainConduitBendAngle(pPrev, pAnchor, pCursor, { toleranceDeg: 5.0 });
+    const res = constrainConduitBendAngle(pPrev, pAnchor, pCursor, {
+      cartesianReference: false,
+      toleranceDeg: 5.0,
+    });
     assert.equal(res.isSnapped, true);
     assert.equal(res.bendAngleDeg, angle);
   }
@@ -86,3 +89,25 @@ test('constrainConduitBendAngle: minimum tangent validation', () => {
   });
   assert.equal(resValid.tangentValid, true);
 });
+
+test('constrainConduitBendAngle: Cartesian XYZ reference axes [X, Z, 45° offset]', () => {
+  const pAnchor = { x: 0, y: 2.8, z: 0 };
+
+  // Cursor in +X direction
+  const resXPlus = constrainConduitBendAngle(null, pAnchor, { x: 5, y: 2.8, z: 0.2 });
+  assert.equal(resXPlus.cartesianAxis, 'X');
+  assert.equal(resXPlus.cartesianHeading, 'X+');
+  assert.equal(resXPlus.point.z, 0);
+
+  // Cursor in +Z direction
+  const resZPlus = constrainConduitBendAngle(null, pAnchor, { x: 0.1, y: 2.8, z: 6 });
+  assert.equal(resZPlus.cartesianAxis, 'Z');
+  assert.equal(resZPlus.cartesianHeading, 'Z+');
+  assert.equal(resZPlus.point.x, 0);
+
+  // Cursor in 45° diagonal (+X, +Z)
+  const resDiag = constrainConduitBendAngle(null, pAnchor, { x: 4.8, y: 2.8, z: 5.2 });
+  assert.equal(resDiag.cartesianAxis, 'XZ_45');
+  assert.ok(Math.abs(resDiag.point.x - resDiag.point.z) < 1e-4);
+});
+

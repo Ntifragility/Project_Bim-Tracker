@@ -101,7 +101,7 @@ export function createMepHud({ container = document.body, onCommitDistance, onCo
     /**
      * Update HUD position and readouts
      */
-    update({ screenX, screenY, lengthM = 0, angleDeg = 0, isAngleSnapped = false, elevationM = 2.8, visible = true }) {
+    update({ screenX, screenY, lengthM = 0, angleDeg = 0, angleLabel = null, isAngleSnapped = false, elevationM = 2.8, visible = true }) {
       if (!visible) {
         if (isVisible) this.hide();
         return;
@@ -122,7 +122,7 @@ export function createMepHud({ container = document.body, onCommitDistance, onCo
         lengthValEl.textContent = `${lengthM.toFixed(2)} m`;
       }
 
-      angleValEl.textContent = `${angleDeg.toFixed(1)}°`;
+      angleValEl.textContent = angleLabel || `${angleDeg.toFixed(1)}°`;
       elevValEl.textContent = `${elevationM.toFixed(2)} m`;
 
       // Visual highlight when snapped to standard angle
