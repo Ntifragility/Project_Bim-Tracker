@@ -1,6 +1,64 @@
 # NOTES: deviations, blockers, open questions
 
-## 2026-10-23: P0 repair verification pass on PR #25 (6c964a0)
+## 2026-10-26: SPECS close-out run (owner: finish the architecture + specs set)
+- D1-D8 rulings (owner, 2026-10-25): D1 couplings BOM max(0,sticks-1); D2 NEC
+  truncated 4in pinned; D3 100ft kept legacy-labeled; D4 Z-up f64 confirmed;
+  D5 git rm no rewrite; D6 7.1 done / 7.2 todo / 7.3 done; D7a gate waits 7.4;
+  D7b synthetic fixture waived; D8 infra/* branch, owner merges.
+- Step 1: PR #29 reworked (7.1 stays done, only 7.2/7.3 re-opened) + ready-note
+  for owner merge; PR #31 closed unmerged (stale 7.1 claim, fulfilled by #32);
+  PR #30 left for owner merge (D-rulings posted as comment).
+- Step 3: PR #33 (fix/board-sync-72-73) merged as `cd81800` (self-merge,
+  low-risk fix/*; CI baseline+rust SUCCESS, MERGEABLE). Evidence: conduit
+  main.js 897 lines unsplit -> 7.2 todo; excel-io wired (readWorkbook in
+  excel-panel, exportTagMapping in tagging-panel), npm 92/92, both builds
+  green -> 7.3 stays done. Revert: `git revert cd81800`.
+- Step 4: 4 new specs merged to main (self-merge, low-risk spec/*, all CI
+  green): #34 conduit-ui-split (7.2, `da9ec2b`), #35 conduit-wasm (4.6,
+  `2b641bd`), #37 excel-io base (7.3, `c74d9df`), #39 viewer gaps — 4 Phase-B
+  specs (`d38b491`). Reverts: `git revert <SHA>` each.
+- Step 4 stacked on #30 (merge after #30, in order #30 -> #36 -> #38 -> #40):
+  #36 tray-wasm final (D4, per-module flag), #38 parity-gate + closeout final
+  (D1-D4,D6,D7), #40 safe-editor final (D6,D7a). All rebased onto
+  main@d38b491 conflict-free 2026-10-26. #30 itself rebased too.
+- Step 5: PR #41 infra/arch-v1 OPEN (high-risk, owner merges, agent stopped).
+  ARCHITECTURE v0.1 -> v1.0: viewport-core map, rules 9+10, conduit TS-side
+  boundary, as-built engine iface, Phase-B built-vs-spec split, hygiene done
+  (P22115 pair + legacy pkg wasm git-rm'd, *.sharedparameters.txt ignored),
+  all 11 Qs resolved. Full DoD green in worktree (fmt, clippy -D warnings,
+  cargo 40+35+32+1x4, both wasm-pack, npm 92/92, both builds, boundaries OK).
+  Cargo.lock wasm-build churn reverted before commit.
+- Remaining for owner: merge #29, #30, #36, #38, #40 (specs, in that order),
+  #41 (infra). Then code lanes: app/conduit-ui-split (7.2), rust/conduit-wasm
+  flag (4.6), 5.1/5.2 + 5.3, app/safe-ifc-editor (7.4), infra/remove-legacy
+  8.1 (deps must add 7.4 per D7a — gate PR updates TASKS.md).
+- No blockers. Root THINKING_SPECS.md (untracked, stale checkout) still needs
+  owner `rm` when the infra/agent-autonomy checkout retires.
+
+## 2026-10-23: smoke test on infra/agent-autonomy @ 80d0151 (Layer 1+2 green)
+- Layer 1 (DoD parity): `cargo fmt --check` clean, `cargo clippy
+  --workspace --all-targets -- -D warnings` clean, `cargo test --workspace`:
+  conduit-core 36 + geom-core 35 + ifc-io 32 pass (tray-*/wasm scaffolds 1
+  each), both `wasm-pack build` OK, `npm test` 84 pass, `npm run build` +
+  `npm run build:conduit` green, `check-boundaries.py` OK.
+- Layer 2 (golden vectors): geom 54, ifc 56, conduit-network 23,
+  conduit-snap 24, conduit-fitting 15, conduit-bom 8 — all pass.
+- Tray vectors run against legacy JS only (Rust tray-* empty); no browser
+  smoke possible (apps/viewer-core/bindings are scaffolds); no IFC sample
+  used (pure cores only). Layer 3 chain demo deferred to 4.5.
+- Board fix: 4.2/4.3 were still `review` though #19/#21 merged; set `done`.
+
+## 2026-10-22: PR #22 (rust/conduit-bom) merged by agent (4.4 done)
+- PR #22 self-merged as `7c0a93d` under the tiered policy (low-risk `rust/*`).
+  Revert: `git revert 7c0a93d`.
+- Safeguards met: rebased clean; full DoD re-ran green (fmt, clippy
+  `-D warnings`, `cargo test --workspace`: conduit-core 36 + geom-core 35 +
+  ifc-io 32 pass, bom 8 vectors pass, both wasm builds, `npm test` 84 pass,
+  both app builds, `check-boundaries.py` OK); CI `baseline` + `rust`
+  SUCCESS; `MERGEABLE`; owned-folders scope.
+- Worktree branch `rust/conduit-bom` deleted after merge.
+
+## Merged from main (PR #72 conflict resolution — both sides are true history)
 - PR #25 (`app/modular-tray-ui` -> `main`, phases 6+7) CI-green on merge
   commit and re-verified on clean `origin/main` checkout in this pass:
   `npm test` 92 pass / 0 fail, `cargo test --workspace` (conduit-core 40 +
