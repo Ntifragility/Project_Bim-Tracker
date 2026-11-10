@@ -341,6 +341,7 @@ export function initEditing(ctx, dom, api) {
 
   api.renderPendingIfcEdits = renderPendingIfcEdits;
   api.stageColorForSelection = stageColorForSelection;
+  api.exportUnifiedIfcLocal = exportUnifiedIfcLocal;
 
   return {
     createMetadataRow,

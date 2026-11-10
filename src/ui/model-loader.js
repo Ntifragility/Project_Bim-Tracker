@@ -390,29 +390,31 @@ export function initModelLoader(ctx, dom, hooks) {
     ctx.engine.setWireframe(ctx.isWireframe);
   }
 
+  async function loadSampleModel() {
+    const url = 'https://raw.githubusercontent.com/andrewisen/bim-whale-ifc-samples/main/BasicHouse/IFC/BasicHouse.ifc';
+    showLoader(dom, 'Downloading Sample', 'Fetching BasicHouse.ifc from remote repository...', 10);
+
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Failed to download sample: HTTP ${response.status}`);
+      }
+
+      updateLoader(dom, 'Reading sample data...', 20);
+      const data = await response.arrayBuffer();
+      const buffer = new Uint8Array(data);
+
+      await loadModel(buffer, 'BasicHouse.ifc', formatBytes(data.byteLength));
+    } catch (err) {
+      console.error(err);
+      updateLoader(dom, `Download failed: ${err.message}`, 0);
+      setTimeout(() => hideLoader(dom), 3000);
+    }
+  }
+
   function wireFileInputs() {
     // Listeners: Sidebar controls
-    dom.btnLoadSample.addEventListener('click', async () => {
-      const url = 'https://raw.githubusercontent.com/andrewisen/bim-whale-ifc-samples/main/BasicHouse/IFC/BasicHouse.ifc';
-      showLoader(dom, 'Downloading Sample', 'Fetching BasicHouse.ifc from remote repository...', 10);
-
-      try {
-        const response = await fetch(url);
-        if (!response.ok) {
-          throw new Error(`Failed to download sample: HTTP ${response.status}`);
-        }
-
-        updateLoader(dom, 'Reading sample data...', 20);
-        const data = await response.arrayBuffer();
-        const buffer = new Uint8Array(data);
-
-        await loadModel(buffer, 'BasicHouse.ifc', formatBytes(data.byteLength));
-      } catch (err) {
-        console.error(err);
-        updateLoader(dom, `Download failed: ${err.message}`, 0);
-        setTimeout(() => hideLoader(dom), 3000);
-      }
-    });
+    dom.btnLoadSample.addEventListener('click', loadSampleModel);
 
     dom.btnUpload.addEventListener('click', () => {
       dom.fileInput.click();
@@ -476,6 +478,9 @@ export function initModelLoader(ctx, dom, hooks) {
       fitModelsToView();
     });
   }
+
+  api.loadSampleModel = loadSampleModel;
+  api.fitModelsToView = fitModelsToView;
 
   return {
     loadModel,
