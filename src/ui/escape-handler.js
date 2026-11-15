@@ -77,8 +77,21 @@ export function initEscapeHandler(ctx, dom, api) {
   }
 
   function onKeyDown(event) {
-    if (event.key !== 'Escape' && event.key !== 'Esc') return;
     if (event.defaultPrevented) return;
+
+    // Revizto-style Hide (Ctrl + H) and Unhide (Ctrl + Shift + H)
+    if (event.ctrlKey && event.key.toLowerCase() === 'h') {
+      if (isTypingTarget(event.target)) return;
+      event.preventDefault();
+      if (event.shiftKey) {
+        ctx.engine?.visibility?.unhideAll?.();
+      } else {
+        ctx.engine?.visibility?.hideSelection?.();
+      }
+      return;
+    }
+
+    if (event.key !== 'Escape' && event.key !== 'Esc') return;
 
     // (0) R5: If ribbon keytips are visible, ribbon dismisses them first.
     if (areKeytipsVisible()) {

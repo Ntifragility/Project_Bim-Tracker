@@ -7,7 +7,7 @@
 // Bootstraps universal Revit-style ribbon via ribbon-chrome and conduit-adapter.
 
 import { createCovillafEngine } from 'viewer-core';
-import { createRibbon } from 'ribbon-chrome';
+import { createRibbon, createUnhidePill } from 'ribbon-chrome';
 import { createConduitRibbonDef } from './conduit-adapter.js';
 import { createLateralDock } from './lateral-dock.js';
 import { createDrawingTool } from '../drawing-tool.js';
@@ -198,6 +198,19 @@ export function createViewerChrome({ state, els, api }) {
       diameterRegistry: state.diameterRegistry,
       viewport,
       surfacePicker,
+      onSelectRun: (runId) => {
+        state.selectedRunId = runId;
+        drawingTool.selectedRunId = runId;
+        drawingTool.renderRuns(state.network);
+        api.renderRunsList?.(drawingTool);
+        api.updatePropertiesPalette?.(runId);
+        if (runId) {
+          api.showContextual?.('modify-run');
+        } else {
+          api.hideContextual?.();
+        }
+        api.refreshRibbon?.();
+      },
       onStateChange: (change) => {
         if (change.elevationPicked !== undefined) {
           if (els.topElevationInput) {
@@ -337,6 +350,14 @@ export function createViewerChrome({ state, els, api }) {
 
     window.__drawingTool = drawingTool;
     drawingTool.attach(els.viewerContainer);
+
+    // Revizto-Style Unhide Floating Viewport Pill
+    if (els.viewerContainer && engine?.visibility) {
+      const unhidePill = createUnhidePill(els.viewerContainer, {
+        visibility: engine.visibility,
+      });
+      api.unhidePill = unhidePill;
+    }
 
     // Initial render of lateral dock components
     api.updatePropertiesPalette?.();

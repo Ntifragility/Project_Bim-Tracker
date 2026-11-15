@@ -102,6 +102,17 @@ export function createProjectIo({ state, els, engine, api }) {
         return;
       }
 
+      // Revizto-style Hide (Ctrl + H) and Unhide (Ctrl + Shift + H)
+      if (e.ctrlKey && e.key.toLowerCase() === 'h') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          engine.visibility?.unhideAll?.();
+        } else {
+          engine.visibility?.hideSelection?.();
+        }
+        return;
+      }
+
       if ((e.key.toLowerCase() === 'v' || e.key.toLowerCase() === 'z') && !e.ctrlKey) {
         drawingTool.isPerpendicularActive = !drawingTool.isPerpendicularActive;
         els.btnPerp.classList.toggle('active', drawingTool.isPerpendicularActive);
@@ -218,10 +229,14 @@ export function createProjectIo({ state, els, engine, api }) {
       els.statusText.textContent = `Exported takeoff CSV to ${filename}`;
     });
 
-    // Export Overlay IFC
+    // Export Overlay IFC (exports selected run if active, or all runs)
     els.btnExportIfc.addEventListener('click', () => {
+      const allRuns = Array.isArray(state.network.runs) ? state.network.runs : Object.values(state.network.runs || {});
+      const selectedRun = state.selectedRunId ? allRuns.find((r) => r.id === state.selectedRunId) : null;
+      const runsToExport = selectedRun ? [selectedRun] : allRuns;
+
       const ifcContent = exportOverlayIfc({
-        runs: state.network.runs,
+        runs: runsToExport,
         nodes: state.network.nodes,
         schema: state.sourceModel.schema || 'IFC4',
         projectName: `${state.sourceModel.name || 'Project'} Conduit Overlay`,
@@ -233,9 +248,10 @@ export function createProjectIo({ state, els, engine, api }) {
         },
       });
 
-      const filename = `${state.sourceModel.name || 'conduit'}_overlay.ifc`;
+      const suffix = selectedRun ? `_run_${selectedRun.id}` : '';
+      const filename = `${state.sourceModel.name || 'conduit'}${suffix}_overlay.ifc`;
       downloadFile(ifcContent, filename, 'application/x-step');
-      els.statusText.textContent = `Exported overlay IFC to ${filename}`;
+      els.statusText.textContent = `Exported ${runsToExport.length} conduit trace${runsToExport.length === 1 ? '' : 's'} to ${filename}`;
     });
   }
 
