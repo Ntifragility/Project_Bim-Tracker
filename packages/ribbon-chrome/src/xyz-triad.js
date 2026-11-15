@@ -7,13 +7,13 @@
  * @param {object} options
  * @param {object|Function} options.camera Three.js camera (or camera provider)
  * @param {object|Function} [options.controls] Orbit/Camera controls (listens for 'update' event)
- * @param {'bottom-left'|'bottom-right'|'top-right'} [options.position='bottom-left']
+ * @param {'bottom-left'|'bottom-right'|'top-right'} [options.position='bottom-right']
  * @returns {object} { render, destroy }
  */
 export function createXyzTriad(container, options = {}) {
   if (!container) return null;
 
-  const position = options.position || 'bottom-left';
+  const position = options.position || 'bottom-right';
   const getCamera = () => {
     if (typeof options.camera === 'function') return options.camera();
     if (options.camera?.three) return options.camera.three;
@@ -29,9 +29,13 @@ export function createXyzTriad(container, options = {}) {
   triadContainer.className = 'revit-xyz-triad';
   triadContainer.setAttribute('data-rc-host', '');
 
-  let posStyle = 'bottom: 24px; left: 24px;';
-  if (position === 'bottom-right') posStyle = 'bottom: 24px; right: 24px;';
-  else if (position === 'top-right') posStyle = 'top: 24px; right: 24px;';
+  let posStyle = 'bottom: 32px; right: 28px;';
+  if (position === 'bottom-left') {
+    const leftOffset = options.leftOffset || '24px';
+    posStyle = `bottom: 32px; left: ${leftOffset};`;
+  } else if (position === 'top-right') {
+    posStyle = 'top: 24px; right: 28px;';
+  }
 
   triadContainer.style.cssText = `
     position: absolute;
@@ -39,7 +43,7 @@ export function createXyzTriad(container, options = {}) {
     width: 90px;
     height: 90px;
     pointer-events: none;
-    z-index: 40;
+    z-index: 45;
     user-select: none;
   `;
 
@@ -128,8 +132,13 @@ export function createXyzTriad(container, options = {}) {
   }
 
   const controls = getControls();
+  const handleUpdate = () => render();
+  const events = ['update', 'control', 'wake', 'change'];
+
   if (controls?.addEventListener) {
-    controls.addEventListener('update', render);
+    for (const evt of events) {
+      controls.addEventListener(evt, handleUpdate);
+    }
   }
 
   // Initial draw
@@ -139,7 +148,9 @@ export function createXyzTriad(container, options = {}) {
     render,
     destroy() {
       if (controls?.removeEventListener) {
-        controls.removeEventListener('update', render);
+        for (const evt of events) {
+          controls.removeEventListener(evt, handleUpdate);
+        }
       }
       if (triadContainer.parentElement) {
         triadContainer.parentElement.removeChild(triadContainer);

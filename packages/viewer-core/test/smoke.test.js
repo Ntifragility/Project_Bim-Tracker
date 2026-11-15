@@ -130,5 +130,10 @@ test('engine exposes Phase-B APIs (selection, perf, appearanceHistory)', async (
   for (const fn of ['push(label', 'async undo()', 'async redo()', 'clear()', 'depth()']) {
     assert.ok(src.includes(fn), `appearanceHistory has ${fn}`);
   }
+
+  // 3D XYZ world coordinate axes helper contract
+  for (const token of ['CovillafWorldAxesHelper', 'THREE.AxesHelper(16)', 'axes:', 'helper', 'visible', 'toggle()']) {
+    assert.ok(src.includes(token), `engine.js contains ${token}`);
+  }
 });
 
