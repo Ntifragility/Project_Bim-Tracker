@@ -137,6 +137,7 @@ export function initViewerChrome(ctx, dom, api) {
       const triad = createXyzTriad(dom.container, {
         camera: () => ctx.world?.camera?.three,
         controls: () => ctx.world?.camera?.controls,
+        position: 'bottom-right',
       });
       api.xyzTriad = triad;
     }
@@ -159,6 +160,12 @@ export function initViewerChrome(ctx, dom, api) {
         grid.visible = dom.toggleGrid.checked;
       } else if (grid.three) {
         grid.three.visible = dom.toggleGrid.checked;
+      }
+    });
+
+    dom.toggleAxes?.addEventListener('change', () => {
+      if (ctx.engine?.axes) {
+        ctx.engine.axes.visible = dom.toggleAxes.checked;
       }
     });
 

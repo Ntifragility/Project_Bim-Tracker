@@ -130,6 +130,45 @@ export function createConduitRibbonDef(ctx) {
               ],
             ],
           },
+          {
+            id: 'visibility',
+            label: 'Visibility',
+            items: [
+              [
+                {
+                  id: 'conduit.view-axes',
+                  label: 'XYZ Axes',
+                  icon: 'views',
+                  size: 'small',
+                  keytip: 'MVA',
+                  tooltip: 'Toggle 3D XYZ coordinate axes',
+                  run(c) {
+                    const engine = c.engine || c.api?.engine;
+                    if (engine?.axes) {
+                      engine.axes.toggle();
+                    }
+                  },
+                },
+                {
+                  id: 'conduit.view-grid',
+                  label: 'Grid',
+                  icon: 'views',
+                  size: 'small',
+                  keytip: 'MVX',
+                  tooltip: 'Toggle grid visibility',
+                  run(c) {
+                    const engine = c.engine || c.api?.engine;
+                    const grid = engine?.world?.scene?.three?.children?.find(
+                      (ch) => ch.name === 'Grid' || ch.isGridHelper || ch.type === 'GridHelper'
+                    );
+                    if (grid) {
+                      grid.visible = !grid.visible;
+                    }
+                  },
+                },
+              ],
+            ],
+          },
         ],
       },
 
