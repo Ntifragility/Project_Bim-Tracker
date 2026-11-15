@@ -178,9 +178,15 @@ export async function initApp() {
   return { ctx, api };
 }
 
-// Start app on load
-window.addEventListener('DOMContentLoaded', () => {
+// Start app on load (guard against already-fired DOMContentLoaded)
+if (document.readyState === 'loading') {
+  window.addEventListener('DOMContentLoaded', () => {
+    initApp().catch((err) => {
+      console.error('Failed to initialize the BIM app:', err);
+    });
+  });
+} else {
   initApp().catch((err) => {
     console.error('Failed to initialize the BIM app:', err);
   });
-});
+}
