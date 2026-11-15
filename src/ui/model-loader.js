@@ -18,7 +18,7 @@ import { formatBytes, showLoader, updateLoader, hideLoader } from './helpers.js'
  *   refreshLoadedModelsList (bound by the caller), clearElementProperties,
  *   invalidateBatchUndo, renderPendingTrayDeletions-free `onUnloadModel`
  */
-export function initModelLoader(ctx, dom, hooks) {
+export function initModelLoader(ctx, dom, hooks, api = {}) {
   // Helper: Fit camera to all visible models or a single model
   function fitModelsToView(modelsToFit = null) {
     const { world } = ctx;
@@ -482,12 +482,15 @@ export function initModelLoader(ctx, dom, hooks) {
     });
   }
 
-  api.loadSampleModel = loadSampleModel;
-  api.fitModelsToView = fitModelsToView;
-  api.fitModelToView = fitModelToView;
+  if (api) {
+    api.loadSampleModel = loadSampleModel;
+    api.fitModelsToView = fitModelsToView;
+    api.fitModelToView = fitModelToView;
+  }
 
   return {
     loadModel,
+    loadSampleModel,
     unloadModel,
     clearActiveModel,
     fitModelsToView,

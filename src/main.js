@@ -144,9 +144,12 @@ export async function initApp() {
     refreshValidationReportIfOpen: api.refreshValidationReportIfOpen,
     clearElementProperties: api.clearElementProperties,
     invalidateBatchUndo: api.invalidateBatchUndo,
-  });
+  }, api);
   api.refreshLoadedModelsList = loader.refreshLoadedModelsList;
   api.loadModel = loader.loadModel;
+  api.loadSampleModel = loader.loadSampleModel;
+  api.fitModelsToView = loader.fitModelsToView;
+  api.fitModelToView = loader.fitModelToView;
   api.setWireframe = loader.setWireframe;
   loader.wireFileInputs();
 
