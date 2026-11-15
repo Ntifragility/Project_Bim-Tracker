@@ -38,6 +38,7 @@ function viewportWasmResolver() {
 
 export default defineConfig({
   root: ".",
+  cacheDir: path.resolve(ROOT, "node_modules/.vite-conduit"),
   // Share the tray app's public dir (fixtures, web-ifc.wasm) so `?ifc=`
   // deep links and wasm assets resolve identically in both apps.
   publicDir: path.resolve(ROOT, "public"),
