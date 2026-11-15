@@ -62,13 +62,16 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
   overlayGroup.add(workPlaneAxes);
 
   // XYZ World Origin Axes Helper (Red = X, Green = Y, Blue = Z)
-  const worldAxesHelper = new THREE.AxesHelper(16);
-  worldAxesHelper.name = 'WorldAxesHelper';
-  worldAxesHelper.renderOrder = 45;
-  worldAxesHelper.material.depthTest = false;
-  worldAxesHelper.material.transparent = true;
-  worldAxesHelper.material.opacity = 0.4;
-  overlayGroup.add(worldAxesHelper);
+  let worldAxesHelper = engine?.axes?.helper;
+  if (!worldAxesHelper) {
+    worldAxesHelper = new THREE.AxesHelper(16);
+    worldAxesHelper.name = 'WorldAxesHelper';
+    worldAxesHelper.renderOrder = 45;
+    worldAxesHelper.material.depthTest = false;
+    worldAxesHelper.material.transparent = true;
+    worldAxesHelper.material.opacity = 0.5;
+    overlayGroup.add(worldAxesHelper);
+  }
 
   // Snap Indicator Dot
   const snapDotGeo = new THREE.SphereGeometry(0.045, 16, 16);
@@ -1015,12 +1018,12 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
     triadContainer.className = 'revit-xyz-triad';
     triadContainer.style.cssText = `
       position: absolute;
-      bottom: 24px;
-      left: 24px;
+      bottom: 32px;
+      right: 28px;
       width: 90px;
       height: 90px;
       pointer-events: none;
-      z-index: 100;
+      z-index: 45;
       user-select: none;
     `;
 
