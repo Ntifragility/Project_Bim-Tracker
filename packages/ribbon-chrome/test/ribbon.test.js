@@ -324,6 +324,47 @@ test('Refresh pass: updates enabled, visible, inputs, and status segments', () =
   api.destroy();
 });
 
+test('Status segments: clickable segment with run handler executes on click', () => {
+  const { doc } = setupMockDom();
+  const host = doc.createElement('div');
+  let toggled = false;
+  const ctx = { coordMode: 'project' };
+  const def = {
+    appId: 'test-status',
+    tabs: [
+      {
+        id: 'home',
+        label: 'Home',
+        keytip: 'H',
+        groups: [{ id: 'g1', label: 'G1', items: [] }],
+      },
+    ],
+    statusSegments: [
+      {
+        id: 'coord-mode',
+        value(c) { return c.coordMode === 'shared' ? 'Shared (IFC)' : 'Project Base'; },
+        run(c) {
+          c.coordMode = c.coordMode === 'shared' ? 'project' : 'shared';
+          toggled = true;
+        },
+      },
+    ],
+  };
+
+  const api = createRibbon(host, def, ctx);
+  const seg = host.querySelector('.rc-status-segment[data-segment-id="coord-mode"]');
+  assert.ok(seg, 'Status segment exists');
+  assert.ok(seg.classList.contains('clickable'), 'Segment has clickable class');
+  assert.equal(seg.textContent, 'Project Base');
+
+  seg.click();
+  assert.equal(toggled, true, 'run handler called on click');
+  assert.equal(ctx.coordMode, 'shared');
+  assert.equal(seg.textContent, 'Shared (IFC)', 'Segment re-rendered with new state');
+
+  api.destroy();
+});
+
 test('Collapse and expand: persists state to sessionStorage', () => {
   const { doc, sessionStorage } = setupMockDom();
   const host = doc.createElement('div');

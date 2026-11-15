@@ -519,6 +519,16 @@ export function createRibbon(host, def, ctx) {
       segSpan.className = 'rc-status-segment';
       segSpan.setAttribute('data-segment-id', seg.id);
       segSpan.textContent = typeof seg.value === 'function' ? seg.value(ctx) : '';
+      if (typeof seg.run === 'function') {
+        segSpan.classList.add('clickable');
+        segSpan.setAttribute('role', 'button');
+        segSpan.setAttribute('tabindex', '0');
+        segSpan.addEventListener('click', (e) => {
+          e.stopPropagation();
+          seg.run(ctx);
+          api.refresh();
+        });
+      }
       statusBar.appendChild(segSpan);
 
       if (i < def.statusSegments.length - 1) {

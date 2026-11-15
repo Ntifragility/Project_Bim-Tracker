@@ -484,6 +484,19 @@
   align-items: center;
 }
 
+[data-rc-host] .rc-status-segment.clickable {
+  cursor: pointer;
+  padding: 1px 6px;
+  border-radius: 3px;
+  transition: background 0.12s ease, color 0.12s ease;
+  user-select: none;
+}
+
+[data-rc-host] .rc-status-segment.clickable:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--rc-accent, #005fb8);
+}
+
 [data-rc-host] .rc-status-sep {
   padding: 0 8px;
   color: var(--rc-statusbar-border);
