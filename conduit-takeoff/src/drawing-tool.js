@@ -24,6 +24,16 @@ import {
   constrainConduitBendAngle,
   STANDARD_BEND_ANGLES,
   NEC_CONDUIT_ARTICLES,
+  extractRunCenterline,
+  generateParallelConduitRack,
+  solveBoxOffset,
+  solveThreePointSaddle,
+  solveFourPointSaddle,
+  solveRollingOffset,
+  justifyToCenterline,
+  JUSTIFICATION_MODES,
+  generateRunSpoolSheet,
+  generateSpoolSheetCsv,
 } from '@conduit-core';
 
 export function createDrawingTool({ engine, commandStack, diameterRegistry, onStateChange, viewport, surfacePicker }) {
@@ -216,6 +226,7 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
   let lastScreenPos = { x: 0, y: 0 };
   let selectedRunId = null;
   let isShiftPressed = false;
+  let activeJustification = JUSTIFICATION_MODES.CENTER;
 
   // Track shift key for free-angle vs magnetic snapping
   window.addEventListener('keydown', (e) => {
@@ -1153,12 +1164,21 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
         }
 
         adoptSurfaceElevation(target);
+        if (activeJustification !== JUSTIFICATION_MODES.CENTER && candidate) {
+          const pipeRadius = tradeRadiusM();
+          candidate = justifyToCenterline(candidate, pipeRadius, activeJustification);
+        }
         pointToAdd = candidate;
       }
     } else {
       const target = await pointUnderCursor(ndc);
       adoptSurfaceElevation(target);
-      pointToAdd = target;
+      if (activeJustification !== JUSTIFICATION_MODES.CENTER && target) {
+        const pipeRadius = tradeRadiusM();
+        pointToAdd = justifyToCenterline(target, pipeRadius, activeJustification);
+      } else {
+        pointToAdd = target;
+      }
     }
 
     if (!pointToAdd) return;
@@ -1521,6 +1541,165 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
 
     renderRuns(network) {
       renderCompletedRuns(network);
+    },
+
+    // ── High-Pro Electrical BIM & Revit Parity Extensions ──────────────
+    get justification() {
+      return activeJustification;
+    },
+    set justification(mode) {
+      if (JUSTIFICATION_MODES[mode]) {
+        activeJustification = mode;
+      }
+    },
+
+    get JUSTIFICATION_MODES() {
+      return JUSTIFICATION_MODES;
+    },
+
+    // Revit "Parallel Conduits" Generator with concentric elbow radii
+    generateParallelConduits(runId, { horizontalCount = 3, verticalCount = 1, spacingM = 0.0762 } = {}, getNetwork, setNetwork) {
+      if (!runId || typeof getNetwork !== 'function' || typeof setNetwork !== 'function') return [];
+      const network = getNetwork();
+      const masterRun = network.runs.find((r) => r.id === runId);
+      if (!masterRun) return [];
+
+      const masterPoints = (masterRun.nodeIds || [])
+        .map((nid) => nodeById(network, nid))
+        .filter(Boolean);
+      if (masterPoints.length < 2) return [];
+
+      const minRadiusM = getNecBendRadiusM(masterRun.size);
+      const rackRuns = generateParallelConduitRack(masterPoints, {
+        horizontalCount,
+        verticalCount,
+        spacingM,
+        minRadiusM,
+      });
+
+      const prevNetwork = network;
+      let newNetwork = prevNetwork;
+      const createdRunIds = [];
+
+      for (let r = 1; r < rackRuns.length; r++) {
+        const rackRun = rackRuns[r];
+        const pts = rackRun.points;
+        if (pts.length < 2) continue;
+
+        const n0 = addNode(newNetwork, pts[0]);
+        newNetwork = n0.network;
+
+        const name = `${masterRun.name || 'Run'} [P${rackRun.hIndex + 1}${rackRun.vIndex > 0 ? `·T${rackRun.vIndex + 1}` : ''}]`;
+        const res = startRun(newNetwork, { size: masterRun.size, system: masterRun.system || 'Power', name }, n0.nodeId);
+        newNetwork = res.network;
+        const newRunId = res.runId;
+        createdRunIds.push(newRunId);
+
+        for (let p = 1; p < pts.length; p++) {
+          const nNext = addNode(newNetwork, pts[p]);
+          newNetwork = nNext.network;
+          newNetwork = appendToRun(newNetwork, newRunId, nNext.nodeId);
+        }
+      }
+
+      if (createdRunIds.length > 0) {
+        const command = {
+          description: `Create ${createdRunIds.length} parallel conduits for ${masterRun.name || runId}`,
+          execute() {
+            setNetwork(newNetwork);
+            renderCompletedRuns(newNetwork);
+            onStateChange?.({ networkUpdated: true });
+          },
+          undo() {
+            setNetwork(prevNetwork);
+            renderCompletedRuns(prevNetwork);
+            onStateChange?.({ networkUpdated: true });
+          },
+        };
+        commandStack.execute(command);
+      }
+
+      return createdRunIds;
+    },
+
+    // Parametric Obstacle Saddle (3-Point Pipe Saddle or 4-Point Duct/Tray Bridge)
+    insertObstacleSaddle(type = '3-point', { heightM = 0.05, widthM = 0.30, angleDeg = 30 } = {}) {
+      if (activeRunPoints.length === 0) return false;
+      const lastPt = activeRunPoints[activeRunPoints.length - 1];
+      const prevPt = activeRunPoints.length >= 2 ? activeRunPoints[activeRunPoints.length - 2] : null;
+
+      let dirX = 1, dirZ = 0;
+      if (prevPt) {
+        const dx = lastPt.x - prevPt.x;
+        const dz = lastPt.z - prevPt.z;
+        const len = Math.hypot(dx, dz);
+        if (len > 0.001) {
+          dirX = dx / len;
+          dirZ = dz / len;
+        }
+      }
+
+      if (type === '3-point') {
+        const saddle = solveThreePointSaddle(heightM, 45);
+        const distToCenter = saddle.distanceToOuterMark;
+        const distToEnd = saddle.totalSpanM;
+
+        const centerPt = {
+          x: lastPt.x + dirX * distToCenter,
+          y: lastPt.y + heightM,
+          z: lastPt.z + dirZ * distToCenter,
+        };
+        const endPt = {
+          x: lastPt.x + dirX * distToEnd,
+          y: lastPt.y,
+          z: lastPt.z + dirZ * distToEnd,
+        };
+
+        activeRunPoints.push(centerPt, endPt);
+      } else {
+        const saddle = solveFourPointSaddle(heightM, widthM, angleDeg);
+        const riseDist = saddle.legDistanceBetweenBends;
+        const topDist = riseDist + saddle.flatTopSpan;
+        const endDist = topDist + riseDist;
+
+        const p1 = {
+          x: lastPt.x + dirX * riseDist,
+          y: lastPt.y + saddle.effectiveHeight,
+          z: lastPt.z + dirZ * riseDist,
+        };
+        const p2 = {
+          x: lastPt.x + dirX * topDist,
+          y: lastPt.y + saddle.effectiveHeight,
+          z: lastPt.z + dirZ * topDist,
+        };
+        const p3 = {
+          x: lastPt.x + dirX * endDist,
+          y: lastPt.y,
+          z: lastPt.z + dirZ * endDist,
+        };
+
+        activeRunPoints.push(p1, p2, p3);
+      }
+
+      updateActiveRunVisuals();
+      const finalPt = activeRunPoints[activeRunPoints.length - 1];
+      onStateChange?.({
+        cursor: finalPt,
+        liveSegment: 0,
+        activePoints: activeRunPoints,
+      });
+      return true;
+    },
+
+    // Contractor Fabrication Cut Sheet & Bending Marks Generator
+    exportSpoolCutSheet(network) {
+      if (!network?.runs || !Array.isArray(network.runs)) return null;
+      const sheets = network.runs.map((run) => {
+        const pts = (run.nodeIds || []).map((nid) => nodeById(network, nid)).filter(Boolean);
+        return generateRunSpoolSheet(run, pts);
+      }).filter(Boolean);
+
+      return generateSpoolSheetCsv(sheets);
     },
 
     attach(container) {

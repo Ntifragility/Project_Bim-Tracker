@@ -523,6 +523,32 @@ export function createConduitRibbonDef(ctx) {
                     btn?.click();
                   },
                 },
+                {
+                  id: 'conduit.export-spool',
+                  label: 'Spool Sheet',
+                  icon: 'csv',
+                  size: 'small',
+                  keytip: 'PES',
+                  tooltip: 'Export Contractor Fabrication & Bending Spool Schedule (Benfield Marks & Cut Lengths)',
+                  enabled(c) {
+                    return (c.state?.network?.runs?.length || 0) > 0;
+                  },
+                  run(c) {
+                    const tool = getTool();
+                    if (!tool || !c.state?.network) return;
+                    const csvContent = tool.exportSpoolCutSheet(c.state.network);
+                    if (!csvContent) {
+                      alert('No conduit runs available to generate spool sheet.');
+                      return;
+                    }
+                    const filename = `${c.state?.projectName || 'Conduit'}_Bending_Spools.csv`;
+                    c.api?.downloadFile?.(csvContent, filename, 'text/csv');
+                    const statusText = c.els?.statusText || getDoc()?.getElementById('status-text');
+                    if (statusText) {
+                      statusText.textContent = `Exported contractor bending spool sheet to ${filename}`;
+                    }
+                  },
+                },
               ],
             ],
           },
@@ -649,6 +675,40 @@ export function createConduitRibbonDef(ctx) {
             ],
           },
           {
+            id: 'justification',
+            label: 'Justification',
+            items: [
+              [
+                {
+                  kind: 'input',
+                  id: 'top-justification-select',
+                  label: 'Justify:',
+                  inputType: 'select',
+                  keytip: 'CRJ',
+                  tooltip: 'Revit Justification: Centerline, Top of Conduit (TOC), Bottom of Conduit (BOC)',
+                  options: [
+                    { value: 'CENTER', label: 'Centerline (CL)' },
+                    { value: 'TOP', label: 'Top of Conduit (TOC)' },
+                    { value: 'BOTTOM', label: 'Bottom of Conduit (BOC)' },
+                  ],
+                  value(c) {
+                    const tool = getTool();
+                    return tool?.justification || 'CENTER';
+                  },
+                  onChange(val, c) {
+                    const tool = getTool();
+                    if (tool) tool.justification = val;
+                    const statusText = c.els?.statusText || getDoc()?.getElementById('status-text');
+                    if (statusText) {
+                      statusText.textContent = `Conduit justification set to: ${val}`;
+                    }
+                    c.ribbonApi?.refresh();
+                  },
+                },
+              ],
+            ],
+          },
+          {
             id: 'angles',
             label: 'Angles',
             items: [
@@ -715,6 +775,78 @@ export function createConduitRibbonDef(ctx) {
                     if (statusText) {
                       statusText.textContent = `Active system: ${val}`;
                     }
+                  },
+                },
+              ],
+            ],
+          },
+          {
+            id: 'rack-and-bends',
+            label: 'Racks & Bends',
+            columns: [
+              [
+                {
+                  id: 'conduit.parallel-rack',
+                  label: 'Parallel Conduits',
+                  icon: 'trace',
+                  size: 'big',
+                  keytip: 'CRP',
+                  tooltip: 'Create Parallel Conduit Rack with Concentric Bends (Revit Parity)',
+                  run(c) {
+                    const tool = getTool();
+                    if (!tool) return;
+                    const runId = c.state?.selectedRunId;
+                    if (!runId) {
+                      alert('Please select a conduit run first from the 3D model or Runs list to generate a parallel rack.');
+                      return;
+                    }
+                    const inputH = prompt('Number of horizontal conduits in rack:', '3');
+                    if (!inputH) return;
+                    const hCount = parseInt(inputH, 10);
+                    if (isNaN(hCount) || hCount < 2) return;
+
+                    const spacingInches = prompt('Center-to-center conduit spacing (inches):', '3.0');
+                    const spacingM = (parseFloat(spacingInches) || 3.0) * 0.0254;
+
+                    const created = tool.generateParallelConduits(
+                      runId,
+                      { horizontalCount: hCount, verticalCount: 1, spacingM },
+                      () => c.state?.network,
+                      (net) => { c.state.network = net; }
+                    );
+                    const statusText = c.els?.statusText || getDoc()?.getElementById('status-text');
+                    if (statusText) {
+                      statusText.textContent = `Generated ${created.length} concentric parallel conduits in rack!`;
+                    }
+                    c.api?.renderRunsList?.(tool);
+                    c.api?.renderSummary?.();
+                    c.ribbonApi?.refresh();
+                  },
+                },
+              ],
+              [
+                {
+                  id: 'conduit.insert-saddle',
+                  label: 'Obstacle Saddle',
+                  icon: 'autoriser',
+                  size: 'small',
+                  keytip: 'CRS',
+                  tooltip: 'Insert a 3-Point Pipe Saddle or 4-Point Bridge over intersecting pipes/ducts',
+                  run(c) {
+                    const tool = getTool();
+                    if (!tool || tool.activePoints.length === 0) {
+                      alert('Start drawing a conduit run first, then click Obstacle Saddle to insert the jog.');
+                      return;
+                    }
+                    const saddleType = confirm('Click OK for 3-Point Pipe Saddle, or Cancel for 4-Point Duct/Tray Bridge') ? '3-point' : '4-point';
+                    const heightPrompt = prompt('Obstacle height to clear (inches):', '2.0');
+                    const heightM = (parseFloat(heightPrompt) || 2.0) * 0.0254;
+                    tool.insertObstacleSaddle(saddleType, { heightM, widthM: 0.30, angleDeg: 30 });
+                    const statusText = c.els?.statusText || getDoc()?.getElementById('status-text');
+                    if (statusText) {
+                      statusText.textContent = `Inserted ${saddleType} obstacle saddle (${(heightM * 39.3701).toFixed(1)}" rise).`;
+                    }
+                    c.ribbonApi?.refresh();
                   },
                 },
               ],
