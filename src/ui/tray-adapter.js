@@ -143,6 +143,20 @@ export function createTrayRibbonDef(ctx) {
             items: [
               [
                 {
+                  id: 'tray.view-axes',
+                  label: 'XYZ Axes',
+                  icon: 'views',
+                  size: 'small',
+                  keytip: 'MVA',
+                  tooltip: 'Toggle 3D XYZ coordinate axes',
+                  run: () => {
+                    if (ctx.engine?.axes) {
+                      const next = ctx.engine.axes.toggle();
+                      if (dom.toggleAxes) dom.toggleAxes.checked = next;
+                    }
+                  },
+                },
+                {
                   id: 'tray.view-grid',
                   label: 'Grid',
                   icon: 'views',

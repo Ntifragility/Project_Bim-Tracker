@@ -31,6 +31,7 @@ export const viewerSettingsPanel = el('viewer-settings-panel');
 export const selectionHighlightColorInput = el('selection-highlight-color');
 export const selectionHighlightHex = el('selection-highlight-hex');
 export const toggleGrid = el('toggle-grid');
+export const toggleAxes = el('toggle-axes');
 export const toggleWireframe = el('toggle-wireframe');
 export const toggleDarkMode = el('toggle-darkmode');
 
