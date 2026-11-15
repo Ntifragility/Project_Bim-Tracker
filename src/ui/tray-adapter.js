@@ -67,17 +67,6 @@ export function createTrayRibbonDef(ctx) {
                     }
                   },
                 },
-                {
-                  id: 'tray.link-excel',
-                  label: 'Link Excel',
-                  icon: 'link',
-                  size: 'small',
-                  keytip: 'ML',
-                  tooltip: 'Link Excel mapping spreadsheet',
-                  run: () => {
-                    if (dom.excelFileInput) dom.excelFileInput.click();
-                  },
-                },
               ],
             ],
           },
@@ -230,6 +219,25 @@ export function createTrayRibbonDef(ctx) {
         label: 'Tag',
         keytip: 'T',
         groups: [
+          {
+            id: 'tag-excel',
+            label: 'Register',
+            items: [
+              [
+                {
+                  id: 'tray.link-excel',
+                  label: 'Link\nExcel',
+                  icon: 'link',
+                  size: 'big',
+                  keytip: 'TL',
+                  tooltip: 'Link Excel mapping spreadsheet',
+                  run: () => {
+                    if (dom.excelFileInput) dom.excelFileInput.click();
+                  },
+                },
+              ],
+            ],
+          },
           {
             id: 'tag-batch',
             label: 'Batch',
