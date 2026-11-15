@@ -73,5 +73,9 @@ async function init() {
   await initApp();
 }
 
-// Start app on load
-window.addEventListener('DOMContentLoaded', init);
+// Start app on load (guard against already-fired DOMContentLoaded)
+if (document.readyState === 'loading') {
+  window.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
