@@ -22,6 +22,14 @@ export function createMepHud({ container = document.body, onCommitDistance, onCo
       <span class="mep-hud-label">EL:</span>
       <span class="mep-hud-value" id="mep-hud-elev-val">2.80 m</span>
     </div>
+    <div class="mep-hud-pill mep-hud-bend" id="mep-hud-bend-pill" title="Trade Bending Metrics" style="display: none;">
+      <span class="mep-hud-icon">↩</span>
+      <span class="mep-hud-value" id="mep-hud-bend-val">90° Bend</span>
+    </div>
+    <div class="mep-hud-pill mep-hud-warning" id="mep-hud-warning-pill" title="Code Warning" style="display: none;">
+      <span class="mep-hud-icon">⚠️</span>
+      <span class="mep-hud-value" id="mep-hud-warning-val">>360°</span>
+    </div>
   `;
 
   container.appendChild(hudEl);
@@ -31,6 +39,10 @@ export function createMepHud({ container = document.body, onCommitDistance, onCo
   const anglePillEl = hudEl.querySelector('.mep-hud-angle');
   const angleValEl = hudEl.querySelector('#mep-hud-angle-val');
   const elevValEl = hudEl.querySelector('#mep-hud-elev-val');
+  const bendPillEl = hudEl.querySelector('#mep-hud-bend-pill');
+  const bendValEl = hudEl.querySelector('#mep-hud-bend-val');
+  const warningPillEl = hudEl.querySelector('#mep-hud-warning-pill');
+  const warningValEl = hudEl.querySelector('#mep-hud-warning-val');
 
   let isVisible = false;
   let isTyping = false;
@@ -101,7 +113,18 @@ export function createMepHud({ container = document.body, onCommitDistance, onCo
     /**
      * Update HUD position and readouts
      */
-    update({ screenX, screenY, lengthM = 0, angleDeg = 0, isAngleSnapped = false, elevationM = 2.8, visible = true }) {
+    update({
+      screenX,
+      screenY,
+      lengthM = 0,
+      angleDeg = 0,
+      angleLabel = null,
+      isAngleSnapped = false,
+      elevationM = 2.8,
+      bendInfo = null,
+      warningText = null,
+      visible = true,
+    }) {
       if (!visible) {
         if (isVisible) this.hide();
         return;
@@ -122,7 +145,7 @@ export function createMepHud({ container = document.body, onCommitDistance, onCo
         lengthValEl.textContent = `${lengthM.toFixed(2)} m`;
       }
 
-      angleValEl.textContent = `${angleDeg.toFixed(1)}°`;
+      angleValEl.textContent = angleLabel || `${angleDeg.toFixed(1)}°`;
       elevValEl.textContent = `${elevationM.toFixed(2)} m`;
 
       // Visual highlight when snapped to standard angle
@@ -130,6 +153,24 @@ export function createMepHud({ container = document.body, onCommitDistance, onCo
         anglePillEl.classList.add('snapped');
       } else {
         anglePillEl.classList.remove('snapped');
+      }
+
+      // Live bending trade metrics pill (NEC Table 2 CLR & Developed Length)
+      if (bendInfo && bendInfo.angle >= 10.0 && bendPillEl && bendValEl) {
+        const clrIn = (bendInfo.clr * 39.3701).toFixed(1);
+        const gainIn = bendInfo.gain ? ` | G: ${(bendInfo.gain * 39.3701).toFixed(1)}"` : '';
+        bendValEl.textContent = `${bendInfo.angle.toFixed(1)}° (CLR: ${clrIn}"${gainIn})`;
+        bendPillEl.style.display = 'inline-flex';
+      } else if (bendPillEl) {
+        bendPillEl.style.display = 'none';
+      }
+
+      // Live code / bender warning pill
+      if (warningText && warningPillEl && warningValEl) {
+        warningValEl.textContent = warningText;
+        warningPillEl.style.display = 'inline-flex';
+      } else if (warningPillEl) {
+        warningPillEl.style.display = 'none';
       }
     },
 

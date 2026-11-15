@@ -19,6 +19,7 @@
 // 9. `model-loader` — needs render callbacks from all panels.
 // 10. `context-menu` — needs selection + appearance fns.
 
+import 'ribbon-chrome/tokens.css';
 import './style.css';
 import * as OBC from '@thatopen/components';
 import { initExcelBridge } from './viewer-socket.js';
@@ -40,6 +41,7 @@ import { initModelLoader } from './ui/model-loader.js';
 import { initViewerChrome } from './ui/viewer-chrome.js';
 import { initContextMenu } from './ui/context-menu.js';
 import { initEscapeHandler } from './ui/escape-handler.js';
+import { initLateralDock } from './ui/lateral-dock.js';
 
 // Legacy export kept for the previous flat `state.js` import surface.
 export { state } from './ui/state.js';
@@ -55,6 +57,10 @@ export async function initApp() {
 
   const ctx = createAppContext();
   api.ctx = ctx;
+  ctx.api = api;
+  if (typeof window !== 'undefined') {
+    window.__TRAY_API__ = api;
+  }
 
   const engine = await createCovillafEngine(dom.container);
   const { components, world, fragments, highlighter, hider } = engine;
@@ -72,6 +78,7 @@ export async function initApp() {
 
   // 1. Viewer chrome (tabs, overlay guard, grid/wireframe/dark/orbit/resize).
   const chrome = initViewerChrome(ctx, dom, api);
+  chrome.setupRibbonShell();
   chrome.setupSidebarTabs();
   chrome.guardOverlays();
 
@@ -84,6 +91,10 @@ export async function initApp() {
   // 3. Selection (registers map helpers, highlight/isolate, zoom, wiring).
   const selection = initSelection(ctx, dom, api);
   selection.wireSelectionEvents();
+
+  // Lateral Dock: Properties Palette & Project Browser (authentic Revit UI)
+  const lateralDock = initLateralDock(ctx, dom, api);
+  api.lateralDock = lateralDock;
 
   // 4. Appearance (needs selection maps; creates the tag-label manager).
   const appearance = initAppearance(ctx, dom, api);
@@ -133,9 +144,15 @@ export async function initApp() {
     refreshValidationReportIfOpen: api.refreshValidationReportIfOpen,
     clearElementProperties: api.clearElementProperties,
     invalidateBatchUndo: api.invalidateBatchUndo,
-  });
+  }, api);
   api.refreshLoadedModelsList = loader.refreshLoadedModelsList;
   api.loadModel = loader.loadModel;
+  api.loadFrag = loader.loadFrag;
+  api.openFragFile = loader.openFragFile;
+  api.saveFragFile = loader.saveFragFile;
+  api.loadSampleModel = loader.loadSampleModel;
+  api.fitModelsToView = loader.fitModelsToView;
+  api.fitModelToView = loader.fitModelToView;
   api.setWireframe = loader.setWireframe;
   loader.wireFileInputs();
 
@@ -161,9 +178,15 @@ export async function initApp() {
   return { ctx, api };
 }
 
-// Start app on load
-window.addEventListener('DOMContentLoaded', () => {
+// Start app on load (guard against already-fired DOMContentLoaded)
+if (document.readyState === 'loading') {
+  window.addEventListener('DOMContentLoaded', () => {
+    initApp().catch((err) => {
+      console.error('Failed to initialize the BIM app:', err);
+    });
+  });
+} else {
   initApp().catch((err) => {
     console.error('Failed to initialize the BIM app:', err);
   });
-});
+}

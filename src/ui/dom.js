@@ -25,12 +25,14 @@ export const btnSidebarToggle = el('sidebar-toggle');
 export const btnLoadSample = el('btn-load-sample');
 export const btnUpload = el('btn-upload');
 export const fileInput = el('file-input');
+export const fragFileInput = el('frag-file-input');
 export const btnResetCamera = el('btn-reset-camera');
 export const btnViewerSettings = el('btn-viewer-settings');
 export const viewerSettingsPanel = el('viewer-settings-panel');
 export const selectionHighlightColorInput = el('selection-highlight-color');
 export const selectionHighlightHex = el('selection-highlight-hex');
 export const toggleGrid = el('toggle-grid');
+export const toggleAxes = el('toggle-axes');
 export const toggleWireframe = el('toggle-wireframe');
 export const toggleDarkMode = el('toggle-darkmode');
 
@@ -169,3 +171,10 @@ export const taggedHighlightHexInput = el('tagged-highlight-hex');
 export const taggedHighlightCountBadge = el('tagged-highlight-count');
 export const toggleFloatingLabels = el('toggle-floating-labels');
 export const toggleFloatingLabelsSidebar = el('toggle-floating-labels-sidebar');
+
+// Routing DOM Elements
+export const btnBuildRoutingGraph = el('btn-build-routing-graph');
+export const btnClearRoutingGraph = el('btn-clear-routing-graph');
+export const btnRouteStart = el('btn-route-start');
+export const btnRouteEnd = el('btn-route-end');
+export const btnCalculateRoute = el('btn-calculate-route');

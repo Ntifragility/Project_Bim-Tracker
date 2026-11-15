@@ -34,6 +34,12 @@ try {
   }
   throw err;
 }
+const origMode = fs.existsSync(DEST) ? fs.statSync(DEST).mode : null;
 fs.mkdirSync(path.dirname(DEST), { recursive: true });
 fs.copyFileSync(SRC, DEST);
+if (origMode !== null) {
+  try {
+    fs.chmodSync(DEST, origMode);
+  } catch {}
+}
 console.log(`viewport-core wasm -> ${path.relative(ROOT, DEST)} (${fs.statSync(DEST).size} bytes)`);

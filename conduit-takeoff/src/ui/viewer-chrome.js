@@ -1,18 +1,23 @@
-// conduit-takeoff/src/ui/viewer-chrome.js — engine bootstrap, chrome, HUD.
+// conduit-takeoff/src/ui/viewer-chrome.js — engine bootstrap, ribbon chrome, HUD.
 //
 // Owns (conduit-ui-split module 8): sidebar tabs/toggle, loading overlay
 // show/hide, status text, cursor coords, `init()` engine bootstrap (single
 // engine instance) + `onStateChange` fan-out to the drawing tool, MEP HUD,
-// viewport controls, and surface picker. Registers `api.showLoading` +
-// `api.hideLoading` on the coordinator.
+// viewport controls, and surface picker.
+// Bootstraps universal Revit-style ribbon via ribbon-chrome and conduit-adapter.
 
 import { createCovillafEngine } from 'viewer-core';
+import { createRibbon } from 'ribbon-chrome';
+import { createConduitRibbonDef } from './conduit-adapter.js';
+import { createLateralDock } from './lateral-dock.js';
 import { createDrawingTool } from '../drawing-tool.js';
 import { createMepHud } from '../mep-hud.js';
 import { createViewportControls } from '../viewport-controls.js';
 import { createSurfacePicker } from '../surface-picker.js';
 
 export function createViewerChrome({ state, els, api }) {
+  let ribbonApi = null;
+
   function showLoading(stage, percent = 0, detail = '') {
     els.loadingOverlay.hidden = false;
     els.loadingStage.textContent = stage;
@@ -24,8 +29,7 @@ export function createViewerChrome({ state, els, api }) {
     els.loadingOverlay.hidden = true;
   }
 
-  // Map each ribbon tab to the dock (sidebar) panel it focuses. The ribbon
-  // adds no commands: proxies below forward clicks to existing handlers.
+  // Map each ribbon tab to the dock (sidebar) panel it focuses.
   const RIBBON_TAB_TO_PANEL = {
     model: 'model',
     trace: 'draw',
@@ -33,20 +37,14 @@ export function createViewerChrome({ state, els, api }) {
     project: null, // Project tab has no dock panel; keep current panel open.
   };
 
-  // Sync one direction of ribbon-tab <-> dock (sidebar) tab selection.
   function setRibbonTab(name) {
-    const tabs = Array.from(document.querySelectorAll('.ribbon-tab-btn'));
-    const panels = Array.from(document.querySelectorAll('.ribbon-panel'));
-    tabs.forEach((t) => {
-      const isSelected = t.dataset.ribbonTab === name;
-      t.classList.toggle('active', isSelected);
-      t.setAttribute('aria-selected', isSelected);
-    });
-    panels.forEach((p) => {
-      p.classList.toggle('active', p.dataset.ribbonPanel === name);
-    });
-    const ribbon = document.getElementById('ribbon');
-    if (ribbon) ribbon.dataset.activeTab = name;
+    if (ribbonApi) {
+      ribbonApi.setTab(name);
+    }
+    setDockPanel(RIBBON_TAB_TO_PANEL[name]);
+    if (name === 'model') api.switchDockTab?.('browser');
+    else if (name === 'trace') api.switchDockTab?.('properties');
+    else if (name === 'quantities') api.switchDockTab?.('schedules');
   }
 
   function setDockPanel(name) {
@@ -59,93 +57,6 @@ export function createViewerChrome({ state, els, api }) {
     els.panels.forEach((p) => {
       p.classList.toggle('active', p.dataset.sidebarPanel === name);
     });
-  }
-
-  function wireRibbonShim() {
-    const ribbonTabs = Array.from(document.querySelectorAll('.ribbon-tab-btn'));
-    if (ribbonTabs.length === 0) return { setRibbonTab };
-    // Resolved lazily: wireChrome() runs before bootEngine() creates the
-    // tool, so read it at event time (main.js call order is untouched).
-    const getTool = () => window.__drawingTool;
-
-    // Tab click: activate the ribbon panel and focus the matching dock
-    // panel (sidebar buttons keep their handlers; this only mirrors state).
-    ribbonTabs.forEach((tab) => {
-      tab.addEventListener('click', () => {
-        const name = tab.dataset.ribbonTab;
-        setRibbonTab(name);
-        setDockPanel(RIBBON_TAB_TO_PANEL[name]);
-      });
-    });
-
-    // Sidebar clicks keep the ribbon in sync (existing handlers untouched).
-    els.tabs.forEach((tab) => {
-      tab.addEventListener('click', () => {
-        const target = tab.dataset.tabTarget;
-        const entry = Object.entries(RIBBON_TAB_TO_PANEL).find(([, panel]) => panel === target);
-        if (entry) setRibbonTab(entry[0]);
-      });
-    });
-
-    // Draw-mode lifecycle events switch the dock to Draw; keep the ribbon
-    // Trace group in view too.
-    const syncTrace = () => setRibbonTab('trace');
-    if (els.btnDrawMode) {
-      els.btnDrawMode.addEventListener('click', () => {
-        if (getTool()?.isDrawingMode) syncTrace();
-      });
-    }
-
-    // Ribbon proxies forward to the real buttons: click for buttons,
-    // click-through + focus for hidden file inputs. Disabled targets stay
-    // disabled (the proxy mirrors the disabled state on init + on change).
-    const proxies = Array.from(document.querySelectorAll('.ribbon-proxy[data-forward]'));
-    const mirrorDisabled = (proxy, target) => {
-      if ('disabled' in target) proxy.disabled = target.disabled;
-      proxy.classList.toggle('active', target.classList.contains('active'));
-      proxy.setAttribute('aria-disabled', target.disabled ? 'true' : 'false');
-    };
-    proxies.forEach((proxy) => {
-      const target = document.getElementById(proxy.dataset.forward);
-      if (!target) return;
-      mirrorDisabled(proxy, target);
-      new MutationObserver(() => mirrorDisabled(proxy, target)).observe(target, {
-        attributes: true,
-        attributeFilter: ['disabled', 'class'],
-      });
-      proxy.addEventListener('click', () => {
-        if (target.disabled) return;
-        if (target.tagName === 'INPUT' && target.type === 'hidden') {
-          target.click();
-          return;
-        }
-        target.click();
-        if (target.tagName === 'INPUT' || target.tagName === 'SELECT') target.focus({ preventScroll: true });
-      });
-    });
-
-    // Keep ribbon Trace proxies' .active state in sync when draw flags
-    // change outside a ribbon click (sidebar clicks, keyboard shortcuts).
-    const getFlag = (id) => {
-      const tool = getTool();
-      if (id === 'btn-draw-mode') return tool?.isDrawingMode;
-      if (id === 'btn-ortho') return tool?.isOrthoActive;
-      if (id === 'btn-perp') return tool?.isPerpendicularActive;
-      return undefined;
-    };
-    const syncProxyActive = () => {
-      proxies.forEach((proxy) => {
-        const flag = getFlag(proxy.dataset.forward);
-        if (flag === undefined) return;
-        const target = document.getElementById(proxy.dataset.forward);
-        proxy.classList.toggle('active', Boolean(flag || target?.classList.contains('active')));
-      });
-    };
-    ['btn-draw-mode', 'btn-ortho', 'btn-perp'].forEach((id) => {
-      document.getElementById(id)?.addEventListener('click', () => queueMicrotask(syncProxyActive));
-    });
-
-    return { setRibbonTab };
   }
 
   // `mepHud` is created inside bootEngine; keep a module-level ref so
@@ -163,7 +74,76 @@ export function createViewerChrome({ state, els, api }) {
   }
 
   function wireChrome() {
-    // Sidebar Tabs Navigation
+    // 1. Mount universal Revit-style ribbon
+    const ribbonHost = document.getElementById('ribbon');
+    if (ribbonHost) {
+      const ctx = {
+        state,
+        els,
+        api,
+        getTool: () => window.__drawingTool,
+      };
+      const def = createConduitRibbonDef(ctx);
+      ribbonApi = createRibbon(ribbonHost, def, ctx);
+      ctx.ribbonApi = ribbonApi;
+      api.ribbonApi = ribbonApi;
+
+      // Status segments binding
+      const segStatus = ribbonHost.querySelector('.rc-status-segment[data-segment-id="status-text"]');
+      if (segStatus) {
+        segStatus.id = 'status-text';
+        els.statusText = segStatus;
+      }
+      const segCoords = ribbonHost.querySelector('.rc-status-segment[data-segment-id="cursor-coords"]');
+      if (segCoords) {
+        segCoords.id = 'cursor-coords';
+        els.cursorCoords = segCoords;
+      }
+
+      // Re-map elements in els to newly created ribbon controls
+      const topSelect = ribbonHost.querySelector('#top-diameter-select');
+      if (topSelect) els.topDiameterSelect = topSelect;
+      const topElev = ribbonHost.querySelector('#top-elevation-input');
+      if (topElev) els.topElevationInput = topElev;
+      const btnPick = ribbonHost.querySelector('#btn-pick-elevation');
+      if (btnPick) els.btnPickElevation = btnPick;
+      const topSys = ribbonHost.querySelector('#top-system-select');
+      if (topSys) els.topSystemSelect = topSys;
+      const btnWorkplane = ribbonHost.querySelector('#btn-toggle-workplane');
+      if (btnWorkplane) els.btnToggleWorkplane = btnWorkplane;
+      const btnAutoriser = ribbonHost.querySelector('#btn-toggle-autoriser');
+      if (btnAutoriser) els.btnToggleAutoriser = btnAutoriser;
+
+      // Add static hint to Takeoff group in Quantities tab per spec
+      const quantitiesPanel = ribbonHost.querySelector('#rc-panel-quantities');
+      if (quantitiesPanel) {
+        const groupContent = quantitiesPanel.querySelector('.rc-group-content');
+        if (groupContent && !groupContent.querySelector('.rc-hint')) {
+          const hint = document.createElement('span');
+          hint.className = 'rc-hint';
+          hint.textContent = 'Waste %, summary and runs live in the dock panel ▶';
+          groupContent.appendChild(hint);
+        }
+      }
+
+      // Ribbon tab click syncs dock panel and lateral dock tab
+      ribbonHost.querySelectorAll('.rc-tab').forEach((tabBtn) => {
+        tabBtn.addEventListener('click', () => {
+          const tabId = tabBtn.id.replace('rc-tab-', '');
+          if (tabId === 'model') api.switchDockTab?.('browser');
+          else if (tabId === 'trace') api.switchDockTab?.('properties');
+          else if (tabId === 'quantities') api.switchDockTab?.('schedules');
+          const panel = RIBBON_TAB_TO_PANEL[tabId];
+          if (panel) setDockPanel(panel);
+        });
+      });
+    }
+
+    // 2. Lateral Dock (Revit Properties Palette & Project Browser)
+    const lateralDock = createLateralDock({ state, els, api });
+    api.lateralDock = lateralDock;
+
+    // 3. Sidebar Tabs Navigation (syncs ribbon tab)
     els.tabs.forEach((tab) => {
       tab.addEventListener('click', () => {
         const target = tab.dataset.tabTarget;
@@ -175,24 +155,26 @@ export function createViewerChrome({ state, els, api }) {
         els.panels.forEach((p) => {
           p.classList.toggle('active', p.dataset.sidebarPanel === target);
         });
+        const entry = Object.entries(RIBBON_TAB_TO_PANEL).find(([, p]) => p === target);
+        if (entry && ribbonApi) {
+          ribbonApi.setTab(entry[0]);
+        }
       });
     });
 
-    wireRibbonShim();
-
-    // Sidebar Toggle
+    // 4. Sidebar Toggle
     els.sidebarToggle.addEventListener('click', () => {
       els.sidebar.classList.toggle('collapsed');
-      // Drive the ribbon offset below (the ribbon precedes the dock in the
-      // DOM, so a body class is used instead of a sibling selector).
       document.body.classList.toggle('sidebar-is-collapsed', els.sidebar.classList.contains('collapsed'));
     });
 
-    // Update undo/redo state listeners
+    // 5. Update undo/redo state listeners
     state.commandStack.subscribe(() => {
       api.updateUndoRedoButtons();
       api.renderRunsList(window.__drawingTool);
       api.renderSummary();
+      api.updatePropertiesPalette?.(state.selectedRunId);
+      ribbonApi?.refresh();
     });
   }
 
@@ -224,14 +206,35 @@ export function createViewerChrome({ state, els, api }) {
           if (els.btnPickElevation) {
             els.btnPickElevation.classList.remove('active');
           }
-          els.statusText.textContent = `Sampled elevation from model: ${change.elevationPicked.toFixed(2)} m`;
+          if (els.statusText) {
+            els.statusText.textContent = `Sampled elevation from model: ${change.elevationPicked.toFixed(2)} m`;
+          }
+          ribbonApi?.setStatus('status-text', `Sampled elevation from model: ${change.elevationPicked.toFixed(2)} m`);
+          ribbonApi?.refresh();
         }
 
         if (change.cursor) {
-          els.cursorCoords.textContent = `X: ${change.cursor.x.toFixed(2)}  Y: ${change.cursor.y.toFixed(2)}  Z: ${change.cursor.z.toFixed(2)}${change.snapped ? ' (SNAP)' : ''}`;
+          let coordsText = '';
+          if (state.coordinateMode === 'shared' && engine?.coordinates?.toOriginal) {
+            const orig = engine.coordinates.toOriginal(change.cursor);
+            coordsText = `E: ${orig.x.toFixed(2)} m  N: ${orig.y.toFixed(2)} m  Elev: ${orig.z.toFixed(2)} m (IFC)${change.snapped ? ' (SNAP)' : ''}`;
+          } else {
+            coordsText = `X: ${change.cursor.x.toFixed(2)} m  Y: ${change.cursor.z.toFixed(2)} m  Elev: ${change.cursor.y.toFixed(2)} m (Local)${change.snapped ? ' (SNAP)' : ''}`;
+          }
+          if (els.cursorCoords) {
+            els.cursorCoords.textContent = coordsText;
+          }
+          ribbonApi?.setStatus('cursor-coords', coordsText);
         }
 
         if (change.activePoints && change.activePoints.length > 0) {
+          // Show contextual tab Modify | Run
+          ribbonApi?.showContextual('modify-run');
+
+          // Sync lateral dock Properties Palette with in-progress run
+          api.switchDockTab?.('properties');
+          api.updatePropertiesPalette?.(null, { points: change.activePoints, liveSegment: change.liveSegment });
+
           // Automatically switch to draw tab if still on model tab
           const activeTab = document.querySelector('.tab-nav-btn.active');
           if (activeTab && activeTab.dataset.tabTarget === 'model') {
@@ -261,7 +264,9 @@ export function createViewerChrome({ state, els, api }) {
           if (els.topRunSticks) els.topRunSticks.textContent = `${sticks}`;
 
           if (change.isVertical) {
-            els.statusText.textContent = `⊥ Perpendicular to XY (Vertical riser): Height Δ = ${(change.liveSegment || 0).toFixed(2)} m`;
+            const verticalStatus = `⊥ Perpendicular to XY (Vertical riser): Height Δ = ${(change.liveSegment || 0).toFixed(2)} m`;
+            if (els.statusText) els.statusText.textContent = verticalStatus;
+            ribbonApi?.setStatus('status-text', verticalStatus);
           }
 
           // Live floating Revit MEP HUD
@@ -274,13 +279,25 @@ export function createViewerChrome({ state, els, api }) {
               const dz = targetPt.z - lastPt.z;
               angleDeg = ((Math.atan2(dz, dx) * 180 / Math.PI) + 360) % 360;
             }
+            const activeAngle = change.liveBendAngle !== undefined && change.activePoints.length >= 2 ? change.liveBendAngle : angleDeg;
+            const angleLabel = change.cartesianHeading
+              ? `${activeAngle.toFixed(1)}° ${change.cartesianHeading}`
+              : `${activeAngle.toFixed(1)}°`;
+
             mepHud.update({
               screenX: change.screenPos.x,
               screenY: change.screenPos.y,
               lengthM: change.liveSegment || 0,
-              angleDeg,
-              isAngleSnapped: !!change.isVertical || (angleDeg % 45 < 2 || angleDeg % 45 > 43),
+              angleDeg: activeAngle,
+              angleLabel,
+              isAngleSnapped: Boolean(change.isAngleSnapped || change.isVertical || (angleDeg % 45 < 2 || angleDeg % 45 > 43)),
               elevationM: drawingTool.activeElevation,
+              bendInfo: change.liveBendAngle >= 10.0 && change.activePoints.length >= 2 ? {
+                angle: change.liveBendAngle,
+                clr: change.bendRadius || 0.1143,
+                gain: change.gain,
+              } : null,
+              warningText: change.necWarning || null,
               visible: true,
             });
           }
@@ -290,6 +307,12 @@ export function createViewerChrome({ state, els, api }) {
           els.activeRunActions.hidden = true;
           els.verticalStepControls.hidden = true;
           if (els.topActiveRunSummary) els.topActiveRunSummary.hidden = true;
+
+          // If not in drawing mode and no run selected, hide contextual tab
+          if (!drawingTool.isDrawingMode && !state.selectedRunId) {
+            ribbonApi?.hideContextual();
+            api.updatePropertiesPalette?.(null);
+          }
         }
 
         api.updateUndoRedoButtons(drawingTool);
@@ -297,7 +320,10 @@ export function createViewerChrome({ state, els, api }) {
         if (change.networkUpdated) {
           api.renderRunsList(drawingTool);
           api.renderSummary();
+          api.updatePropertiesPalette?.(state.selectedRunId);
         }
+
+        ribbonApi?.refresh();
       },
     });
 
@@ -312,6 +338,10 @@ export function createViewerChrome({ state, els, api }) {
     window.__drawingTool = drawingTool;
     drawingTool.attach(els.viewerContainer);
 
+    // Initial render of lateral dock components
+    api.updatePropertiesPalette?.();
+    api.updateProjectBrowserTree?.();
+
     return { engine, drawingTool };
   }
 
@@ -319,6 +349,9 @@ export function createViewerChrome({ state, els, api }) {
   api.hideLoading = hideLoading;
   api.isHudTyping = isHudTyping;
   api.setRibbonTab = setRibbonTab;
+  api.showContextual = (id = 'modify-run') => ribbonApi?.showContextual(id);
+  api.hideContextual = () => ribbonApi?.hideContextual();
+  api.refreshRibbon = () => ribbonApi?.refresh();
 
   return { showLoading, hideLoading, isHudTyping, setRibbonTab, wireChrome, bootEngine };
 }

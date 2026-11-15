@@ -42,6 +42,17 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
   const grid = grids.create(world);
   if (grid.three) grid.three.position.y = -0.01;
 
+  // 3D XYZ World Coordinate Axes Helper (World Origin: X=Red, Y=Green, Z=Blue)
+  const axesHelper = new THREE.AxesHelper(16);
+  axesHelper.name = "CovillafWorldAxesHelper";
+  axesHelper.renderOrder = 45;
+  if (axesHelper.material) {
+    axesHelper.material.depthTest = false;
+    axesHelper.material.transparent = true;
+    axesHelper.material.opacity = 0.55;
+  }
+  world.scene.three.add(axesHelper);
+
   const fragments = components.get(OBC.FragmentsManager);
   try {
     fragments.init("/covillaf/fragments/worker.mjs");
@@ -558,6 +569,32 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
       }
     },
 
+    async loadFrag(buffer, name = "model.frag") {
+      const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+      const model = await fragments.core.load(bytes, {
+        modelId: name,
+        camera: world.camera.three,
+      });
+      if (model?.object && !world.scene.three.children.includes(model.object)) {
+        world.scene.three.add(model.object);
+      }
+      return model;
+    },
+
+    async exportFrag(modelOrId) {
+      let targetModel = modelOrId;
+      if (typeof modelOrId === "string") {
+        targetModel = fragments.core.models.get(modelOrId);
+      }
+      if (!targetModel) {
+        targetModel = [...fragments.core.models.list.values()][0];
+      }
+      if (!targetModel) {
+        throw new Error("No loaded model found to export as .frag");
+      }
+      return await targetModel.getBuffer(false);
+    },
+
     setSelectionColor(color) {
       const normalized = /^#[0-9a-fA-F]{6}$/.test(color) ? color.toLowerCase() : "#6366f1";
       highlighter.styles.set("select", {
@@ -596,8 +633,26 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
       });
     },
 
+    axes: {
+      get helper() {
+        return axesHelper;
+      },
+      get visible() {
+        return axesHelper.visible;
+      },
+      set visible(val) {
+        axesHelper.visible = Boolean(val);
+      },
+      toggle() {
+        axesHelper.visible = !axesHelper.visible;
+        return axesHelper.visible;
+      },
+    },
+
     dispose() {
       autoOrbit.dispose();
+      axesHelper.geometry?.dispose();
+      axesHelper.material?.dispose();
       components.dispose();
     },
   };
