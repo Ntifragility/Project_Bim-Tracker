@@ -135,6 +135,45 @@ export function initEditing(ctx, dom, api) {
     return staged;
   }
 
+  // Local export wrapper: validates, then delegates to `src/ui/unified-export.js`.
+  function exportUnifiedIfcLocal() {
+    if (ctx.loadedModels.length === 0) {
+      alert('No loaded IFC models to export.');
+      return;
+    }
+
+    const validation = api.runTagValidation?.() || { valid: true, counts: { errors: 0 } };
+    if (ctx.tagAssignments.size > 0 && !validation.valid) {
+      const msg = `Export blocked: resolve ${validation.counts.errors} tag validation error${validation.counts.errors === 1 ? '' : 's'} in the Tagging Workbench first.`;
+      api.updateTagAssignmentUi?.(msg, 'warning');
+      alert(msg);
+      return;
+    }
+
+    const { exportedModels, appliedEditsCount, appliedTagsCount, skippedCount } = runUnifiedExport({
+      loadedModels: ctx.loadedModels,
+      pendingIfcPropertyEdits: ctx.pendingIfcPropertyEdits,
+      pendingIfcColorEdits: ctx.pendingIfcColorEdits,
+      tagAssignments: ctx.tagAssignments,
+    });
+
+    if (exportedModels === 0) {
+      const msg = 'No staged property edits, colors, or tag assignments to export.';
+      renderPendingIfcEdits(msg);
+      api.updateTagAssignmentUi?.(msg, 'warning');
+      alert(msg);
+      return;
+    }
+
+    const details = [];
+    if (appliedEditsCount > 0) details.push(`${appliedEditsCount} property/color edit(s)`);
+    if (appliedTagsCount > 0) details.push(`${appliedTagsCount} tag assignment(s)`);
+    const summaryMsg = `Successfully exported ${details.join(' and ')} across ${exportedModels} new IFC file(s)${skippedCount ? ` (${skippedCount} skipped)` : ''}.`;
+
+    renderPendingIfcEdits(summaryMsg);
+    api.updateTagAssignmentUi?.(summaryMsg, skippedCount ? 'warning' : 'success');
+  }
+
   function wireEditingControls() {
     replaceMetadataRows([
       { property: 'WBS', valueType: 'IFCIDENTIFIER', value: '' },
@@ -287,46 +326,6 @@ export function initEditing(ctx, dom, api) {
       ctx.pendingIfcColorEdits.clear();
       renderPendingIfcEdits('All pending IFC edits cleared.');
     });
-
-    // Local export wrapper: validates, then delegates to `src/ui/unified-export.js`.
-    // (The wrapper keeps the imported name; see the shadowing note below.)
-    function exportUnifiedIfcLocal() {
-      if (ctx.loadedModels.length === 0) {
-        alert('No loaded IFC models to export.');
-        return;
-      }
-
-      const validation = api.runTagValidation();
-      if (ctx.tagAssignments.size > 0 && !validation.valid) {
-        const msg = `Export blocked: resolve ${validation.counts.errors} tag validation error${validation.counts.errors === 1 ? '' : 's'} in the Tagging Workbench first.`;
-        api.updateTagAssignmentUi(msg, 'warning');
-        alert(msg);
-        return;
-      }
-
-      const { exportedModels, appliedEditsCount, appliedTagsCount, skippedCount } = runUnifiedExport({
-        loadedModels: ctx.loadedModels,
-        pendingIfcPropertyEdits: ctx.pendingIfcPropertyEdits,
-        pendingIfcColorEdits: ctx.pendingIfcColorEdits,
-        tagAssignments: ctx.tagAssignments,
-      });
-
-      if (exportedModels === 0) {
-        const msg = 'No staged property edits, colors, or tag assignments to export.';
-        renderPendingIfcEdits(msg);
-        api.updateTagAssignmentUi(msg, 'warning');
-        alert(msg);
-        return;
-      }
-
-      const details = [];
-      if (appliedEditsCount > 0) details.push(`${appliedEditsCount} property/color edit(s)`);
-      if (appliedTagsCount > 0) details.push(`${appliedTagsCount} tag assignment(s)`);
-      const summaryMsg = `Successfully exported ${details.join(' and ')} across ${exportedModels} new IFC file(s)${skippedCount ? ` (${skippedCount} skipped)` : ''}.`;
-
-      renderPendingIfcEdits(summaryMsg);
-      api.updateTagAssignmentUi(summaryMsg, skippedCount ? 'warning' : 'success');
-    }
 
     if (dom.btnExportAllIfc) {
       dom.btnExportAllIfc.addEventListener('click', exportUnifiedIfcLocal);
