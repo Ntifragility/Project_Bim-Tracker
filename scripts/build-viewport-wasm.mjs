@@ -43,4 +43,3 @@ if (origMode !== null) {
   } catch {}
 }
 console.log(`viewport-core wasm -> ${path.relative(ROOT, DEST)} (${fs.statSync(DEST).size} bytes)`);
-console.log("===WASM_B64_START===" + fs.readFileSync(DEST).toString("base64") + "===WASM_B64_END===");
