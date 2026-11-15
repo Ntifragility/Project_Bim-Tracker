@@ -292,6 +292,12 @@ export function createViewerChrome({ state, els, api }) {
               angleLabel,
               isAngleSnapped: Boolean(change.isAngleSnapped || change.isVertical || (angleDeg % 45 < 2 || angleDeg % 45 > 43)),
               elevationM: drawingTool.activeElevation,
+              bendInfo: change.liveBendAngle >= 10.0 && change.activePoints.length >= 2 ? {
+                angle: change.liveBendAngle,
+                clr: change.bendRadius || 0.1143,
+                gain: change.gain,
+              } : null,
+              warningText: change.necWarning || null,
               visible: true,
             });
           }

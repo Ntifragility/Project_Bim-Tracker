@@ -1290,6 +1290,21 @@ body.sidebar-is-collapsed .revit-options-bar {
   color: #6ee7b7;
 }
 
+.mep-hud-bend {
+  border-color: rgba(245, 158, 11, 0.45);
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.12);
+  font-weight: 500;
+}
+
+.mep-hud-warning {
+  border-color: #ef4444;
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.22);
+  font-weight: 600;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.35);
+}
+
 .mep-hud-label {
   font-size: 0.68rem;
   color: var(--text-muted);

@@ -156,30 +156,42 @@ export function solveElbowFitting(p1, pCorner, p2, bendRadius, arcSegments = 8) 
 
   // Normal to the plane of the bend
   const bendNormal = v3.normalize(v3.cross(u, v));
+  const bendAngleRad = bendAngleDeg * DEG_TO_RAD;
 
-  // Generate smooth discrete arc points from pStart to pEnd
+  // Generate smooth discrete arc points from pStart to pEnd using Spherical Linear Interpolation (SLERP)
+  // SLERP guarantees constant radius R from center and monotonic progression without cross-product sign ambiguity.
   const arcPoints = [];
+  const sinTotalAngle = Math.sin(bendAngleRad);
+
   for (let i = 0; i <= arcSegments; i++) {
     const fraction = i / arcSegments;
-    const currentAngleRad = fraction * (bendAngleDeg * DEG_TO_RAD);
-
-    // Rodrigues' rotation formula: rotate rStart around bendNormal towards rEnd
-    // But since it's planar in the circle:
-    // Slerp or orthogonal basis in circle plane:
-    const vOrtho = v3.normalize(v3.cross(bendNormal, v3.normalize(rStart)));
-    const ptOnCircle = v3.add(
-      center,
-      v3.add(
-        v3.scale(v3.normalize(rStart), effectiveRadius * Math.cos(currentAngleRad)),
-        v3.scale(vOrtho, effectiveRadius * Math.sin(currentAngleRad))
-      )
-    );
-    arcPoints.push(ptOnCircle);
+    if (i === 0) {
+      arcPoints.push(pStart);
+    } else if (i === arcSegments) {
+      arcPoints.push(pEnd);
+    } else if (Math.abs(sinTotalAngle) < EPSILON) {
+      // Degenerate/near-collinear guard: linear interpolation
+      arcPoints.push(v3.lerp(pStart, pEnd, fraction));
+    } else {
+      const s0 = Math.sin((1 - fraction) * bendAngleRad) / sinTotalAngle;
+      const s1 = Math.sin(fraction * bendAngleRad) / sinTotalAngle;
+      const rInterp = v3.add(v3.scale(rStart, s0), v3.scale(rEnd, s1));
+      arcPoints.push(v3.add(center, rInterp));
+    }
   }
 
-  // Ensure exact endpoints
-  arcPoints[0] = pStart;
-  arcPoints[arcPoints.length - 1] = pEnd;
+  // Real-world trade metrics (NEC Table 2 & Benfield bending formulas)
+  // Developed Length: actual physical length of conduit consumed along the curved arc
+  const developedLength = effectiveRadius * bendAngleRad;
+
+  // Gain: difference in length between two straight tangent legs and the curved arc (2T - L_arc)
+  const gain = Math.max(0, (2 * effectiveTangent) - developedLength);
+
+  // Minimum straight clamp distance required for bender hook engagement (approx 50mm / 2 inches)
+  const minClampDistance = 0.05;
+  const hasSufficientClamp =
+    len1 >= effectiveTangent + minClampDistance &&
+    len2 >= effectiveTangent + minClampDistance;
 
   return {
     isValid: true,
@@ -191,6 +203,10 @@ export function solveElbowFitting(p1, pCorner, p2, bendRadius, arcSegments = 8) 
     tangentEnd: pEnd,
     center,
     arcPoints,
+    developedLength,
+    gain,
+    hasSufficientClamp,
+    minClampDistance,
   };
 }
 

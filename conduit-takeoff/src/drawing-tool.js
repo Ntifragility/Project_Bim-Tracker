@@ -215,6 +215,15 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
   let lastNdc = new THREE.Vector2();
   let lastScreenPos = { x: 0, y: 0 };
   let selectedRunId = null;
+  let isShiftPressed = false;
+
+  // Track shift key for free-angle vs magnetic snapping
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Shift') isShiftPressed = true;
+  });
+  window.addEventListener('keyup', (e) => {
+    if (e.key === 'Shift') isShiftPressed = false;
+  });
 
   function syncViewportMode() {
     const mode = isPickElevationActive ? 'pick-elevation' : (isDrawingMode ? 'drawing' : 'navigate');
@@ -373,25 +382,198 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
     return mesh;
   }
 
-  // Round tube between two points. opacity < 1 is the live preview.
-  function createCylinderSegment(p1, p2, radius, colorHex, selected = false, opacity = 1) {
-    const v1 = new THREE.Vector3(p1.x, p1.y, p1.z);
-    const v2 = new THREE.Vector3(p2.x, p2.y, p2.z);
-    const dist = v1.distanceTo(v2);
-    if (dist < 0.001) return null;
+  /**
+   * Generates a continuous, seamless tubular mesh along an arbitrary 3D centerline path
+   * using Rotation Minimizing Frames (RMF / Parallel Transport).
+   * Eliminates facet creases, mismatched flat cylinder caps, and lighting seams.
+   */
+  function buildConduitTubeGeometry(centerlinePoints, radius, radialSegments = 20) {
+    if (!centerlinePoints || centerlinePoints.length < 2) return null;
 
-    const cylGeo = new THREE.CylinderGeometry(radius, radius, dist, 20);
-    const cylMat = conduitMaterial(colorHex, selected);
-    if (opacity < 1) {
-      cylMat.transparent = true;
-      cylMat.opacity = opacity;
-      cylMat.depthWrite = false;
+    // Filter consecutive points closer than 0.5 mm
+    const pts = [centerlinePoints[0]];
+    for (let i = 1; i < centerlinePoints.length; i++) {
+      const pPrev = pts[pts.length - 1];
+      const pCurr = centerlinePoints[i];
+      const d = Math.hypot(pCurr.x - pPrev.x, pCurr.y - pPrev.y, pCurr.z - pPrev.z);
+      if (d > 0.0005) {
+        pts.push(pCurr);
+      }
     }
-    const mesh = new THREE.Mesh(cylGeo, cylMat);
-    mesh.position.copy(v1).add(v2).multiplyScalar(0.5);
-    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), v2.clone().sub(v1).normalize());
+    if (pts.length < 2) return null;
+
+    const numRings = pts.length;
+    // Compute unit tangents at each centerline ring
+    const tangents = [];
+    for (let i = 0; i < numRings; i++) {
+      const t = new THREE.Vector3();
+      if (i === 0) {
+        t.set(pts[1].x - pts[0].x, pts[1].y - pts[0].y, pts[1].z - pts[0].z).normalize();
+      } else if (i === numRings - 1) {
+        t.set(pts[numRings - 1].x - pts[numRings - 2].x, pts[numRings - 1].y - pts[numRings - 2].y, pts[numRings - 1].z - pts[numRings - 2].z).normalize();
+      } else {
+        t.set(pts[i + 1].x - pts[i - 1].x, pts[i + 1].y - pts[i - 1].y, pts[i + 1].z - pts[i - 1].z).normalize();
+      }
+      if (t.lengthSq() < 1e-8) {
+        t.set(0, 0, 1);
+      }
+      tangents.push(t);
+    }
+
+    // Parallel transport frame (Rotation Minimizing Frame - RMF) to eliminate twisting
+    const normals = [new THREE.Vector3()];
+    const binormals = [new THREE.Vector3()];
+
+    // Initial normal: orthogonal to tangent[0]
+    const initialT = tangents[0];
+    const upRef = Math.abs(initialT.y) > 0.92 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+    normals[0].crossVectors(initialT, upRef).normalize();
+    binormals[0].crossVectors(initialT, normals[0]).normalize();
+
+    // Propagate frame via double reflection RMF (Wang et al. 2008)
+    for (let i = 1; i < numRings; i++) {
+      const prevT = tangents[i - 1];
+      const currT = tangents[i];
+      const prevN = normals[i - 1];
+
+      const v1 = new THREE.Vector3(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y, pts[i].z - pts[i - 1].z);
+      const c1 = v1.dot(v1);
+      if (c1 < 1e-10) {
+        normals.push(prevN.clone());
+        binormals.push(binormals[i - 1].clone());
+        continue;
+      }
+
+      const rL = prevN.clone().sub(v1.clone().multiplyScalar((2 / c1) * v1.dot(prevN)));
+      const tL = prevT.clone().sub(v1.clone().multiplyScalar((2 / c1) * v1.dot(prevT)));
+      const v2 = currT.clone().sub(tL);
+      const c2 = v2.dot(v2);
+
+      let nextN;
+      if (c2 < 1e-10) {
+        nextN = rL;
+      } else {
+        nextN = rL.clone().sub(v2.clone().multiplyScalar((2 / c2) * v2.dot(rL)));
+      }
+      nextN.normalize();
+      normals.push(nextN);
+      binormals.push(new THREE.Vector3().crossVectors(currT, nextN).normalize());
+    }
+
+    const positions = [];
+    const vertexNormals = [];
+    const indices = [];
+
+    // Generate ring vertices with shared normals
+    for (let i = 0; i < numRings; i++) {
+      const c = pts[i];
+      const n = normals[i];
+      const b = binormals[i];
+
+      for (let j = 0; j < radialSegments; j++) {
+        const theta = (j / radialSegments) * Math.PI * 2;
+        const cos = Math.cos(theta);
+        const sin = Math.sin(theta);
+
+        const vx = n.x * cos + b.x * sin;
+        const vy = n.y * cos + b.y * sin;
+        const vz = n.z * cos + b.z * sin;
+
+        positions.push(c.x + radius * vx, c.y + radius * vy, c.z + radius * vz);
+        vertexNormals.push(vx, vy, vz);
+      }
+    }
+
+    // Connect adjacent rings with quads (2 triangles)
+    for (let i = 0; i < numRings - 1; i++) {
+      const ringA = i * radialSegments;
+      const ringB = (i + 1) * radialSegments;
+
+      for (let j = 0; j < radialSegments; j++) {
+        const nextJ = (j + 1) % radialSegments;
+        const a = ringA + j;
+        const b = ringA + nextJ;
+        const c = ringB + nextJ;
+        const d = ringB + j;
+
+        indices.push(a, b, c);
+        indices.push(a, c, d);
+      }
+    }
+
+    // Flat end caps at extremities
+    const capStartIdx = positions.length / 3;
+    positions.push(pts[0].x, pts[0].y, pts[0].z);
+    vertexNormals.push(-tangents[0].x, -tangents[0].y, -tangents[0].z);
+    for (let j = 0; j < radialSegments; j++) {
+      const nextJ = (j + 1) % radialSegments;
+      indices.push(capStartIdx, nextJ, j);
+    }
+
+    const capEndIdx = positions.length / 3;
+    positions.push(pts[numRings - 1].x, pts[numRings - 1].y, pts[numRings - 1].z);
+    vertexNormals.push(tangents[numRings - 1].x, tangents[numRings - 1].y, tangents[numRings - 1].z);
+    const lastRing = (numRings - 1) * radialSegments;
+    for (let j = 0; j < radialSegments; j++) {
+      const nextJ = (j + 1) % radialSegments;
+      indices.push(capEndIdx, lastRing + j, lastRing + nextJ);
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(vertexNormals, 3));
+    geo.setIndex(indices);
+    return geo;
+  }
+
+  // Create a continuous conduit mesh along arbitrary points
+  function createContinuousConduitMesh(centerlinePoints, radius, colorHex, selected = false, opacity = 1) {
+    const geo = buildConduitTubeGeometry(centerlinePoints, radius, 20);
+    if (!geo) return null;
+    const mat = conduitMaterial(colorHex, selected);
+    if (opacity < 1) {
+      mat.transparent = true;
+      mat.opacity = opacity;
+      mat.depthWrite = false;
+    }
+    const mesh = new THREE.Mesh(geo, mat);
     mesh.renderOrder = opacity < 1 ? 940 : 950;
     return mesh;
+  }
+
+  // Single segment wrapper for compatibility
+  function createCylinderSegment(p1, p2, radius, colorHex, selected = false, opacity = 1) {
+    return createContinuousConduitMesh([p1, p2], radius, colorHex, selected, opacity);
+  }
+
+  // Extracts full continuous centerline of straight segments + smooth circular SLERP elbows
+  function extractRunCenterline(points, minRadiusM) {
+    if (!points || points.length < 2) return [];
+    if (points.length === 2) return [points[0], points[1]];
+
+    const centerline = [points[0]];
+
+    for (let i = 1; i < points.length - 1; i++) {
+      const pPrev = points[i - 1];
+      const pCurr = points[i];
+      const pNext = points[i + 1];
+      const angle = calculateBendAngle(pPrev, pCurr, pNext);
+      const hasTurn = angle >= 10.0;
+      const elbow = hasTurn ? solveElbowFitting(pPrev, pCurr, pNext, minRadiusM, 12) : null;
+
+      if (elbow && elbow.isValid && !elbow.isStraight) {
+        centerline.push(elbow.tangentStart);
+        for (let a = 1; a < elbow.arcPoints.length - 1; a++) {
+          centerline.push(elbow.arcPoints[a]);
+        }
+        centerline.push(elbow.tangentEnd);
+      } else {
+        centerline.push(pCurr);
+      }
+    }
+
+    centerline.push(points[points.length - 1]);
+    return centerline;
   }
 
   // Update visual representation of the active in-progress run
@@ -447,9 +629,9 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
     } else if (targetPt && !cursorOnSurface) {
       vertGuideLine.visible = false;
       const bendResult = constrainConduitBendAngle(prevPt, lastPt, targetPt, {
-        allowedAnglesDeg: [0, 45, 90],
-        toleranceDeg: 18.0,
-        enforceSpecificAngles: isSpecificAnglesEnforced,
+        allowedAnglesDeg: [0, 15, 22.5, 30, 45, 60, 90],
+        toleranceDeg: isShiftPressed ? 0 : 4.0,
+        enforceSpecificAngles: !isShiftPressed && isSpecificAnglesEnforced,
         cartesianReference: true,
         allow45: true,
         minTangentM: minRadiusM * 0.4,
@@ -489,61 +671,73 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
       angleGuideLine.visible = false;
     }
 
-    // Render active run geometry + live elbow arc preview
+    // Render active run geometry + live continuous elbow arc preview
+    let liveElbow = null;
     if (activeRunPoints.length >= 2) {
-      let currentStart = activeRunPoints[0];
+      const hasTurn = targetPt && prevPt && liveBendAngle >= 10.0;
+      liveElbow = hasTurn ? solveElbowFitting(prevPt, lastPt, targetPt, minRadiusM, 12) : null;
+      const committedEnd = (liveElbow && liveElbow.isValid && !liveElbow.isStraight) ? liveElbow.tangentStart : lastPt;
+
+      // Build continuous centerline for committed run up to committedEnd
+      const committedCenterline = [activeRunPoints[0]];
       for (let i = 1; i < activeRunPoints.length - 1; i++) {
         const pP = activeRunPoints[i - 1];
         const pC = activeRunPoints[i];
         const pN = activeRunPoints[i + 1];
         const angle = calculateBendAngle(pP, pC, pN);
-        const hasTurn = angle >= 10.0;
-        const elbow = hasTurn ? solveElbowFitting(pP, pC, pN, minRadiusM, 8) : null;
+        const elbow = angle >= 10.0 ? solveElbowFitting(pP, pC, pN, minRadiusM, 12) : null;
         if (elbow && elbow.isValid && !elbow.isStraight) {
-          const straightCyl = createCylinderSegment(currentStart, elbow.tangentStart, pipeRadius, colorHex);
-          if (straightCyl) activeRunGroup.add(straightCyl);
-          for (let a = 0; a < elbow.arcPoints.length - 1; a++) {
-            const arcCyl = createCylinderSegment(elbow.arcPoints[a], elbow.arcPoints[a + 1], pipeRadius, colorHex);
-            if (arcCyl) activeRunGroup.add(arcCyl);
+          committedCenterline.push(elbow.tangentStart);
+          for (let a = 1; a < elbow.arcPoints.length - 1; a++) {
+            committedCenterline.push(elbow.arcPoints[a]);
           }
-          currentStart = elbow.tangentEnd;
+          committedCenterline.push(elbow.tangentEnd);
         } else {
-          const straightCyl = createCylinderSegment(currentStart, pC, pipeRadius, colorHex);
-          if (straightCyl) activeRunGroup.add(straightCyl);
-          currentStart = pC;
+          committedCenterline.push(pC);
         }
       }
+      committedCenterline.push(committedEnd);
 
-      // Live elbow at the active corner (between prevPt, lastPt, and targetPt)
-      if (targetPt && prevPt) {
-        // Only generate an elbow if there is an actual turn! (liveBendAngle >= 15°)
-        const hasTurn = liveBendAngle >= 15.0;
-        const liveElbow = hasTurn ? solveElbowFitting(prevPt, lastPt, targetPt, minRadiusM, 8) : null;
-        if (liveElbow && liveElbow.isValid && !liveElbow.isStraight) {
-          const straightIn = createCylinderSegment(currentStart, liveElbow.tangentStart, pipeRadius, colorHex);
-          if (straightIn) activeRunGroup.add(straightIn);
+      if (committedCenterline.length >= 2) {
+        const solidMesh = createContinuousConduitMesh(committedCenterline, pipeRadius, colorHex, false, 1.0);
+        if (solidMesh) activeRunGroup.add(solidMesh);
+      }
 
-          for (let a = 0; a < liveElbow.arcPoints.length - 1; a++) {
-            const arcCyl = createCylinderSegment(liveElbow.arcPoints[a], liveElbow.arcPoints[a + 1], pipeRadius, colorHex, false, 0.75);
-            if (arcCyl) activeRunGroup.add(arcCyl);
-          }
+      // Live elbow and rubberband preview
+      if (liveElbow && liveElbow.isValid && !liveElbow.isStraight) {
+        // Continuous smooth circular arc for the live bend preview
+        const arcMesh = createContinuousConduitMesh(liveElbow.arcPoints, pipeRadius, colorHex, false, 0.85);
+        if (arcMesh) activeRunGroup.add(arcMesh);
 
-          const rubberCyl = createCylinderSegment(liveElbow.tangentEnd, targetPt, pipeRadius, isTangentValid ? colorHex : '#ef4444', false, 0.45);
-          if (rubberCyl) activeRunGroup.add(rubberCyl);
-        } else {
-          const straightIn = createCylinderSegment(currentStart, lastPt, pipeRadius, colorHex);
-          if (straightIn) activeRunGroup.add(straightIn);
-
-          const rubberCyl = createCylinderSegment(lastPt, targetPt, pipeRadius, isTangentValid ? colorHex : '#ef4444', false, 0.45);
-          if (rubberCyl) activeRunGroup.add(rubberCyl);
+        if (targetPt) {
+          const rubberMesh = createContinuousConduitMesh(
+            [liveElbow.tangentEnd, targetPt],
+            pipeRadius,
+            isTangentValid ? colorHex : '#ef4444',
+            false,
+            0.45
+          );
+          if (rubberMesh) activeRunGroup.add(rubberMesh);
         }
-      } else {
-        const straightIn = createCylinderSegment(currentStart, lastPt, pipeRadius, colorHex);
-        if (straightIn) activeRunGroup.add(straightIn);
+      } else if (targetPt) {
+        const rubberMesh = createContinuousConduitMesh(
+          [lastPt, targetPt],
+          pipeRadius,
+          isTangentValid ? colorHex : '#ef4444',
+          false,
+          0.45
+        );
+        if (rubberMesh) activeRunGroup.add(rubberMesh);
       }
     } else if (activeRunPoints.length === 1 && targetPt) {
-      const rubberCyl = createCylinderSegment(lastPt, targetPt, pipeRadius, colorHex, false, 0.45);
-      if (rubberCyl) activeRunGroup.add(rubberCyl);
+      const rubberMesh = createContinuousConduitMesh(
+        [lastPt, targetPt],
+        pipeRadius,
+        colorHex,
+        false,
+        0.45
+      );
+      if (rubberMesh) activeRunGroup.add(rubberMesh);
     }
 
     if (targetPt) {
@@ -571,6 +765,10 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
         cartesianHeading,
         isAngleSnapped,
         isTangentValid,
+        bendRadius: minRadiusM,
+        developedLength: liveElbow?.developedLength,
+        gain: liveElbow?.gain,
+        hasSufficientClamp: liveElbow ? liveElbow.hasSufficientClamp : true,
       };
     } else {
       rubberbandLine.visible = false;
@@ -579,7 +777,7 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
     }
   }
 
-  // Render all finished conduit runs stored in the network
+  // Render all finished conduit runs stored in the network as continuous seamless tubular lofts
   function renderCompletedRuns(network) {
     while (completedRunsGroup.children.length > 0) {
       const child = completedRunsGroup.children[0];
@@ -605,55 +803,16 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
       const colorHex = diameterRegistry.getColor(run.size) || '#f59e0b';
       const isSelected = run.id === selectedRunId;
       const pipeRadius = tradeRadiusM(run.size);
-
       const minRadiusM = getNecBendRadiusM(run.size);
 
-      if (points.length === 2) {
-        // Straight single-stick or straight run
-        const cyl = createCylinderSegment(points[0], points[1], pipeRadius, colorHex, isSelected);
-        if (cyl) runGroup.add(cyl);
-        runGroup.add(createJoint(points[0], pipeRadius, colorHex, isSelected));
-        runGroup.add(createJoint(points[1], pipeRadius, colorHex, isSelected));
-      } else {
-        // Multi-segment run with field-bent circular arcs (NEC Table 2 compliant)
-        let currentStart = points[0];
+      // Build continuous centerline polyline (straight segments + circular SLERP elbow arcs)
+      const centerline = extractRunCenterline(points, minRadiusM);
+      const pipeMesh = createContinuousConduitMesh(centerline, pipeRadius, colorHex, isSelected);
+      if (pipeMesh) runGroup.add(pipeMesh);
 
-        for (let i = 1; i < points.length - 1; i++) {
-          const pPrev = points[i - 1];
-          const pCurr = points[i];
-          const pNext = points[i + 1];
-          const angle = calculateBendAngle(pPrev, pCurr, pNext);
-          const hasTurn = angle >= 10.0;
-          const elbow = hasTurn ? solveElbowFitting(pPrev, pCurr, pNext, minRadiusM, 10) : null;
-
-          if (elbow && elbow.isValid && !elbow.isStraight) {
-            // 1. Straight conduit up to the bend's tangent start point
-            const straightCyl = createCylinderSegment(currentStart, elbow.tangentStart, pipeRadius, colorHex, isSelected);
-            if (straightCyl) runGroup.add(straightCyl);
-
-            // 2. Smooth curved arc representing the field bend in the pipe
-            for (let a = 0; a < elbow.arcPoints.length - 1; a++) {
-              const arcCyl = createCylinderSegment(elbow.arcPoints[a], elbow.arcPoints[a + 1], pipeRadius, colorHex, isSelected);
-              if (arcCyl) runGroup.add(arcCyl);
-            }
-
-            currentStart = elbow.tangentEnd;
-          } else {
-            // Collinear or near-zero angle: straight segment through corner
-            const straightCyl = createCylinderSegment(currentStart, pCurr, pipeRadius, colorHex, isSelected);
-            if (straightCyl) runGroup.add(straightCyl);
-            currentStart = pCurr;
-          }
-        }
-
-        // Final straight conduit segment to terminal endpoint
-        const finalCyl = createCylinderSegment(currentStart, points[points.length - 1], pipeRadius, colorHex, isSelected);
-        if (finalCyl) runGroup.add(finalCyl);
-
-        // Terminal joints only at the two extremities of the run
-        runGroup.add(createJoint(points[0], pipeRadius, colorHex, isSelected));
-        runGroup.add(createJoint(points[points.length - 1], pipeRadius, colorHex, isSelected));
-      }
+      // Terminal joints only at the two extremities of the run
+      runGroup.add(createJoint(points[0], pipeRadius, colorHex, isSelected));
+      runGroup.add(createJoint(points[points.length - 1], pipeRadius, colorHex, isSelected));
 
       completedRunsGroup.add(runGroup);
     }
@@ -832,7 +991,9 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
   // Pointer move handler. Orbit and pan come from the Rust core and must not
   // drop the rubberband or be treated as a conduit click.
   async function handlePointerMove(event) {
+    isShiftPressed = Boolean(event.shiftKey);
     lastNdc = getCanvasNdc(event);
+    lastScreenPos = { x: event.clientX, y: event.clientY };
     const decision = viewport.pointerMove(event, cameraView());
     if (decision.action === 'orbit' || decision.action === 'pan') {
       handleCameraUpdate();
@@ -908,9 +1069,15 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
           liveBendAngle: Math.round(liveBendAngle * 10) / 10,
           cumulativeRunBends: Math.round(cumulativeRunBends * 10) / 10,
           exceedsNec360,
+          bendRadius: previewInfo?.bendRadius,
+          developedLength: previewInfo?.developedLength,
+          gain: previewInfo?.gain,
+          hasSufficientClamp: previewInfo?.hasSufficientClamp !== false,
           necWarning: exceedsNec360
             ? `⚠️ NEC 358.26 Warning: Total bends (${cumulativeRunBends.toFixed(0)}°) exceed 360° maximum between pull points!`
-            : null,
+            : (previewInfo?.hasSufficientClamp === false && liveBendAngle >= 10.0
+              ? `⚠️ Bending Warning: Insufficient straight clamp distance for bender shoe (< 50mm)`
+              : null),
         });
       }
     } else {
@@ -968,9 +1135,9 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
           const prevPt = activeRunPoints.length >= 2 ? activeRunPoints[activeRunPoints.length - 2] : null;
           const minRadiusM = getNecBendRadiusM(diameterRegistry.getSelected()?.label);
           const bendResult = constrainConduitBendAngle(prevPt, lastPt, target, {
-            allowedAnglesDeg: [0, 45, 90],
-            toleranceDeg: 18.0,
-            enforceSpecificAngles: isSpecificAnglesEnforced || isOrthoActive,
+            allowedAnglesDeg: [0, 15, 22.5, 30, 45, 60, 90],
+            toleranceDeg: isShiftPressed ? 0 : 4.0,
+            enforceSpecificAngles: !isShiftPressed && (isSpecificAnglesEnforced || isOrthoActive),
             cartesianReference: true,
             allow45: true,
             minTangentM: minRadiusM * 0.4,

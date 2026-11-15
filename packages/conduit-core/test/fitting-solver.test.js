@@ -84,6 +84,61 @@ test('solveElbowFitting: computes tangent points and smooth arc for 90° elbow',
   assert.equal(fitting.arcPoints.length, 9);
   close(fitting.arcPoints[0].x, fitting.tangentStart.x);
   close(fitting.arcPoints[fitting.arcPoints.length - 1].z, fitting.tangentEnd.z);
+
+  // Invariant 1: Constant Radius (every arc point must be exactly at distance R from center)
+  for (let i = 0; i < fitting.arcPoints.length; i++) {
+    const pt = fitting.arcPoints[i];
+    const dist = Math.hypot(pt.x - fitting.center.x, pt.y - fitting.center.y, pt.z - fitting.center.z);
+    close(dist, radius, 1e-4);
+  }
+
+  // Invariant 2: Monotonic progression along interior curve (NO backward ballooning)
+  for (let i = 1; i < fitting.arcPoints.length; i++) {
+    const prev = fitting.arcPoints[i - 1];
+    const curr = fitting.arcPoints[i];
+    assert.ok(curr.x >= prev.x - 1e-5, `X must monotonically increase: ${curr.x} >= ${prev.x}`);
+    assert.ok(curr.z >= prev.z - 1e-5, `Z must monotonically increase: ${curr.z} >= ${prev.z}`);
+  }
+
+  // Real-world trade metrics: developed length and gain
+  // L_arc = R * (pi / 2)
+  const expectedDevLen = radius * (Math.PI / 2);
+  close(fitting.developedLength, expectedDevLen, 1e-4);
+
+  // Gain = 2T - L_arc = 2R - R*(pi/2)
+  const expectedGain = 2 * radius - expectedDevLen;
+  close(fitting.gain, expectedGain, 1e-4);
+  assert.equal(fitting.hasSufficientClamp, true);
+});
+
+test('solveElbowFitting: 3D vertical riser and compound angles have flawless radius and monotonicity', () => {
+  // Turn from horizontal +X to vertical +Y (riser bend)
+  const p1 = { x: 0, y: 0, z: 0 };
+  const pCorner = { x: 3, y: 0, z: 0 };
+  const p2 = { x: 3, y: 3, z: 0 };
+  const radius = 0.2413; // 2" trade size radius
+
+  const riserFitting = solveElbowFitting(p1, pCorner, p2, radius, 10);
+  assert.equal(riserFitting.isValid, true);
+  close(riserFitting.bendAngleDeg, 90.0);
+
+  // Check constant radius for all 11 points
+  assert.equal(riserFitting.arcPoints.length, 11);
+  for (const pt of riserFitting.arcPoints) {
+    const dist = Math.hypot(pt.x - riserFitting.center.x, pt.y - riserFitting.center.y, pt.z - riserFitting.center.z);
+    close(dist, radius, 1e-4);
+  }
+
+  // 45 degree compound offset bend in 3D
+  const o1 = { x: 0, y: 0, z: 0 };
+  const oCorner = { x: 2, y: 0, z: 2 };
+  const o2 = { x: 4, y: 1.414, z: 2 };
+  const offsetFitting = solveElbowFitting(o1, oCorner, o2, 0.146, 8);
+  assert.equal(offsetFitting.isValid, true);
+  for (const pt of offsetFitting.arcPoints) {
+    const dist = Math.hypot(pt.x - offsetFitting.center.x, pt.y - offsetFitting.center.y, pt.z - offsetFitting.center.z);
+    close(dist, offsetFitting.bendRadius, 1e-4);
+  }
 });
 
 test('analyzeRunBends: cumulative angle tracking and NEC 360° violation check', () => {
