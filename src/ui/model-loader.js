@@ -18,7 +18,7 @@ import { formatBytes, showLoader, updateLoader, hideLoader } from './helpers.js'
  *   refreshLoadedModelsList (bound by the caller), clearElementProperties,
  *   invalidateBatchUndo, renderPendingTrayDeletions-free `onUnloadModel`
  */
-export function initModelLoader(ctx, dom, hooks) {
+export function initModelLoader(ctx, dom, hooks, api = {}) {
   // Helper: Fit camera to all visible models or a single model
   function fitModelsToView(modelsToFit = null) {
     const { world } = ctx;
@@ -68,6 +68,7 @@ export function initModelLoader(ctx, dom, hooks) {
     if (ctx.loadedModels.length === 0) {
       if (modelsPlaceholder) modelsPlaceholder.style.display = 'block';
       loadedModelsList.style.display = 'none';
+      hooks.updateProjectBrowser?.() || ctx.api?.updateProjectBrowser?.();
       return;
     }
 
@@ -209,6 +210,8 @@ export function initModelLoader(ctx, dom, hooks) {
 
       dom.loadedModelsList.appendChild(li);
     });
+
+    hooks.updateProjectBrowser?.() || ctx.api?.updateProjectBrowser?.();
   }
 
   // Loader function
@@ -293,6 +296,103 @@ export function initModelLoader(ctx, dom, hooks) {
       updateLoader(dom, `Error loading model: ${err.message}`, 0);
       setTimeout(() => hideLoader(dom), 3000);
     }
+  }
+
+  // Optimized binary .frag cache loader
+  async function loadFrag(buffer, name, sizeFormatted) {
+    showLoader(dom, 'Loading Cache', `Streaming binary fragments for '${name}'...`, 30);
+
+    // Check if the model with the same name is already loaded to avoid collisions
+    if (ctx.loadedModels.some((m) => m.name === name)) {
+      let baseName = name;
+      let extension = '';
+      const dotIndex = name.lastIndexOf('.');
+      if (dotIndex !== -1) {
+        baseName = name.substring(0, dotIndex);
+        extension = name.substring(dotIndex);
+      }
+      let counter = 1;
+      while (ctx.loadedModels.some((m) => m.name === `${baseName} (${counter})${extension}`)) {
+        counter++;
+      }
+      name = `${baseName} (${counter})${extension}`;
+    }
+
+    try {
+      const model = await ctx.engine.loadFrag(buffer, name);
+      if (!model) {
+        throw new Error('Parsed .frag cache is empty or invalid.');
+      }
+
+      ctx.activeModel = model;
+      const modelObject = model.object || model;
+
+      // Add to scene if not already added
+      if (modelObject && !ctx.world.scene.three.children.includes(modelObject)) {
+        ctx.world.scene.three.add(modelObject);
+      }
+
+      // Create model entry
+      const modelEntry = {
+        uuid: model.uuid || Math.random().toString(36).substring(7),
+        name,
+        size: sizeFormatted || formatBytes(buffer.byteLength),
+        model,
+        sourceIfcBytes: null,
+        existingProjectTags: new Map(),
+        visible: true,
+      };
+
+      ctx.loadedModels.push(modelEntry);
+      hooks.renderExcelTable?.();
+      hooks.renderTraySystemManager?.();
+      hooks.refreshValidationReportIfOpen?.();
+
+      fitModelToView(model);
+      setWireframeForModel(model, ctx.isWireframe);
+      refreshLoadedModelsList();
+      hooks.clearElementProperties?.();
+
+      hideLoader(dom);
+      console.log(`Optimized cache '${name}' loaded instantaneously.`);
+      return model;
+    } catch (err) {
+      console.error('Error loading .frag model:', err);
+      updateLoader(dom, `Error loading cache: ${err.message}`, 0);
+      setTimeout(() => hideLoader(dom), 3000);
+    }
+  }
+
+  async function saveFragFile() {
+    if (!ctx.activeModel && ctx.loadedModels.length === 0) {
+      alert('Please load a model first before saving as .frag cache.');
+      return;
+    }
+    const targetModel = ctx.activeModel || ctx.loadedModels[0]?.model;
+    const modelEntry = ctx.loadedModels.find((m) => m.model === targetModel) || ctx.loadedModels[0];
+    showLoader(dom, 'Generating Cache', 'Exporting optimized .frag FlatBuffers…', 30);
+    try {
+      const buffer = await ctx.engine.exportFrag(targetModel);
+      const base = (modelEntry?.name || 'model').replace(/\.(ifc|frag)$/i, '');
+      const filename = `${base}.frag`;
+      const blob = new Blob([buffer], { type: 'application/octet-stream' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      hideLoader(dom);
+      console.log(`Saved optimized cache to ${filename} (${formatBytes(buffer.byteLength)})`);
+    } catch (err) {
+      console.error('[Cable Tray] Error exporting .frag cache:', err);
+      updateLoader(dom, `Error saving cache: ${err.message}`, 0);
+      setTimeout(() => hideLoader(dom), 3000);
+    }
+  }
+
+  function openFragFile() {
+    const input = dom.fragFileInput || document.getElementById('frag-file-input');
+    input?.click();
   }
 
   // Helper: Unload a single model
@@ -390,29 +490,31 @@ export function initModelLoader(ctx, dom, hooks) {
     ctx.engine.setWireframe(ctx.isWireframe);
   }
 
+  async function loadSampleModel() {
+    const url = 'https://raw.githubusercontent.com/andrewisen/bim-whale-ifc-samples/main/BasicHouse/IFC/BasicHouse.ifc';
+    showLoader(dom, 'Downloading Sample', 'Fetching BasicHouse.ifc from remote repository...', 10);
+
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Failed to download sample: HTTP ${response.status}`);
+      }
+
+      updateLoader(dom, 'Reading sample data...', 20);
+      const data = await response.arrayBuffer();
+      const buffer = new Uint8Array(data);
+
+      await loadModel(buffer, 'BasicHouse.ifc', formatBytes(data.byteLength));
+    } catch (err) {
+      console.error(err);
+      updateLoader(dom, `Download failed: ${err.message}`, 0);
+      setTimeout(() => hideLoader(dom), 3000);
+    }
+  }
+
   function wireFileInputs() {
     // Listeners: Sidebar controls
-    dom.btnLoadSample.addEventListener('click', async () => {
-      const url = 'https://raw.githubusercontent.com/andrewisen/bim-whale-ifc-samples/main/BasicHouse/IFC/BasicHouse.ifc';
-      showLoader(dom, 'Downloading Sample', 'Fetching BasicHouse.ifc from remote repository...', 10);
-
-      try {
-        const response = await fetch(url);
-        if (!response.ok) {
-          throw new Error(`Failed to download sample: HTTP ${response.status}`);
-        }
-
-        updateLoader(dom, 'Reading sample data...', 20);
-        const data = await response.arrayBuffer();
-        const buffer = new Uint8Array(data);
-
-        await loadModel(buffer, 'BasicHouse.ifc', formatBytes(data.byteLength));
-      } catch (err) {
-        console.error(err);
-        updateLoader(dom, `Download failed: ${err.message}`, 0);
-        setTimeout(() => hideLoader(dom), 3000);
-      }
-    });
+    dom.btnLoadSample.addEventListener('click', loadSampleModel);
 
     dom.btnUpload.addEventListener('click', () => {
       dom.fileInput.click();
@@ -437,7 +539,11 @@ export function initModelLoader(ctx, dom, hooks) {
             const data = e.target.result;
             const buffer = new Uint8Array(data);
             try {
-              await loadModel(buffer, file.name, formatBytes(file.size));
+              if (file.name.toLowerCase().endsWith('.frag')) {
+                await loadFrag(buffer, file.name, formatBytes(file.size));
+              } else {
+                await loadModel(buffer, file.name, formatBytes(file.size));
+              }
             } catch (err) {
               console.error(`Failed to load ${file.name}:`, err);
             }
@@ -452,21 +558,45 @@ export function initModelLoader(ctx, dom, hooks) {
       }
     });
 
+    if (dom.fragFileInput) {
+      dom.fragFileInput.addEventListener('change', async (event) => {
+        const files = Array.from(event.target.files);
+        if (files.length === 0) return;
+        dom.fragFileInput.value = '';
+        for (const file of files) {
+          showLoader(dom, 'Reading File', `Reading ${file.name}...`, 10);
+          try {
+            const data = await file.arrayBuffer();
+            const buffer = new Uint8Array(data);
+            await loadFrag(buffer, file.name, formatBytes(file.size));
+          } catch (err) {
+            console.error(`Failed to load ${file.name}:`, err);
+          }
+        }
+      });
+    }
+
     // Optional deep link for local review and automated validation:
-    // ?ifc=/path/to/model.ifc
-    const linkedIfcUrl = new URLSearchParams(window.location.search).get('ifc');
+    // ?ifc=/path/to/model.ifc or ?frag=/path/to/model.frag
+    const linkedIfcUrl = new URLSearchParams(window.location.search).get('ifc') || new URLSearchParams(window.location.search).get('frag');
     if (linkedIfcUrl) {
-      const linkedName = decodeURIComponent(linkedIfcUrl.split('/').pop() || 'LinkedModel.ifc');
-      showLoader(dom, 'Loading Linked IFC', `Fetching ${linkedName}...`, 10);
+      const isFrag = linkedIfcUrl.toLowerCase().endsWith('.frag');
+      const linkedName = decodeURIComponent(linkedIfcUrl.split('/').pop() || (isFrag ? 'LinkedModel.frag' : 'LinkedModel.ifc'));
+      showLoader(dom, isFrag ? 'Loading Linked Cache' : 'Loading Linked IFC', `Fetching ${linkedName}...`, 10);
       (async () => {
         try {
           const response = await fetch(linkedIfcUrl);
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           const data = await response.arrayBuffer();
-          await loadModel(new Uint8Array(data), linkedName, formatBytes(data.byteLength));
+          const buffer = new Uint8Array(data);
+          if (isFrag) {
+            await loadFrag(buffer, linkedName, formatBytes(data.byteLength));
+          } else {
+            await loadModel(buffer, linkedName, formatBytes(data.byteLength));
+          }
         } catch (error) {
-          console.error('[Linked IFC] Load failed:', error);
-          updateLoader(dom, `Linked IFC failed: ${error.message}`, 0);
+          console.error('[Linked Model] Load failed:', error);
+          updateLoader(dom, `Linked model failed: ${error.message}`, 0);
           setTimeout(() => hideLoader(dom), 3000);
         }
       })();
@@ -477,8 +607,21 @@ export function initModelLoader(ctx, dom, hooks) {
     });
   }
 
+  if (api) {
+    api.loadSampleModel = loadSampleModel;
+    api.fitModelsToView = fitModelsToView;
+    api.fitModelToView = fitModelToView;
+    api.loadFrag = loadFrag;
+    api.openFragFile = openFragFile;
+    api.saveFragFile = saveFragFile;
+  }
+
   return {
     loadModel,
+    loadFrag,
+    loadSampleModel,
+    openFragFile,
+    saveFragFile,
     unloadModel,
     clearActiveModel,
     fitModelsToView,

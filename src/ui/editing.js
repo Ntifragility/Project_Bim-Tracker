@@ -135,25 +135,64 @@ export function initEditing(ctx, dom, api) {
     return staged;
   }
 
+  // Local export wrapper: validates, then delegates to `src/ui/unified-export.js`.
+  function exportUnifiedIfcLocal() {
+    if (ctx.loadedModels.length === 0) {
+      alert('No loaded IFC models to export.');
+      return;
+    }
+
+    const validation = api.runTagValidation?.() || { valid: true, counts: { errors: 0 } };
+    if (ctx.tagAssignments.size > 0 && !validation.valid) {
+      const msg = `Export blocked: resolve ${validation.counts.errors} tag validation error${validation.counts.errors === 1 ? '' : 's'} in the Tagging Workbench first.`;
+      api.updateTagAssignmentUi?.(msg, 'warning');
+      alert(msg);
+      return;
+    }
+
+    const { exportedModels, appliedEditsCount, appliedTagsCount, skippedCount } = runUnifiedExport({
+      loadedModels: ctx.loadedModels,
+      pendingIfcPropertyEdits: ctx.pendingIfcPropertyEdits,
+      pendingIfcColorEdits: ctx.pendingIfcColorEdits,
+      tagAssignments: ctx.tagAssignments,
+    });
+
+    if (exportedModels === 0) {
+      const msg = 'No staged property edits, colors, or tag assignments to export.';
+      renderPendingIfcEdits(msg);
+      api.updateTagAssignmentUi?.(msg, 'warning');
+      alert(msg);
+      return;
+    }
+
+    const details = [];
+    if (appliedEditsCount > 0) details.push(`${appliedEditsCount} property/color edit(s)`);
+    if (appliedTagsCount > 0) details.push(`${appliedTagsCount} tag assignment(s)`);
+    const summaryMsg = `Successfully exported ${details.join(' and ')} across ${exportedModels} new IFC file(s)${skippedCount ? ` (${skippedCount} skipped)` : ''}.`;
+
+    renderPendingIfcEdits(summaryMsg);
+    api.updateTagAssignmentUi?.(summaryMsg, skippedCount ? 'warning' : 'success');
+  }
+
   function wireEditingControls() {
     replaceMetadataRows([
       { property: 'WBS', valueType: 'IFCIDENTIFIER', value: '' },
       { property: 'SOP', valueType: 'IFCIDENTIFIER', value: '' },
     ]);
 
-    dom.btnAddMetadataRow.addEventListener('click', () => {
+    dom.btnAddMetadataRow?.addEventListener('click', () => {
       createMetadataRow();
       dom.metadataRows.querySelector('.metadata-row:last-child .metadata-property')?.focus();
     });
 
-    dom.btnCopyPreviousMetadata.addEventListener('click', () => {
+    dom.btnCopyPreviousMetadata?.addEventListener('click', () => {
       if (!ctx.lastMetadataTemplate) return;
       dom.metadataPset.value = ctx.lastMetadataTemplate.propertySet;
       replaceMetadataRows(ctx.lastMetadataTemplate.rows);
       renderPendingIfcEdits(`Copied the previous metadata template for element #${ctx.selectedIfcElement?.localId || '-'}.`);
     });
 
-    dom.btnStageMetadata.addEventListener('click', () => {
+    dom.btnStageMetadata?.addEventListener('click', () => {
       const targetElements = (ctx.multiSelectionElements.length >= 2 && ctx.multiSelectionIndex === -1)
         ? ctx.multiSelectionElements
         : (ctx.multiSelectionIndex >= 0 && ctx.multiSelectionElements[ctx.multiSelectionIndex])
@@ -223,7 +262,7 @@ export function initEditing(ctx, dom, api) {
       renderPendingIfcEdits(`Staged ${countLabel}.`);
     });
 
-    dom.btnStagePropertyEdit.addEventListener('click', () => {
+    dom.btnStagePropertyEdit?.addEventListener('click', () => {
       const targetElements = (ctx.multiSelectionElements.length >= 2 && ctx.multiSelectionIndex === -1)
         ? ctx.multiSelectionElements
         : (ctx.multiSelectionIndex >= 0 && ctx.multiSelectionElements[ctx.multiSelectionIndex])
@@ -263,7 +302,7 @@ export function initEditing(ctx, dom, api) {
       renderPendingIfcEdits(`Staged ${countLabel}.`);
     });
 
-    dom.btnStageColorEdit.addEventListener('click', async () => {
+    dom.btnStageColorEdit?.addEventListener('click', async () => {
       const color = normalizeHexColor(dom.ifcEditColor.value);
       if (!color) {
         renderPendingIfcEdits('Choose a valid RGB color.');
@@ -282,51 +321,11 @@ export function initEditing(ctx, dom, api) {
       await api.applyAppearanceColorToCurrentSelection();
     });
 
-    dom.btnClearIfcEdits.addEventListener('click', () => {
+    dom.btnClearIfcEdits?.addEventListener('click', () => {
       ctx.pendingIfcPropertyEdits.clear();
       ctx.pendingIfcColorEdits.clear();
       renderPendingIfcEdits('All pending IFC edits cleared.');
     });
-
-    // Local export wrapper: validates, then delegates to `src/ui/unified-export.js`.
-    // (The wrapper keeps the imported name; see the shadowing note below.)
-    function exportUnifiedIfcLocal() {
-      if (ctx.loadedModels.length === 0) {
-        alert('No loaded IFC models to export.');
-        return;
-      }
-
-      const validation = api.runTagValidation();
-      if (ctx.tagAssignments.size > 0 && !validation.valid) {
-        const msg = `Export blocked: resolve ${validation.counts.errors} tag validation error${validation.counts.errors === 1 ? '' : 's'} in the Tagging Workbench first.`;
-        api.updateTagAssignmentUi(msg, 'warning');
-        alert(msg);
-        return;
-      }
-
-      const { exportedModels, appliedEditsCount, appliedTagsCount, skippedCount } = runUnifiedExport({
-        loadedModels: ctx.loadedModels,
-        pendingIfcPropertyEdits: ctx.pendingIfcPropertyEdits,
-        pendingIfcColorEdits: ctx.pendingIfcColorEdits,
-        tagAssignments: ctx.tagAssignments,
-      });
-
-      if (exportedModels === 0) {
-        const msg = 'No staged property edits, colors, or tag assignments to export.';
-        renderPendingIfcEdits(msg);
-        api.updateTagAssignmentUi(msg, 'warning');
-        alert(msg);
-        return;
-      }
-
-      const details = [];
-      if (appliedEditsCount > 0) details.push(`${appliedEditsCount} property/color edit(s)`);
-      if (appliedTagsCount > 0) details.push(`${appliedTagsCount} tag assignment(s)`);
-      const summaryMsg = `Successfully exported ${details.join(' and ')} across ${exportedModels} new IFC file(s)${skippedCount ? ` (${skippedCount} skipped)` : ''}.`;
-
-      renderPendingIfcEdits(summaryMsg);
-      api.updateTagAssignmentUi(summaryMsg, skippedCount ? 'warning' : 'success');
-    }
 
     if (dom.btnExportAllIfc) {
       dom.btnExportAllIfc.addEventListener('click', exportUnifiedIfcLocal);
@@ -341,6 +340,7 @@ export function initEditing(ctx, dom, api) {
 
   api.renderPendingIfcEdits = renderPendingIfcEdits;
   api.stageColorForSelection = stageColorForSelection;
+  api.exportUnifiedIfcLocal = exportUnifiedIfcLocal;
 
   return {
     createMetadataRow,

@@ -16,6 +16,24 @@ import {
   appendToRun,
   deleteRun,
   nodeById,
+  solveElbowFitting,
+  getNecBendRadiusM,
+  analyzeRunBends,
+  calculateBendAngle,
+  snapToStandardBendAngle,
+  constrainConduitBendAngle,
+  STANDARD_BEND_ANGLES,
+  NEC_CONDUIT_ARTICLES,
+  extractRunCenterline,
+  generateParallelConduitRack,
+  solveBoxOffset,
+  solveThreePointSaddle,
+  solveFourPointSaddle,
+  solveRollingOffset,
+  justifyToCenterline,
+  JUSTIFICATION_MODES,
+  generateRunSpoolSheet,
+  generateSpoolSheetCsv,
 } from '@conduit-core';
 
 export function createDrawingTool({ engine, commandStack, diameterRegistry, onStateChange, viewport, surfacePicker }) {
@@ -42,6 +60,28 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
   workPlaneGrid.material.transparent = true;
   workPlaneGrid.renderOrder = 50;
   overlayGroup.add(workPlaneGrid);
+
+  // XYZ Work Plane Grid Axes Helper (Red = X, Green = Y/Elevation, Blue = Z)
+  const workPlaneAxes = new THREE.AxesHelper(10);
+  workPlaneAxes.name = 'WorkPlaneAxesHelper';
+  workPlaneAxes.position.y = 2.8;
+  workPlaneAxes.renderOrder = 55;
+  workPlaneAxes.material.depthTest = false;
+  workPlaneAxes.material.transparent = true;
+  workPlaneAxes.material.opacity = 0.85;
+  overlayGroup.add(workPlaneAxes);
+
+  // XYZ World Origin Axes Helper (Red = X, Green = Y, Blue = Z)
+  let worldAxesHelper = engine?.axes?.helper;
+  if (!worldAxesHelper) {
+    worldAxesHelper = new THREE.AxesHelper(16);
+    worldAxesHelper.name = 'WorldAxesHelper';
+    worldAxesHelper.renderOrder = 45;
+    worldAxesHelper.material.depthTest = false;
+    worldAxesHelper.material.transparent = true;
+    worldAxesHelper.material.opacity = 0.5;
+    overlayGroup.add(worldAxesHelper);
+  }
 
   // Snap Indicator Dot
   const snapDotGeo = new THREE.SphereGeometry(0.045, 16, 16);
@@ -154,10 +194,28 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
   vertGuideLine.visible = false;
   overlayGroup.add(vertGuideLine);
 
+  // Revit-Style Polar Angle Snap Guide Ray
+  const angleGuideGeo = new THREE.BufferGeometry();
+  angleGuideGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+  const angleGuideMat = new THREE.LineDashedMaterial({
+    color: 0x00ffff,
+    dashSize: 0.25,
+    gapSize: 0.12,
+    linewidth: 2,
+    depthTest: false,
+    transparent: true,
+    opacity: 0.85,
+  });
+  const angleGuideLine = new THREE.Line(angleGuideGeo, angleGuideMat);
+  angleGuideLine.renderOrder = 997;
+  angleGuideLine.visible = false;
+  overlayGroup.add(angleGuideLine);
+
   // Routing State
   let isDrawingMode = false;
   let isOrthoActive = false;
   let isPerpendicularActive = false;
+  let isSpecificAnglesEnforced = true; // Revit MEP default: enforce specific standard bend angles
   let isPickElevationActive = false;
   let autoRiserEnabled = true;
   let activeElevation = 2.8; // Metres above 0
@@ -167,6 +225,16 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
   let lastNdc = new THREE.Vector2();
   let lastScreenPos = { x: 0, y: 0 };
   let selectedRunId = null;
+  let isShiftPressed = false;
+  let activeJustification = JUSTIFICATION_MODES.CENTER;
+
+  // Track shift key for free-angle vs magnetic snapping
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Shift') isShiftPressed = true;
+  });
+  window.addEventListener('keyup', (e) => {
+    if (e.key === 'Shift') isShiftPressed = false;
+  });
 
   function syncViewportMode() {
     const mode = isPickElevationActive ? 'pick-elevation' : (isDrawingMode ? 'drawing' : 'navigate');
@@ -325,25 +393,198 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
     return mesh;
   }
 
-  // Round tube between two points. opacity < 1 is the live preview.
-  function createCylinderSegment(p1, p2, radius, colorHex, selected = false, opacity = 1) {
-    const v1 = new THREE.Vector3(p1.x, p1.y, p1.z);
-    const v2 = new THREE.Vector3(p2.x, p2.y, p2.z);
-    const dist = v1.distanceTo(v2);
-    if (dist < 0.001) return null;
+  /**
+   * Generates a continuous, seamless tubular mesh along an arbitrary 3D centerline path
+   * using Rotation Minimizing Frames (RMF / Parallel Transport).
+   * Eliminates facet creases, mismatched flat cylinder caps, and lighting seams.
+   */
+  function buildConduitTubeGeometry(centerlinePoints, radius, radialSegments = 20) {
+    if (!centerlinePoints || centerlinePoints.length < 2) return null;
 
-    const cylGeo = new THREE.CylinderGeometry(radius, radius, dist, 20);
-    const cylMat = conduitMaterial(colorHex, selected);
-    if (opacity < 1) {
-      cylMat.transparent = true;
-      cylMat.opacity = opacity;
-      cylMat.depthWrite = false;
+    // Filter consecutive points closer than 0.5 mm
+    const pts = [centerlinePoints[0]];
+    for (let i = 1; i < centerlinePoints.length; i++) {
+      const pPrev = pts[pts.length - 1];
+      const pCurr = centerlinePoints[i];
+      const d = Math.hypot(pCurr.x - pPrev.x, pCurr.y - pPrev.y, pCurr.z - pPrev.z);
+      if (d > 0.0005) {
+        pts.push(pCurr);
+      }
     }
-    const mesh = new THREE.Mesh(cylGeo, cylMat);
-    mesh.position.copy(v1).add(v2).multiplyScalar(0.5);
-    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), v2.clone().sub(v1).normalize());
+    if (pts.length < 2) return null;
+
+    const numRings = pts.length;
+    // Compute unit tangents at each centerline ring
+    const tangents = [];
+    for (let i = 0; i < numRings; i++) {
+      const t = new THREE.Vector3();
+      if (i === 0) {
+        t.set(pts[1].x - pts[0].x, pts[1].y - pts[0].y, pts[1].z - pts[0].z).normalize();
+      } else if (i === numRings - 1) {
+        t.set(pts[numRings - 1].x - pts[numRings - 2].x, pts[numRings - 1].y - pts[numRings - 2].y, pts[numRings - 1].z - pts[numRings - 2].z).normalize();
+      } else {
+        t.set(pts[i + 1].x - pts[i - 1].x, pts[i + 1].y - pts[i - 1].y, pts[i + 1].z - pts[i - 1].z).normalize();
+      }
+      if (t.lengthSq() < 1e-8) {
+        t.set(0, 0, 1);
+      }
+      tangents.push(t);
+    }
+
+    // Parallel transport frame (Rotation Minimizing Frame - RMF) to eliminate twisting
+    const normals = [new THREE.Vector3()];
+    const binormals = [new THREE.Vector3()];
+
+    // Initial normal: orthogonal to tangent[0]
+    const initialT = tangents[0];
+    const upRef = Math.abs(initialT.y) > 0.92 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+    normals[0].crossVectors(initialT, upRef).normalize();
+    binormals[0].crossVectors(initialT, normals[0]).normalize();
+
+    // Propagate frame via double reflection RMF (Wang et al. 2008)
+    for (let i = 1; i < numRings; i++) {
+      const prevT = tangents[i - 1];
+      const currT = tangents[i];
+      const prevN = normals[i - 1];
+
+      const v1 = new THREE.Vector3(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y, pts[i].z - pts[i - 1].z);
+      const c1 = v1.dot(v1);
+      if (c1 < 1e-10) {
+        normals.push(prevN.clone());
+        binormals.push(binormals[i - 1].clone());
+        continue;
+      }
+
+      const rL = prevN.clone().sub(v1.clone().multiplyScalar((2 / c1) * v1.dot(prevN)));
+      const tL = prevT.clone().sub(v1.clone().multiplyScalar((2 / c1) * v1.dot(prevT)));
+      const v2 = currT.clone().sub(tL);
+      const c2 = v2.dot(v2);
+
+      let nextN;
+      if (c2 < 1e-10) {
+        nextN = rL;
+      } else {
+        nextN = rL.clone().sub(v2.clone().multiplyScalar((2 / c2) * v2.dot(rL)));
+      }
+      nextN.normalize();
+      normals.push(nextN);
+      binormals.push(new THREE.Vector3().crossVectors(currT, nextN).normalize());
+    }
+
+    const positions = [];
+    const vertexNormals = [];
+    const indices = [];
+
+    // Generate ring vertices with shared normals
+    for (let i = 0; i < numRings; i++) {
+      const c = pts[i];
+      const n = normals[i];
+      const b = binormals[i];
+
+      for (let j = 0; j < radialSegments; j++) {
+        const theta = (j / radialSegments) * Math.PI * 2;
+        const cos = Math.cos(theta);
+        const sin = Math.sin(theta);
+
+        const vx = n.x * cos + b.x * sin;
+        const vy = n.y * cos + b.y * sin;
+        const vz = n.z * cos + b.z * sin;
+
+        positions.push(c.x + radius * vx, c.y + radius * vy, c.z + radius * vz);
+        vertexNormals.push(vx, vy, vz);
+      }
+    }
+
+    // Connect adjacent rings with quads (2 triangles)
+    for (let i = 0; i < numRings - 1; i++) {
+      const ringA = i * radialSegments;
+      const ringB = (i + 1) * radialSegments;
+
+      for (let j = 0; j < radialSegments; j++) {
+        const nextJ = (j + 1) % radialSegments;
+        const a = ringA + j;
+        const b = ringA + nextJ;
+        const c = ringB + nextJ;
+        const d = ringB + j;
+
+        indices.push(a, b, c);
+        indices.push(a, c, d);
+      }
+    }
+
+    // Flat end caps at extremities
+    const capStartIdx = positions.length / 3;
+    positions.push(pts[0].x, pts[0].y, pts[0].z);
+    vertexNormals.push(-tangents[0].x, -tangents[0].y, -tangents[0].z);
+    for (let j = 0; j < radialSegments; j++) {
+      const nextJ = (j + 1) % radialSegments;
+      indices.push(capStartIdx, nextJ, j);
+    }
+
+    const capEndIdx = positions.length / 3;
+    positions.push(pts[numRings - 1].x, pts[numRings - 1].y, pts[numRings - 1].z);
+    vertexNormals.push(tangents[numRings - 1].x, tangents[numRings - 1].y, tangents[numRings - 1].z);
+    const lastRing = (numRings - 1) * radialSegments;
+    for (let j = 0; j < radialSegments; j++) {
+      const nextJ = (j + 1) % radialSegments;
+      indices.push(capEndIdx, lastRing + j, lastRing + nextJ);
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(vertexNormals, 3));
+    geo.setIndex(indices);
+    return geo;
+  }
+
+  // Create a continuous conduit mesh along arbitrary points
+  function createContinuousConduitMesh(centerlinePoints, radius, colorHex, selected = false, opacity = 1) {
+    const geo = buildConduitTubeGeometry(centerlinePoints, radius, 20);
+    if (!geo) return null;
+    const mat = conduitMaterial(colorHex, selected);
+    if (opacity < 1) {
+      mat.transparent = true;
+      mat.opacity = opacity;
+      mat.depthWrite = false;
+    }
+    const mesh = new THREE.Mesh(geo, mat);
     mesh.renderOrder = opacity < 1 ? 940 : 950;
     return mesh;
+  }
+
+  // Single segment wrapper for compatibility
+  function createCylinderSegment(p1, p2, radius, colorHex, selected = false, opacity = 1) {
+    return createContinuousConduitMesh([p1, p2], radius, colorHex, selected, opacity);
+  }
+
+  // Extracts full continuous centerline of straight segments + smooth circular SLERP elbows
+  function extractRunCenterline(points, minRadiusM) {
+    if (!points || points.length < 2) return [];
+    if (points.length === 2) return [points[0], points[1]];
+
+    const centerline = [points[0]];
+
+    for (let i = 1; i < points.length - 1; i++) {
+      const pPrev = points[i - 1];
+      const pCurr = points[i];
+      const pNext = points[i + 1];
+      const angle = calculateBendAngle(pPrev, pCurr, pNext);
+      const hasTurn = angle >= 10.0;
+      const elbow = hasTurn ? solveElbowFitting(pPrev, pCurr, pNext, minRadiusM, 12) : null;
+
+      if (elbow && elbow.isValid && !elbow.isStraight) {
+        centerline.push(elbow.tangentStart);
+        for (let a = 1; a < elbow.arcPoints.length - 1; a++) {
+          centerline.push(elbow.arcPoints[a]);
+        }
+        centerline.push(elbow.tangentEnd);
+      } else {
+        centerline.push(pCurr);
+      }
+    }
+
+    centerline.push(points[points.length - 1]);
+    return centerline;
   }
 
   // Update visual representation of the active in-progress run
@@ -358,30 +599,33 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
     if (activeRunPoints.length === 0) {
       rubberbandLine.visible = false;
       vertGuideLine.visible = false;
+      angleGuideLine.visible = false;
       return null;
     }
 
     const colorHex = diameterRegistry.getSelected()?.color || '#f59e0b';
     const pipeRadius = tradeRadiusM();
+    const minRadiusM = getNecBendRadiusM(diameterRegistry.getSelected()?.label);
     rubberbandMat.color.set(colorHex);
 
     for (const pt of activeRunPoints) {
       activeRunGroup.add(createJoint(pt, pipeRadius, colorHex, false));
     }
 
-    if (activeRunPoints.length >= 2) {
-      for (let i = 0; i < activeRunPoints.length - 1; i++) {
-        const cyl = createCylinderSegment(activeRunPoints[i], activeRunPoints[i + 1], pipeRadius, colorHex);
-        if (cyl) activeRunGroup.add(cyl);
-      }
-    }
-
-    // 3. Update the live rubberband segment to target cursor position
     const lastPt = activeRunPoints[activeRunPoints.length - 1];
+    const prevPt = activeRunPoints.length >= 2 ? activeRunPoints[activeRunPoints.length - 2] : null;
+
     let targetPt = currentCursorPoint;
+    let liveBendAngle = 0;
+    let isAngleSnapped = false;
+    let isTangentValid = true;
+    let cartesianHeading = '';
 
     if (isPerpendicularActive) {
       targetPt = getVerticalProjectionPoint(lastPt, lastNdc);
+      liveBendAngle = 90;
+      isAngleSnapped = true;
+      cartesianHeading = '[Vertical: Y]';
 
       const vpos = vertGuideGeo.attributes.position.array;
       vpos[0] = lastPt.x;
@@ -392,24 +636,119 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
       vpos[5] = lastPt.z;
       vertGuideGeo.attributes.position.needsUpdate = true;
       vertGuideLine.visible = true;
-    } else if (isOrthoActive && targetPt && !cursorOnSurface) {
-      const orthoResult = constrainOrtho3D(lastPt, targetPt);
-      targetPt = orthoResult;
-      if (orthoResult.axis === 'Y') {
-        const vpos = vertGuideGeo.attributes.position.array;
-        vpos[0] = lastPt.x;
-        vpos[1] = lastPt.y - 15;
-        vpos[2] = lastPt.z;
-        vpos[3] = lastPt.x;
-        vpos[4] = lastPt.y + 15;
-        vpos[5] = lastPt.z;
-        vertGuideGeo.attributes.position.needsUpdate = true;
-        vertGuideLine.visible = true;
+      angleGuideLine.visible = false;
+    } else if (targetPt && !cursorOnSurface) {
+      vertGuideLine.visible = false;
+      const bendResult = constrainConduitBendAngle(prevPt, lastPt, targetPt, {
+        allowedAnglesDeg: [0, 15, 22.5, 30, 45, 60, 90],
+        toleranceDeg: isShiftPressed ? 0 : 4.0,
+        enforceSpecificAngles: !isShiftPressed && isSpecificAnglesEnforced,
+        cartesianReference: true,
+        allow45: true,
+        minTangentM: minRadiusM * 0.4,
+        upAxis: 'Y',
+      });
+      targetPt = bendResult.point;
+      liveBendAngle = bendResult.bendAngleDeg;
+      isAngleSnapped = bendResult.isSnapped;
+      isTangentValid = bendResult.tangentValid;
+      cartesianHeading = bendResult.cartesianHeading ? `[Axis: ${bendResult.cartesianHeading}]` : '';
+
+      // Render dashed Cartesian guide ray along the snapped heading
+      if (isAngleSnapped && targetPt) {
+        const gdx = targetPt.x - lastPt.x;
+        const gdz = targetPt.z - lastPt.z;
+        const glen = Math.hypot(gdx, gdz);
+        if (glen > 0.05) {
+          const rayScale = Math.max(glen * 1.5, 12.0);
+          const apos = angleGuideGeo.attributes.position.array;
+          apos[0] = lastPt.x;
+          apos[1] = lastPt.y;
+          apos[2] = lastPt.z;
+          apos[3] = lastPt.x + (gdx / glen) * rayScale;
+          apos[4] = lastPt.y;
+          apos[5] = lastPt.z + (gdz / glen) * rayScale;
+          angleGuideGeo.attributes.position.needsUpdate = true;
+          angleGuideLine.computeLineDistances?.();
+          angleGuideLine.visible = true;
+        } else {
+          angleGuideLine.visible = false;
+        }
       } else {
-        vertGuideLine.visible = false;
+        angleGuideLine.visible = false;
       }
     } else {
       vertGuideLine.visible = false;
+      angleGuideLine.visible = false;
+    }
+
+    // Render active run geometry + live continuous elbow arc preview
+    let liveElbow = null;
+    if (activeRunPoints.length >= 2) {
+      const hasTurn = targetPt && prevPt && liveBendAngle >= 10.0;
+      liveElbow = hasTurn ? solveElbowFitting(prevPt, lastPt, targetPt, minRadiusM, 12) : null;
+      const committedEnd = (liveElbow && liveElbow.isValid && !liveElbow.isStraight) ? liveElbow.tangentStart : lastPt;
+
+      // Build continuous centerline for committed run up to committedEnd
+      const committedCenterline = [activeRunPoints[0]];
+      for (let i = 1; i < activeRunPoints.length - 1; i++) {
+        const pP = activeRunPoints[i - 1];
+        const pC = activeRunPoints[i];
+        const pN = activeRunPoints[i + 1];
+        const angle = calculateBendAngle(pP, pC, pN);
+        const elbow = angle >= 10.0 ? solveElbowFitting(pP, pC, pN, minRadiusM, 12) : null;
+        if (elbow && elbow.isValid && !elbow.isStraight) {
+          committedCenterline.push(elbow.tangentStart);
+          for (let a = 1; a < elbow.arcPoints.length - 1; a++) {
+            committedCenterline.push(elbow.arcPoints[a]);
+          }
+          committedCenterline.push(elbow.tangentEnd);
+        } else {
+          committedCenterline.push(pC);
+        }
+      }
+      committedCenterline.push(committedEnd);
+
+      if (committedCenterline.length >= 2) {
+        const solidMesh = createContinuousConduitMesh(committedCenterline, pipeRadius, colorHex, false, 1.0);
+        if (solidMesh) activeRunGroup.add(solidMesh);
+      }
+
+      // Live elbow and rubberband preview
+      if (liveElbow && liveElbow.isValid && !liveElbow.isStraight) {
+        // Continuous smooth circular arc for the live bend preview
+        const arcMesh = createContinuousConduitMesh(liveElbow.arcPoints, pipeRadius, colorHex, false, 0.85);
+        if (arcMesh) activeRunGroup.add(arcMesh);
+
+        if (targetPt) {
+          const rubberMesh = createContinuousConduitMesh(
+            [liveElbow.tangentEnd, targetPt],
+            pipeRadius,
+            isTangentValid ? colorHex : '#ef4444',
+            false,
+            0.45
+          );
+          if (rubberMesh) activeRunGroup.add(rubberMesh);
+        }
+      } else if (targetPt) {
+        const rubberMesh = createContinuousConduitMesh(
+          [lastPt, targetPt],
+          pipeRadius,
+          isTangentValid ? colorHex : '#ef4444',
+          false,
+          0.45
+        );
+        if (rubberMesh) activeRunGroup.add(rubberMesh);
+      }
+    } else if (activeRunPoints.length === 1 && targetPt) {
+      const rubberMesh = createContinuousConduitMesh(
+        [lastPt, targetPt],
+        pipeRadius,
+        colorHex,
+        false,
+        0.45
+      );
+      if (rubberMesh) activeRunGroup.add(rubberMesh);
     }
 
     if (targetPt) {
@@ -421,23 +760,35 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
       pos[4] = targetPt.y;
       pos[5] = targetPt.z;
       rubberbandGeo.attributes.position.needsUpdate = true;
+      rubberbandMat.color.set(isTangentValid ? colorHex : '#ef4444');
       rubberbandLine.visible = true;
 
-      const preview = createCylinderSegment(lastPt, targetPt, pipeRadius, colorHex, false, 0.42);
-      if (preview) activeRunGroup.add(preview);
-
       snapDot.position.set(targetPt.x, targetPt.y, targetPt.z);
+      snapDot.material.color.set(isAngleSnapped ? 0x00ffff : 0xf59e0b);
       snapDot.visible = true;
 
       const segDist = Math.hypot(targetPt.x - lastPt.x, targetPt.y - lastPt.y, targetPt.z - lastPt.z);
-      return { segDist, targetPt, isVertical: isPerpendicularActive || targetPt.axis === 'Y' };
+      return {
+        segDist,
+        targetPt,
+        isVertical: isPerpendicularActive || targetPt.axis === 'Y',
+        liveBendAngle,
+        cartesianHeading,
+        isAngleSnapped,
+        isTangentValid,
+        bendRadius: minRadiusM,
+        developedLength: liveElbow?.developedLength,
+        gain: liveElbow?.gain,
+        hasSufficientClamp: liveElbow ? liveElbow.hasSufficientClamp : true,
+      };
     } else {
       rubberbandLine.visible = false;
+      angleGuideLine.visible = false;
       return null;
     }
   }
 
-  // Render all finished conduit runs stored in the network
+  // Render all finished conduit runs stored in the network as continuous seamless tubular lofts
   function renderCompletedRuns(network) {
     while (completedRunsGroup.children.length > 0) {
       const child = completedRunsGroup.children[0];
@@ -463,15 +814,16 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
       const colorHex = diameterRegistry.getColor(run.size) || '#f59e0b';
       const isSelected = run.id === selectedRunId;
       const pipeRadius = tradeRadiusM(run.size);
+      const minRadiusM = getNecBendRadiusM(run.size);
 
-      for (let i = 0; i < points.length - 1; i++) {
-        const cyl = createCylinderSegment(points[i], points[i + 1], pipeRadius, colorHex, isSelected);
-        if (cyl) runGroup.add(cyl);
-      }
+      // Build continuous centerline polyline (straight segments + circular SLERP elbow arcs)
+      const centerline = extractRunCenterline(points, minRadiusM);
+      const pipeMesh = createContinuousConduitMesh(centerline, pipeRadius, colorHex, isSelected);
+      if (pipeMesh) runGroup.add(pipeMesh);
 
-      for (const pt of points) {
-        runGroup.add(createJoint(pt, pipeRadius, colorHex, isSelected));
-      }
+      // Terminal joints only at the two extremities of the run
+      runGroup.add(createJoint(points[0], pipeRadius, colorHex, isSelected));
+      runGroup.add(createJoint(points[points.length - 1], pipeRadius, colorHex, isSelected));
 
       completedRunsGroup.add(runGroup);
     }
@@ -650,7 +1002,9 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
   // Pointer move handler. Orbit and pan come from the Rust core and must not
   // drop the rubberband or be treated as a conduit click.
   async function handlePointerMove(event) {
+    isShiftPressed = Boolean(event.shiftKey);
     lastNdc = getCanvasNdc(event);
+    lastScreenPos = { x: event.clientX, y: event.clientY };
     const decision = viewport.pointerMove(event, cameraView());
     if (decision.action === 'orbit' || decision.action === 'pan') {
       handleCameraUpdate();
@@ -704,12 +1058,37 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
     if (currentCursorPoint || activeRunPoints.length > 0) {
       const previewInfo = updateActiveRunVisuals();
       if (currentCursorPoint) {
+        let liveBendAngle = previewInfo?.liveBendAngle || 0;
+        let isAngleSnapped = Boolean(previewInfo?.isAngleSnapped);
+        let cumulativeRunBends = 0;
+        let exceedsNec360 = false;
+
+        if (activeRunPoints.length >= 2 && previewInfo?.targetPt) {
+          const prior = analyzeRunBends(activeRunPoints, diameterRegistry.getSelected()?.label);
+          cumulativeRunBends = prior.totalDegrees + liveBendAngle;
+          exceedsNec360 = cumulativeRunBends > 360.0;
+        }
+
         onStateChange?.({
           cursor: previewInfo?.targetPt || currentCursorPoint,
           liveSegment: previewInfo?.segDist || 0,
           isVertical: !!previewInfo?.isVertical,
+          isAngleSnapped,
+          isTangentValid: previewInfo?.isTangentValid !== false,
           activePoints: activeRunPoints,
           screenPos: lastScreenPos,
+          liveBendAngle: Math.round(liveBendAngle * 10) / 10,
+          cumulativeRunBends: Math.round(cumulativeRunBends * 10) / 10,
+          exceedsNec360,
+          bendRadius: previewInfo?.bendRadius,
+          developedLength: previewInfo?.developedLength,
+          gain: previewInfo?.gain,
+          hasSufficientClamp: previewInfo?.hasSufficientClamp !== false,
+          necWarning: exceedsNec360
+            ? `⚠️ NEC 358.26 Warning: Total bends (${cumulativeRunBends.toFixed(0)}°) exceed 360° maximum between pull points!`
+            : (previewInfo?.hasSufficientClamp === false && liveBendAngle >= 10.0
+              ? `⚠️ Bending Warning: Insufficient straight clamp distance for bender shoe (< 50mm)`
+              : null),
         });
       }
     } else {
@@ -763,8 +1142,19 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
         if (!target) return;
 
         let candidate = target;
-        if (!target.onSurface && isOrthoActive) {
-          candidate = constrainOrtho3D(lastPt, target);
+        if (!target.onSurface) {
+          const prevPt = activeRunPoints.length >= 2 ? activeRunPoints[activeRunPoints.length - 2] : null;
+          const minRadiusM = getNecBendRadiusM(diameterRegistry.getSelected()?.label);
+          const bendResult = constrainConduitBendAngle(prevPt, lastPt, target, {
+            allowedAnglesDeg: [0, 15, 22.5, 30, 45, 60, 90],
+            toleranceDeg: isShiftPressed ? 0 : 4.0,
+            enforceSpecificAngles: !isShiftPressed && (isSpecificAnglesEnforced || isOrthoActive),
+            cartesianReference: true,
+            allow45: true,
+            minTangentM: minRadiusM * 0.4,
+            upAxis: 'Y',
+          });
+          candidate = bendResult.point;
         }
 
         // A surface click ends on that surface. The riser is only for a plane click
@@ -774,12 +1164,21 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
         }
 
         adoptSurfaceElevation(target);
+        if (activeJustification !== JUSTIFICATION_MODES.CENTER && candidate) {
+          const pipeRadius = tradeRadiusM();
+          candidate = justifyToCenterline(candidate, pipeRadius, activeJustification);
+        }
         pointToAdd = candidate;
       }
     } else {
       const target = await pointUnderCursor(ndc);
       adoptSurfaceElevation(target);
-      pointToAdd = target;
+      if (activeJustification !== JUSTIFICATION_MODES.CENTER && target) {
+        const pipeRadius = tradeRadiusM();
+        pointToAdd = justifyToCenterline(target, pipeRadius, activeJustification);
+      } else {
+        pointToAdd = target;
+      }
     }
 
     if (!pointToAdd) return;
@@ -795,9 +1194,128 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
     });
   }
 
+  // ── Revit-Style Corner XYZ Navigation Triad (UCS Indicator) ─────────
+  let triadCanvas = null;
+  let triadCtx = null;
+  let triadContainer = null;
+
+  function initXyzTriad(container) {
+    if (triadContainer || !container) return;
+    triadContainer = document.createElement('div');
+    triadContainer.className = 'revit-xyz-triad';
+    triadContainer.style.cssText = `
+      position: absolute;
+      bottom: 32px;
+      right: 28px;
+      width: 90px;
+      height: 90px;
+      pointer-events: none;
+      z-index: 45;
+      user-select: none;
+    `;
+
+    triadCanvas = document.createElement('canvas');
+    triadCanvas.width = 180;
+    triadCanvas.height = 180;
+    triadCanvas.style.cssText = 'width: 90px; height: 90px; display: block;';
+    triadContainer.appendChild(triadCanvas);
+    container.appendChild(triadContainer);
+    triadCtx = triadCanvas.getContext('2d');
+    renderXyzTriad();
+  }
+
+  function renderXyzTriad() {
+    if (!triadCtx) return;
+    const camera = engine.world?.camera?.three;
+    if (!camera) return;
+
+    triadCtx.clearRect(0, 0, 180, 180);
+
+    // Subtle dark circular background
+    triadCtx.beginPath();
+    triadCtx.arc(90, 90, 84, 0, Math.PI * 2);
+    triadCtx.fillStyle = 'rgba(15, 23, 42, 0.82)';
+    triadCtx.fill();
+    triadCtx.lineWidth = 1.5;
+    triadCtx.strokeStyle = 'rgba(99, 102, 241, 0.4)';
+    triadCtx.stroke();
+
+    // "XYZ" header badge
+    triadCtx.font = 'bold 10px system-ui, -apple-system, sans-serif';
+    triadCtx.fillStyle = '#94a3b8';
+    triadCtx.textAlign = 'center';
+    triadCtx.textBaseline = 'top';
+    triadCtx.fillText('XYZ AXIS', 90, 10);
+
+    const cx = 90;
+    const cy = 96;
+    const armLength = 50;
+
+    // Camera view rotation matrix
+    const matrix = new THREE.Matrix4();
+    matrix.extractRotation(camera.matrixWorldInverse);
+
+    const axes = [
+      { name: 'X', color: '#ef4444', dir: new THREE.Vector3(1, 0, 0) },
+      { name: 'Y', color: '#22c55e', dir: new THREE.Vector3(0, 1, 0) }, // Elevation (Up)
+      { name: 'Z', color: '#3b82f6', dir: new THREE.Vector3(0, 0, 1) },
+    ];
+
+    // Project each direction into camera view space
+    const projected = axes.map((a) => {
+      const v = a.dir.clone().applyMatrix4(matrix);
+      return {
+        name: a.name,
+        color: a.color,
+        vx: v.x,
+        vy: -v.y, // Screen Y is inverted
+        depth: v.z,
+      };
+    });
+
+    // Sort by depth so closer axes render on top
+    projected.sort((a, b) => a.depth - b.depth);
+
+    for (const axis of projected) {
+      const ex = cx + axis.vx * armLength;
+      const ey = cy + axis.vy * armLength;
+
+      // Draw axis stem
+      triadCtx.beginPath();
+      triadCtx.moveTo(cx, cy);
+      triadCtx.lineTo(ex, ey);
+      triadCtx.lineWidth = 3.5;
+      triadCtx.strokeStyle = axis.color;
+      triadCtx.lineCap = 'round';
+      triadCtx.stroke();
+
+      // Draw endpoint bead with letter
+      triadCtx.beginPath();
+      triadCtx.arc(ex, ey, 9.5, 0, Math.PI * 2);
+      triadCtx.fillStyle = axis.color;
+      triadCtx.fill();
+      triadCtx.lineWidth = 1.5;
+      triadCtx.strokeStyle = '#ffffff';
+      triadCtx.stroke();
+
+      triadCtx.font = 'bold 11px system-ui, -apple-system, sans-serif';
+      triadCtx.fillStyle = '#ffffff';
+      triadCtx.textAlign = 'center';
+      triadCtx.textBaseline = 'middle';
+      triadCtx.fillText(axis.name, ex, ey);
+    }
+
+    // Origin bead
+    triadCtx.beginPath();
+    triadCtx.arc(cx, cy, 3.5, 0, Math.PI * 2);
+    triadCtx.fillStyle = '#f8fafc';
+    triadCtx.fill();
+  }
+
   // Camera Orbit update handler: continuously update live line while user is orbiting/panning
   function handleCameraUpdate() {
     refreshPivotMarker();
+    renderXyzTriad();
     if (activeRunPoints.length > 0 && lastNdc) {
       void updateCursorAtNdc(lastNdc);
     }
@@ -838,6 +1356,19 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
       updateActiveRunVisuals();
     },
 
+    get isSpecificAnglesEnforced() {
+      return isSpecificAnglesEnforced;
+    },
+    set isSpecificAnglesEnforced(val) {
+      isSpecificAnglesEnforced = Boolean(val);
+      updateActiveRunVisuals();
+    },
+
+    setAngleMode(mode) {
+      isSpecificAnglesEnforced = mode === 'specific';
+      updateActiveRunVisuals();
+    },
+
     get isPickElevationActive() {
       return isPickElevationActive;
     },
@@ -859,6 +1390,7 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
     set activeElevation(val) {
       activeElevation = Number(val) || 0;
       workPlaneGrid.position.y = activeElevation;
+      workPlaneAxes.position.y = activeElevation;
       updateActiveRunVisuals();
     },
 
@@ -867,6 +1399,7 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
     },
     set workPlaneVisible(val) {
       workPlaneGrid.visible = Boolean(val);
+      workPlaneAxes.visible = Boolean(val);
     },
 
     get activePoints() {
@@ -899,7 +1432,21 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
     commitDistance(distM) {
       if (activeRunPoints.length === 0 || !currentCursorPoint) return false;
       const lastPt = activeRunPoints[activeRunPoints.length - 1];
-      const target = currentCursorPoint;
+      const prevPt = activeRunPoints.length >= 2 ? activeRunPoints[activeRunPoints.length - 2] : null;
+      let target = currentCursorPoint;
+      if (prevPt) {
+        const minRadiusM = getNecBendRadiusM(diameterRegistry.getSelected()?.label);
+        const bendResult = constrainConduitBendAngle(prevPt, lastPt, target, {
+          allowedAnglesDeg: [0, 45, 90],
+          toleranceDeg: 18.0,
+          enforceSpecificAngles: isSpecificAnglesEnforced || isOrthoActive,
+          cartesianReference: true,
+          allow45: true,
+          minTangentM: minRadiusM * 0.4,
+          upAxis: 'Y',
+        });
+        target = bendResult.point;
+      }
       const dx = target.x - lastPt.x;
       const dy = target.y - lastPt.y;
       const dz = target.z - lastPt.z;
@@ -996,9 +1543,169 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
       renderCompletedRuns(network);
     },
 
+    // ── High-Pro Electrical BIM & Revit Parity Extensions ──────────────
+    get justification() {
+      return activeJustification;
+    },
+    set justification(mode) {
+      if (JUSTIFICATION_MODES[mode]) {
+        activeJustification = mode;
+      }
+    },
+
+    get JUSTIFICATION_MODES() {
+      return JUSTIFICATION_MODES;
+    },
+
+    // Revit "Parallel Conduits" Generator with concentric elbow radii
+    generateParallelConduits(runId, { horizontalCount = 3, verticalCount = 1, spacingM = 0.0762 } = {}, getNetwork, setNetwork) {
+      if (!runId || typeof getNetwork !== 'function' || typeof setNetwork !== 'function') return [];
+      const network = getNetwork();
+      const masterRun = network.runs.find((r) => r.id === runId);
+      if (!masterRun) return [];
+
+      const masterPoints = (masterRun.nodeIds || [])
+        .map((nid) => nodeById(network, nid))
+        .filter(Boolean);
+      if (masterPoints.length < 2) return [];
+
+      const minRadiusM = getNecBendRadiusM(masterRun.size);
+      const rackRuns = generateParallelConduitRack(masterPoints, {
+        horizontalCount,
+        verticalCount,
+        spacingM,
+        minRadiusM,
+      });
+
+      const prevNetwork = network;
+      let newNetwork = prevNetwork;
+      const createdRunIds = [];
+
+      for (let r = 1; r < rackRuns.length; r++) {
+        const rackRun = rackRuns[r];
+        const pts = rackRun.points;
+        if (pts.length < 2) continue;
+
+        const n0 = addNode(newNetwork, pts[0]);
+        newNetwork = n0.network;
+
+        const name = `${masterRun.name || 'Run'} [P${rackRun.hIndex + 1}${rackRun.vIndex > 0 ? `·T${rackRun.vIndex + 1}` : ''}]`;
+        const res = startRun(newNetwork, { size: masterRun.size, system: masterRun.system || 'Power', name }, n0.nodeId);
+        newNetwork = res.network;
+        const newRunId = res.runId;
+        createdRunIds.push(newRunId);
+
+        for (let p = 1; p < pts.length; p++) {
+          const nNext = addNode(newNetwork, pts[p]);
+          newNetwork = nNext.network;
+          newNetwork = appendToRun(newNetwork, newRunId, nNext.nodeId);
+        }
+      }
+
+      if (createdRunIds.length > 0) {
+        const command = {
+          description: `Create ${createdRunIds.length} parallel conduits for ${masterRun.name || runId}`,
+          execute() {
+            setNetwork(newNetwork);
+            renderCompletedRuns(newNetwork);
+            onStateChange?.({ networkUpdated: true });
+          },
+          undo() {
+            setNetwork(prevNetwork);
+            renderCompletedRuns(prevNetwork);
+            onStateChange?.({ networkUpdated: true });
+          },
+        };
+        commandStack.execute(command);
+      }
+
+      return createdRunIds;
+    },
+
+    // Parametric Obstacle Saddle (3-Point Pipe Saddle or 4-Point Duct/Tray Bridge)
+    insertObstacleSaddle(type = '3-point', { heightM = 0.05, widthM = 0.30, angleDeg = 30 } = {}) {
+      if (activeRunPoints.length === 0) return false;
+      const lastPt = activeRunPoints[activeRunPoints.length - 1];
+      const prevPt = activeRunPoints.length >= 2 ? activeRunPoints[activeRunPoints.length - 2] : null;
+
+      let dirX = 1, dirZ = 0;
+      if (prevPt) {
+        const dx = lastPt.x - prevPt.x;
+        const dz = lastPt.z - prevPt.z;
+        const len = Math.hypot(dx, dz);
+        if (len > 0.001) {
+          dirX = dx / len;
+          dirZ = dz / len;
+        }
+      }
+
+      if (type === '3-point') {
+        const saddle = solveThreePointSaddle(heightM, 45);
+        const distToCenter = saddle.distanceToOuterMark;
+        const distToEnd = saddle.totalSpanM;
+
+        const centerPt = {
+          x: lastPt.x + dirX * distToCenter,
+          y: lastPt.y + heightM,
+          z: lastPt.z + dirZ * distToCenter,
+        };
+        const endPt = {
+          x: lastPt.x + dirX * distToEnd,
+          y: lastPt.y,
+          z: lastPt.z + dirZ * distToEnd,
+        };
+
+        activeRunPoints.push(centerPt, endPt);
+      } else {
+        const saddle = solveFourPointSaddle(heightM, widthM, angleDeg);
+        const riseDist = saddle.legDistanceBetweenBends;
+        const topDist = riseDist + saddle.flatTopSpan;
+        const endDist = topDist + riseDist;
+
+        const p1 = {
+          x: lastPt.x + dirX * riseDist,
+          y: lastPt.y + saddle.effectiveHeight,
+          z: lastPt.z + dirZ * riseDist,
+        };
+        const p2 = {
+          x: lastPt.x + dirX * topDist,
+          y: lastPt.y + saddle.effectiveHeight,
+          z: lastPt.z + dirZ * topDist,
+        };
+        const p3 = {
+          x: lastPt.x + dirX * endDist,
+          y: lastPt.y,
+          z: lastPt.z + dirZ * endDist,
+        };
+
+        activeRunPoints.push(p1, p2, p3);
+      }
+
+      updateActiveRunVisuals();
+      const finalPt = activeRunPoints[activeRunPoints.length - 1];
+      onStateChange?.({
+        cursor: finalPt,
+        liveSegment: 0,
+        activePoints: activeRunPoints,
+      });
+      return true;
+    },
+
+    // Contractor Fabrication Cut Sheet & Bending Marks Generator
+    exportSpoolCutSheet(network) {
+      if (!network?.runs || !Array.isArray(network.runs)) return null;
+      const sheets = network.runs.map((run) => {
+        const pts = (run.nodeIds || []).map((nid) => nodeById(network, nid)).filter(Boolean);
+        return generateRunSpoolSheet(run, pts);
+      }).filter(Boolean);
+
+      return generateSpoolSheetCsv(sheets);
+    },
+
     attach(container) {
       syncViewportMode();
       bindSelectionPivot();
+      initXyzTriad(container);
       pointerTarget = engine.world?.renderer?.three?.domElement || container;
       pointerTarget.addEventListener('pointerdown', handlePointerDown);
       pointerTarget.addEventListener('pointermove', handlePointerMove);
@@ -1019,6 +1726,12 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
       target.removeEventListener('contextmenu', handleContextMenu);
       if (engine.world?.camera?.controls) {
         engine.world.camera.controls.removeEventListener('update', handleCameraUpdate);
+      }
+      if (triadContainer && triadContainer.parentElement) {
+        triadContainer.parentElement.removeChild(triadContainer);
+        triadContainer = null;
+        triadCanvas = null;
+        triadCtx = null;
       }
       overlayGroup.clear();
       scene.remove(overlayGroup);
