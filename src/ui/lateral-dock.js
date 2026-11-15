@@ -203,14 +203,14 @@ function setupDockResizer(resizerEl, propsPane) {
 }
 
 /**
- * Sets up bottom dock navigation tabs: [Split], [Properties], [Project Browser].
+ * Sets up bottom dock navigation tabs: [Properties], [Project Browser], [Schedules].
  */
-function setupDockTabs(sidebarEl, propsPane) {
-  const btnBoth = document.getElementById('btn-dock-tab-both');
+function setupDockTabs(sidebarEl, propsPane, api, dom) {
   const btnProps = document.getElementById('btn-dock-tab-properties');
   const btnBrowser = document.getElementById('btn-dock-tab-browser');
+  const btnSchedules = document.getElementById('btn-dock-tab-schedules');
 
-  const tabs = [btnBoth, btnProps, btnBrowser].filter(Boolean);
+  const tabs = [btnProps, btnBrowser, btnSchedules].filter(Boolean);
 
   function setMode(mode) {
     if (!sidebarEl) return;
@@ -223,9 +223,21 @@ function setupDockTabs(sidebarEl, propsPane) {
     if (propsPane) propsPane.style.flex = '';
   }
 
-  btnBoth?.addEventListener('click', () => setMode('both'));
   btnProps?.addEventListener('click', () => setMode('properties'));
   btnBrowser?.addEventListener('click', () => setMode('browser'));
+  btnSchedules?.addEventListener('click', () => {
+    if (dom.excelPanel) {
+      const willOpen = dom.excelPanel.hidden || dom.excelPanel.classList.contains('collapsed');
+      dom.excelPanel.hidden = !willOpen;
+      dom.excelPanel.classList.toggle('collapsed', !willOpen);
+      if (willOpen && typeof api.renderExcelTable === 'function') {
+        api.renderExcelTable();
+      }
+    }
+  });
+
+  // Default to properties mode (matching Revit)
+  setMode('properties');
 }
 
 /**
@@ -270,6 +282,50 @@ export function initLateralDock(ctx, dom, api) {
     },
   });
 
+  function setIdleProperties() {
+    propertiesPalette.setElement({
+      id: 'tray-system',
+      name: 'Cable Tray System',
+      family: 'Cable Tray System',
+      count: 0,
+      filterLabel: 'Cable Tray (No selection)',
+      type: 'Ladder Tray - 300x100 mm',
+      types: [
+        { id: 'Ladder Tray - 150x100 mm', name: 'Ladder Tray - 150x100 mm' },
+        { id: 'Ladder Tray - 300x100 mm', name: 'Ladder Tray - 300x100 mm' },
+        { id: 'Ladder Tray - 450x100 mm', name: 'Ladder Tray - 450x100 mm' },
+        { id: 'Ladder Tray - 600x100 mm', name: 'Ladder Tray - 600x100 mm' },
+        { id: 'Solid Bottom - 300x100 mm', name: 'Solid Bottom - 300x100 mm' },
+      ],
+      parameters: {
+        'Constraints': [
+          { name: 'Reference Elevation', value: '3.20 m', type: 'text' },
+          { name: 'Workplane state', value: 'Active (Grid Visible)', readonly: true },
+          { name: 'Standard Clearance', value: '300 mm above ceiling', readonly: true },
+        ],
+        'Dimensions': [
+          { name: 'Width', value: '300 mm', readonly: true },
+          { name: 'Height', value: '100 mm', readonly: true },
+          { name: 'Rung Spacing', value: '228 mm (9")', readonly: true },
+          { name: 'Bend Radius', value: '300 mm (12")', readonly: true },
+        ],
+        'Electrical / Takeoff': [
+          { name: 'Fill Ratio Limit', value: '40% (NEC 392.22)', readonly: true },
+          { name: 'System Class', value: 'Power & Control (LV)', readonly: true },
+          { name: 'Grounding Conductor', value: 'Required (NEC 392.60)', readonly: true },
+        ],
+        'Identity Data': [
+          { name: 'Family', value: 'Cable Tray with Fittings', readonly: true },
+          { name: 'System Type', value: 'Power', options: ['Power', 'Data / Telecom', 'Control', 'Security', 'Fire Alarm'] },
+          { name: 'Comments', value: 'No selection', type: 'text' },
+        ],
+      },
+    });
+  }
+
+  // Set initial idle state matching Revit
+  setIdleProperties();
+
   // 2. Project Browser
   const activeModelName = ctx.activeModel?.name || ctx.loadedModels?.[0]?.name || 'Active Model';
   const projectBrowser = createProjectBrowser(browserPane, {
@@ -297,11 +353,12 @@ export function initLateralDock(ctx, dom, api) {
 
   // 3. Resizer and Tabs
   setupDockResizer(resizer, propsPane);
-  setupDockTabs(sidebar, propsPane);
+  setupDockTabs(sidebar, propsPane, api, dom);
 
   // 4. Register on api
   api.propertiesPalette = propertiesPalette;
   api.projectBrowser = projectBrowser;
+  api.resetRevitPropertiesPalette = setIdleProperties;
   api.updateProjectBrowser = () => {
     const currentActive = ctx.activeModel?.name || ctx.loadedModels?.[0]?.name || 'Active Model';
     projectBrowser.setActiveModel(currentActive);

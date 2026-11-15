@@ -40,21 +40,6 @@ export function createTrayRibbonDef(ctx) {
             items: [
               [
                 {
-                  id: 'tray.open-sample',
-                  label: 'Load\nSample',
-                  icon: 'sample',
-                  size: 'big',
-                  keytip: 'MS',
-                  tooltip: 'Load sample model BasicHouse.ifc',
-                  run: async () => {
-                    if (typeof api.loadSampleModel === 'function') {
-                      await api.loadSampleModel();
-                    } else if (dom.btnLoadSample) {
-                      dom.btnLoadSample.click();
-                    }
-                  },
-                },
-                {
                   id: 'tray.open-ifc',
                   label: 'Open\nIFC',
                   icon: 'open',
@@ -67,6 +52,21 @@ export function createTrayRibbonDef(ctx) {
                 },
               ],
               [
+                {
+                  id: 'tray.open-sample',
+                  label: 'Load Sample',
+                  icon: 'sample',
+                  size: 'small',
+                  keytip: 'MS',
+                  tooltip: 'Load sample model BasicHouse.ifc',
+                  run: async () => {
+                    if (typeof api.loadSampleModel === 'function') {
+                      await api.loadSampleModel();
+                    } else if (dom.btnLoadSample) {
+                      dom.btnLoadSample.click();
+                    }
+                  },
+                },
                 {
                   id: 'tray.link-excel',
                   label: 'Link Excel',
@@ -82,41 +82,17 @@ export function createTrayRibbonDef(ctx) {
             ],
           },
           {
-            id: 'model-export',
-            label: 'Export',
-            items: [
-              [
-                {
-                  id: 'tray.export-all',
-                  label: 'Export\nAll IFC',
-                  icon: 'export',
-                  size: 'big',
-                  keytip: 'ME',
-                  tooltip: 'Export combined IFC with edits and tags',
-                  enabled: () => (ctx.loadedModels?.length ?? 0) > 0,
-                  run: () => {
-                    if (typeof api.exportUnifiedIfcLocal === 'function') {
-                      api.exportUnifiedIfcLocal();
-                    } else if (dom.btnExportAllIfc) {
-                      dom.btnExportAllIfc.click();
-                    }
-                  },
-                },
-              ],
-            ],
-          },
-          {
             id: 'model-views',
             label: 'Views',
             items: [
               [
                 {
-                  id: 'tray.view-reset',
-                  label: 'Reset Camera',
+                  id: 'tray.view-fit',
+                  label: 'Fit View',
                   icon: 'reset-view',
                   size: 'small',
-                  keytip: 'MVR',
-                  tooltip: 'Reset camera view',
+                  keytip: 'MVF',
+                  tooltip: 'Fit to View',
                   run: () => {
                     if (typeof api.fitModelsToView === 'function') {
                       api.fitModelsToView();
@@ -126,26 +102,63 @@ export function createTrayRibbonDef(ctx) {
                   },
                 },
                 {
-                  id: 'tray.view-settings',
-                  label: 'Settings',
-                  icon: 'settings',
+                  id: 'tray.view-top',
+                  label: 'Top View',
+                  icon: 'camera-top',
                   size: 'small',
-                  keytip: 'MVS',
-                  tooltip: 'Viewer settings',
+                  keytip: 'MVT',
+                  tooltip: 'Top View',
                   run: () => {
-                    if (dom.viewerSettingsPanel) {
-                      const willOpen = dom.viewerSettingsPanel.hidden;
-                      dom.viewerSettingsPanel.hidden = !willOpen;
-                      dom.btnViewerSettings?.setAttribute('aria-expanded', String(willOpen));
+                    const controls = ctx.world?.camera?.controls;
+                    if (controls) {
+                      controls.setLookAt(0, 30, 0, 0, 0, 0, true);
                     }
                   },
                 },
+              ],
+              [
+                {
+                  id: 'tray.view-front',
+                  label: 'Front View',
+                  icon: 'camera-front',
+                  size: 'small',
+                  keytip: 'MVR',
+                  tooltip: 'Front View',
+                  run: () => {
+                    const controls = ctx.world?.camera?.controls;
+                    if (controls) {
+                      controls.setLookAt(0, 2, 30, 0, 2, 0, true);
+                    }
+                  },
+                },
+                {
+                  id: 'tray.view-right',
+                  label: 'Right View',
+                  icon: 'camera-right',
+                  size: 'small',
+                  keytip: 'MVG',
+                  tooltip: 'Right View',
+                  run: () => {
+                    const controls = ctx.world?.camera?.controls;
+                    if (controls) {
+                      controls.setLookAt(30, 2, 0, 0, 2, 0, true);
+                    }
+                  },
+                },
+              ],
+            ],
+          },
+          {
+            id: 'model-visibility',
+            label: 'Visibility',
+            items: [
+              [
                 {
                   id: 'tray.view-grid',
                   label: 'Grid',
                   icon: 'views',
                   size: 'small',
-                  keytip: 'MVG',
+                  keytip: 'MVX',
                   tooltip: 'Toggle grid visibility',
                   run: () => {
                     const grid = api.resolveWorldGrid?.();
@@ -160,8 +173,6 @@ export function createTrayRibbonDef(ctx) {
                     }
                   },
                 },
-              ],
-              [
                 {
                   id: 'tray.view-wireframe',
                   label: 'Wireframe',
@@ -175,6 +186,8 @@ export function createTrayRibbonDef(ctx) {
                     api.setWireframe?.(next);
                   },
                 },
+              ],
+              [
                 {
                   id: 'tray.view-darkmode',
                   label: 'Dark Mode',
@@ -190,27 +203,11 @@ export function createTrayRibbonDef(ctx) {
                   },
                 },
                 {
-                  id: 'tray.view-highlight-tagged',
-                  label: 'Highlight Tagged',
-                  icon: 'highlight',
-                  size: 'small',
-                  keytip: 'MVH',
-                  tooltip: 'Highlight tagged cable trays',
-                  run: () => {
-                    const next = dom.toggleHighlightTaggedSidebar ? !dom.toggleHighlightTaggedSidebar.checked : true;
-                    if (dom.toggleHighlightTaggedSidebar) dom.toggleHighlightTaggedSidebar.checked = next;
-                    ctx.isTaggedTrayHighlightActive = next;
-                    api.refreshTaggedTrayHighlights?.();
-                  },
-                },
-              ],
-              [
-                {
                   id: 'tray.view-floating-labels',
                   label: 'Floating Tags',
                   icon: 'tag',
                   size: 'small',
-                  keytip: 'MVF',
+                  keytip: 'MVL',
                   tooltip: 'Toggle 3D floating tag labels',
                   run: () => {
                     const next = dom.toggleFloatingLabelsSidebar ? !dom.toggleFloatingLabelsSidebar.checked : true;
@@ -560,6 +557,24 @@ export function createTrayRibbonDef(ctx) {
             id: 'systems-export',
             label: 'Export',
             items: [
+              [
+                {
+                  id: 'tray.export-all',
+                  label: 'Export\nAll IFC',
+                  icon: 'export',
+                  size: 'big',
+                  keytip: 'SEA',
+                  tooltip: 'Export combined IFC with edits and tags',
+                  enabled: () => (ctx.loadedModels?.length ?? 0) > 0,
+                  run: () => {
+                    if (typeof api.exportUnifiedIfcLocal === 'function') {
+                      api.exportUnifiedIfcLocal();
+                    } else if (dom.btnExportAllIfc) {
+                      dom.btnExportAllIfc.click();
+                    }
+                  },
+                },
+              ],
               [
                 {
                   id: 'tray.export-mapping',
