@@ -187,9 +187,26 @@ test('IFC Exporter: generates valid STEP IFC file with polylines and Pset_Condui
   assert.ok(ifcText.startsWith('ISO-10303-21;'));
   assert.ok(ifcText.includes("FILE_SCHEMA(('IFC4'));"));
   assert.ok(ifcText.includes('IFCPOLYLINE'));
+  assert.ok(ifcText.includes('IFCSWEPTDISKSOLID'));
+  assert.ok(ifcText.includes('IFCFLOWSEGMENT'));
   assert.ok(ifcText.includes('Pset_ConduitRun'));
   assert.ok(ifcText.includes('IFCANNOTATION'));
   assert.ok(ifcText.endsWith('END-ISO-10303-21;'));
+
+  // Test that a bent run exports smooth circular bend curve points
+  const bentRuns = [{ id: 'r2', name: 'Corner Run', size: '3/4"', system: 'Power', nodeIds: ['p1', 'p2', 'p3'] }];
+  const bentNodes = {
+    p1: { x: 0, y: 0, z: 0 },
+    p2: { x: 5, y: 0, z: 0 },
+    p3: { x: 5, y: 5, z: 0 },
+  };
+  const bentIfc = exportOverlayIfc({ runs: bentRuns, nodes: bentNodes, schema: 'IFC4' });
+  assert.ok(bentIfc.includes('IFCSWEPTDISKSOLID'));
+  // Polyline for a 90° elbow with 12 arc subdivisions must have > 3 points (smooth curved bend)
+  const polyMatch = bentIfc.match(/IFCPOLYLINE\(\(([^)]+)\)\)/);
+  assert.ok(polyMatch, 'Contains polyline');
+  const polyPointCount = polyMatch[1].split(',').length;
+  assert.ok(polyPointCount >= 10, `Curved bend has smooth arc subdivisions (${polyPointCount} points)`);
 
   // Test toOriginal transformation (geolocalized origin shift + Z-up swap)
   const shiftIfc = exportOverlayIfc({

@@ -1,6 +1,10 @@
 // IFC Exporter for Conduit Overlay.
 // Generates a valid STEP-format IFC (IFC2X3 or IFC4) containing 3D solid conduits (IfcSweptDiskSolid)
-// and polylines with Pset_ConduitRun properties, federatable in Revizto, That Open, Navisworks and BIM viewers.
+// with smooth circular bend arcs (NEC Chapter 9 Table 2) and polylines with Pset_ConduitRun properties,
+// federatable in Revizto, That Open, Navisworks and BIM viewers.
+
+import { extractRunCenterline } from './centerline-builder.js';
+import { getNecBendRadiusM } from './fitting-solver.js';
 
 function formatIfcDate(d = new Date()) {
   return d.toISOString().replace(/[-:]/g, '').split('.')[0];
@@ -158,9 +162,19 @@ export function exportOverlayIfc({
 
     if (nodeCoords.length < 2) continue;
 
-    // Create Cartesian points for vertices
+    const runName = run.name || `Run ${run.id}`;
+    const runSize = run.size || run.diameter || '3/4"';
+    const runSystem = run.system || 'Power';
+    const runLen = Number(run.length || 0).toFixed(3);
+    const radiusM = getConduitRadiusMeters(runSize);
+    const minBendRadiusM = run.minBendRadiusM || getNecBendRadiusM(runSize);
+
+    // Extract continuous 3D centerline with smooth circular SLERP arc fillets for elbows
+    const curvedPath = extractRunCenterline(nodeCoords, minBendRadiusM, 12);
+
+    // Create Cartesian points for vertices along the smooth curved path
     const pointIds = [];
-    for (const rawPt of nodeCoords) {
+    for (const rawPt of curvedPath) {
       let pt = rawPt;
       if (typeof toOriginal === 'function') {
         try {
@@ -176,12 +190,6 @@ export function exportOverlayIfc({
       add(`#${pid}=IFCCARTESIANPOINT((${Number(pt.x).toFixed(4)},${Number(pt.y).toFixed(4)},${Number(pt.z).toFixed(4)}));`);
       pointIds.push(`#${pid}`);
     }
-
-    const runName = run.name || `Run ${run.id}`;
-    const runSize = run.size || run.diameter || '3/4"';
-    const runSystem = run.system || 'Power';
-    const runLen = Number(run.length || 0).toFixed(3);
-    const radiusM = getConduitRadiusMeters(runSize);
 
     // 1. Directrix Polyline
     const polylineId = nextId();
