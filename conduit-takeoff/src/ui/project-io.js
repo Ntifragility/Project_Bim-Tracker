@@ -388,18 +388,31 @@ export function createProjectIo({ state, els, engine, api }) {
 
         const selectedSchema = exportSchemaSelect?.value || state.sourceModel.schema || 'IFC4';
         const customFilename = exportFilenameInput?.value.trim() || `${state.sourceModel.name || 'conduit'}_overlay.ifc`;
+        const coordMode = document.getElementById('export-ifc-coords')?.value || 'original';
+
+        const colorMap = {};
+        for (const r of runsToExport) {
+          if (r.size && !colorMap[r.size]) {
+            colorMap[r.size] = state.diameterRegistry?.getColor?.(r.size) || '#f59e0b';
+          }
+        }
+
+        const toOriginalFn = coordMode === 'local'
+          ? (pt) => ({ x: pt.x, y: -pt.z, z: pt.y })
+          : (pt) => {
+              if (typeof engine?.coordinates?.toOriginal === 'function') {
+                return engine.coordinates.toOriginal(pt);
+              }
+              return { x: pt.x, y: -pt.z, z: pt.y };
+            };
 
         const ifcContent = exportOverlayIfc({
           runs: runsToExport,
           nodes: state.network.nodes,
           schema: selectedSchema,
           projectName: `${state.sourceModel.name || 'Project'} Conduit Overlay`,
-          toOriginal: (pt) => {
-            if (typeof engine?.coordinates?.toOriginal === 'function') {
-              return engine.coordinates.toOriginal(pt);
-            }
-            return pt;
-          },
+          colorMap,
+          toOriginal: toOriginalFn,
         });
 
         downloadFile(ifcContent, customFilename, 'application/x-step');

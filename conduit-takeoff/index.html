@@ -260,6 +260,13 @@
                 <option value="IFC2X3">IFC2X3</option>
               </select>
             </div>
+            <div class="rc-export-field">
+              <label for="export-ifc-coords">Coordinates:</label>
+              <select id="export-ifc-coords" class="select-sm">
+                <option value="original" selected>Original IFC / Revizto Space</option>
+                <option value="local">Local Scene (Origin 0, 0, 0)</option>
+              </select>
+            </div>
             <div class="rc-export-field" style="flex: 1;">
               <label for="export-ifc-filename">File Name:</label>
               <input type="text" id="export-ifc-filename" class="input-sm" value="conduit_overlay.ifc" />
