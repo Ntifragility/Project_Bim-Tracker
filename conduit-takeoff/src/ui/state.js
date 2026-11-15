@@ -41,6 +41,8 @@ export function createConduitState(backend) {
     diameterRegistry: core.createDiameterRegistry(),
     markerStore: core.createMarkerStore(),
     selectedRunId: null,
+    // Coordinate display mode: 'project' (Local Project Base Point) vs 'shared' (IFC Survey Point)
+    coordinateMode: 'project',
     // Compute surface: modules read `state.backend` for takeoff/snap/BOM.
     // Kept non-enumerable-adjacent (plain field) so project serialization
     // (`serializeProject`) never picks it up.

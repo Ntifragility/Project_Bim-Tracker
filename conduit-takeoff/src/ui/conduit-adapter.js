@@ -775,6 +775,24 @@ export function createConduitRibbonDef(ctx) {
           return el?.textContent || '';
         },
       },
+      {
+        id: 'coord-mode',
+        value(c) {
+          const isShared = c.state?.coordinateMode === 'shared';
+          return isShared ? '🌐 Shared (IFC Survey)' : '📐 Project Base Point';
+        },
+        run(c) {
+          const current = c.state?.coordinateMode || 'project';
+          const next = current === 'shared' ? 'project' : 'shared';
+          if (c.state) c.state.coordinateMode = next;
+          c.api?.updatePropertiesPalette?.();
+          if (c.els?.statusText) {
+            c.els.statusText.textContent = next === 'shared'
+              ? 'Coordinate Mode: Shared (IFC Survey georeferenced coordinates)'
+              : 'Coordinate Mode: Project Base Point (Local building origin)';
+          }
+        },
+      },
     ],
   };
 }
