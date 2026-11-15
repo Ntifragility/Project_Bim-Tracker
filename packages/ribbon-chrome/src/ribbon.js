@@ -62,7 +62,8 @@ export function createRibbon(host, def, ctx) {
     const companionMap = new Map();
     const groupItems = [];
 
-    for (const row of group.items || []) {
+    const rowsOrCols = group.columns || group.items || [];
+    for (const row of rowsOrCols) {
       for (const item of row || []) {
         groupItems.push(item);
         if (item.kind === 'input') {
@@ -298,12 +299,10 @@ export function createRibbon(host, def, ctx) {
     const groupContent = doc.createElement('div');
     groupContent.className = 'rc-group-content';
 
-    const groupRows = doc.createElement('div');
-    groupRows.className = 'rc-group-rows';
-
     // Find all companion command ids in this group
     const companionsInGroup = new Set();
-    for (const row of group.items || []) {
+    const rowsOrCols = group.columns || group.items || [];
+    for (const row of rowsOrCols) {
       for (const item of row || []) {
         if (item.splitWith) {
           companionsInGroup.add(item.splitWith);
@@ -311,132 +310,152 @@ export function createRibbon(host, def, ctx) {
       }
     }
 
-    for (const row of group.items || []) {
-      const rowEl = doc.createElement('div');
-      rowEl.className = 'rc-group-row';
+    function renderItem(item, parentEl) {
+      if (companionsInGroup.has(item.id)) {
+        // Rendered as companion part of a split button; do not render alone
+        return;
+      }
 
-      for (const item of row || []) {
-        if (companionsInGroup.has(item.id)) {
-          // Rendered as companion part of a split button; do not render alone
-          continue;
-        }
+      if (item.kind === 'input') {
+        const inputWrap = doc.createElement('div');
+        inputWrap.className = 'rc-input-field';
+        inputWrap.setAttribute('data-input-id', item.id);
 
-        if (item.kind === 'input') {
-          const inputWrap = doc.createElement('div');
-          inputWrap.className = 'rc-input-field';
-          inputWrap.setAttribute('data-input-id', item.id);
+        const lbl = doc.createElement('label');
+        lbl.htmlFor = item.id;
+        lbl.textContent = item.label;
+        inputWrap.appendChild(lbl);
 
-          const lbl = doc.createElement('label');
-          lbl.htmlFor = item.id;
-          lbl.textContent = item.label;
-          inputWrap.appendChild(lbl);
-
-          if (item.inputType === 'select') {
-            const select = doc.createElement('select');
-            select.id = item.id;
-            for (const opt of item.options || []) {
-              const optEl = doc.createElement('option');
-              optEl.value = opt.value;
-              optEl.textContent = opt.label;
-              select.appendChild(optEl);
-            }
-            if (typeof item.value === 'function') {
-              select.value = item.value(ctx);
-            }
-            select.addEventListener('change', (e) => {
-              item.onChange(e.target.value, ctx);
-            });
-            inputWrap.appendChild(select);
-          } else {
-            const input = doc.createElement('input');
-            input.type = item.inputType === 'number' ? 'number' : 'text';
-            input.id = item.id;
-            if (item.min !== undefined) input.min = item.min;
-            if (item.max !== undefined) input.max = item.max;
-            if (item.step !== undefined) input.step = item.step;
-            if (typeof item.value === 'function') {
-              input.value = item.value(ctx);
-            }
-            input.addEventListener('change', (e) => {
-              item.onChange(item.inputType === 'number' ? Number(e.target.value) : e.target.value, ctx);
-            });
-            inputWrap.appendChild(input);
+        if (item.inputType === 'select') {
+          const select = doc.createElement('select');
+          select.id = item.id;
+          for (const opt of item.options || []) {
+            const optEl = doc.createElement('option');
+            optEl.value = opt.value;
+            optEl.textContent = opt.label;
+            select.appendChild(optEl);
           }
-          rowEl.appendChild(inputWrap);
-        } else if (item.splitWith) {
-          // Split button compound control (§2.7)
-          const companion = commandsMap.get(item.splitWith);
-          const splitWrap = doc.createElement('div');
-          splitWrap.className = 'rc-split-btn';
+          if (typeof item.value === 'function') {
+            select.value = item.value(ctx);
+          }
+          select.addEventListener('change', (e) => {
+            item.onChange(e.target.value, ctx);
+          });
+          inputWrap.appendChild(select);
+        } else {
+          const input = doc.createElement('input');
+          input.type = item.inputType === 'number' ? 'number' : 'text';
+          input.id = item.id;
+          if (item.min !== undefined) input.min = item.min;
+          if (item.max !== undefined) input.max = item.max;
+          if (item.step !== undefined) input.step = item.step;
+          if (typeof item.value === 'function') {
+            input.value = item.value(ctx);
+          }
+          input.addEventListener('change', (e) => {
+            item.onChange(item.inputType === 'number' ? Number(e.target.value) : e.target.value, ctx);
+          });
+          inputWrap.appendChild(input);
+        }
+        parentEl.appendChild(inputWrap);
+      } else if (item.splitWith) {
+        // Split button compound control (§2.7)
+        const companion = commandsMap.get(item.splitWith);
+        const splitWrap = doc.createElement('div');
+        splitWrap.className = 'rc-split-btn';
 
-          // Primary
-          const primaryBtn = doc.createElement('button');
-          primaryBtn.type = 'button';
-          primaryBtn.className = 'rc-btn rc-btn-big rc-split-primary';
-          primaryBtn.setAttribute('data-command-id', item.id);
-          primaryBtn.setAttribute('aria-label', `${item.label} (primary)`);
-          primaryBtn.title = item.tooltip || item.label;
-          primaryBtn.innerHTML = `
+        // Primary
+        const primaryBtn = doc.createElement('button');
+        primaryBtn.type = 'button';
+        primaryBtn.className = 'rc-btn rc-btn-big rc-split-primary';
+        primaryBtn.setAttribute('data-command-id', item.id);
+        primaryBtn.setAttribute('aria-label', `${item.label} (primary)`);
+        primaryBtn.title = item.tooltip || item.label;
+        primaryBtn.innerHTML = `
+          <svg class="rc-icon rc-icon-32" aria-hidden="true"><use href="#icon-${item.icon}-32"></use></svg>
+          <span class="rc-btn-label">${item.label}</span>
+        `;
+        primaryBtn.addEventListener('click', () => {
+          if (!primaryBtn.disabled) item.run(ctx);
+        });
+        splitWrap.appendChild(primaryBtn);
+
+        // Divider
+        const divider = doc.createElement('span');
+        divider.className = 'rc-split-divider';
+        divider.setAttribute('aria-hidden', 'true');
+        splitWrap.appendChild(divider);
+
+        // Companion
+        const compBtn = doc.createElement('button');
+        compBtn.type = 'button';
+        compBtn.className = 'rc-btn rc-split-companion';
+        compBtn.setAttribute('data-command-id', companion.id);
+        compBtn.setAttribute('aria-label', companion.label);
+        compBtn.title = companion.tooltip || companion.label;
+        compBtn.innerHTML = `
+          <svg class="rc-icon rc-icon-16" aria-hidden="true"><use href="#icon-${companion.icon}-16"></use></svg>
+        `;
+        compBtn.addEventListener('click', () => {
+          if (!compBtn.disabled) companion.run(ctx);
+        });
+        splitWrap.appendChild(compBtn);
+
+        parentEl.appendChild(splitWrap);
+      } else {
+        // Normal Command
+        const btn = doc.createElement('button');
+        btn.type = 'button';
+        btn.className = `rc-btn ${item.size === 'big' ? 'rc-btn-big' : 'rc-btn-small'}`;
+        btn.setAttribute('data-command-id', item.id);
+        btn.setAttribute('aria-label', item.label);
+        btn.title = item.tooltip || item.label;
+
+        if (item.size === 'big') {
+          btn.innerHTML = `
             <svg class="rc-icon rc-icon-32" aria-hidden="true"><use href="#icon-${item.icon}-32"></use></svg>
             <span class="rc-btn-label">${item.label}</span>
           `;
-          primaryBtn.addEventListener('click', () => {
-            if (!primaryBtn.disabled) item.run(ctx);
-          });
-          splitWrap.appendChild(primaryBtn);
-
-          // Divider
-          const divider = doc.createElement('span');
-          divider.className = 'rc-split-divider';
-          divider.setAttribute('aria-hidden', 'true');
-          splitWrap.appendChild(divider);
-
-          // Companion
-          const compBtn = doc.createElement('button');
-          compBtn.type = 'button';
-          compBtn.className = 'rc-btn rc-split-companion';
-          compBtn.setAttribute('data-command-id', companion.id);
-          compBtn.setAttribute('aria-label', companion.label);
-          compBtn.title = companion.tooltip || companion.label;
-          compBtn.innerHTML = `
-            <svg class="rc-icon rc-icon-16" aria-hidden="true"><use href="#icon-${companion.icon}-16"></use></svg>
-          `;
-          compBtn.addEventListener('click', () => {
-            if (!compBtn.disabled) companion.run(ctx);
-          });
-          splitWrap.appendChild(compBtn);
-
-          rowEl.appendChild(splitWrap);
         } else {
-          // Normal Command
-          const btn = doc.createElement('button');
-          btn.type = 'button';
-          btn.className = `rc-btn ${item.size === 'big' ? 'rc-btn-big' : 'rc-btn-small'}`;
-          btn.setAttribute('data-command-id', item.id);
-          btn.setAttribute('aria-label', item.label);
-          btn.title = item.tooltip || item.label;
-
-          if (item.size === 'big') {
-            btn.innerHTML = `
-              <svg class="rc-icon rc-icon-32" aria-hidden="true"><use href="#icon-${item.icon}-32"></use></svg>
-              <span class="rc-btn-label">${item.label}</span>
-            `;
-          } else {
-            btn.innerHTML = `
-              <svg class="rc-icon rc-icon-16" aria-hidden="true"><use href="#icon-${item.icon}-16"></use></svg>
-              <span class="rc-btn-label">${item.label}</span>
-            `;
-          }
-
-          btn.addEventListener('click', () => {
-            if (!btn.disabled) item.run(ctx);
-          });
-          rowEl.appendChild(btn);
+          btn.innerHTML = `
+            <svg class="rc-icon rc-icon-16" aria-hidden="true"><use href="#icon-${item.icon}-16"></use></svg>
+            <span class="rc-btn-label">${item.label}</span>
+          `;
         }
+
+        btn.addEventListener('click', () => {
+          if (!btn.disabled) item.run(ctx);
+        });
+        parentEl.appendChild(btn);
       }
-      groupRows.appendChild(rowEl);
     }
-    groupContent.appendChild(groupRows);
+
+    if (Array.isArray(group.columns)) {
+      for (const col of group.columns) {
+        if (!Array.isArray(col)) continue;
+        const colRows = doc.createElement('div');
+        colRows.className = 'rc-group-rows';
+        for (const item of col) {
+          const rowEl = doc.createElement('div');
+          rowEl.className = 'rc-group-row';
+          renderItem(item, rowEl);
+          colRows.appendChild(rowEl);
+        }
+        groupContent.appendChild(colRows);
+      }
+    } else {
+      const groupRows = doc.createElement('div');
+      groupRows.className = 'rc-group-rows';
+      for (const row of group.items || []) {
+        const rowEl = doc.createElement('div');
+        rowEl.className = 'rc-group-row';
+        for (const item of row || []) {
+          renderItem(item, rowEl);
+        }
+        groupRows.appendChild(rowEl);
+      }
+      groupContent.appendChild(groupRows);
+    }
     groupEl.appendChild(groupContent);
 
     // Caption bar
