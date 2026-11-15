@@ -49,6 +49,21 @@ export function createConduitRibbonDef(ctx) {
                   },
                 },
               ],
+              [
+                {
+                  id: 'conduit.load-sample',
+                  label: 'Load Sample',
+                  icon: 'sample',
+                  size: 'small',
+                  keytip: 'MS',
+                  tooltip: 'Load sample model BasicHouse.ifc',
+                  async run(c) {
+                    if (typeof c.api?.loadSampleModel === 'function') {
+                      await c.api.loadSampleModel();
+                    }
+                  },
+                },
+              ],
             ],
           },
           {

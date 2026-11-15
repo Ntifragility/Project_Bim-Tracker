@@ -88,6 +88,21 @@ export function createModelLoad({ state, els, engine, api }) {
     document.querySelector('[data-tab-target="draw"]')?.click();
   }
 
+  async function loadSampleModel(samplePath = '/BasicHouse.ifc') {
+    try {
+      api.showLoading('Fetching sample IFC model…', 15, 'BasicHouse.ifc');
+      const resp = await fetch(samplePath);
+      if (!resp.ok) throw new Error(`Could not fetch sample model: ${resp.status}`);
+      const blob = await resp.blob();
+      const file = new File([blob], 'BasicHouse.ifc', { type: 'application/x-step' });
+      await loadIfcFile(file);
+    } catch (err) {
+      console.error('[Conduit Takeoff] Error loading sample:', err);
+      api.hideLoading();
+      alert(`Failed to load sample model: ${err.message}`);
+    }
+  }
+
   function wireModelControls() {
     // IFC File Loading
     els.btnOpenIfc.addEventListener('click', () => els.fileInput.click());
@@ -128,6 +143,7 @@ export function createModelLoad({ state, els, engine, api }) {
   }
 
   api.loadIfcFile = loadIfcFile;
+  api.loadSampleModel = loadSampleModel;
   api.fitCameraToModel = (model) => fitCameraToModel(engine, model);
   api.getLoadedModel = getModel;
 
