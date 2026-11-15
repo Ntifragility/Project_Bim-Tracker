@@ -359,6 +359,7 @@ export function initLateralDock(ctx, dom, api) {
   api.propertiesPalette = propertiesPalette;
   api.projectBrowser = projectBrowser;
   api.resetRevitPropertiesPalette = setIdleProperties;
+  api.updatePropertiesPalette = setIdleProperties;
   api.updateProjectBrowser = () => {
     const currentActive = ctx.activeModel?.name || ctx.loadedModels?.[0]?.name || 'Active Model';
     projectBrowser.setActiveModel(currentActive);

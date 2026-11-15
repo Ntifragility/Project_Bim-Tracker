@@ -237,7 +237,9 @@ export function createLateralDock({ state, els, api }) {
       const minRadiusMm = Math.round(minRadiusM * 1000);
       const minRadiusIn = (minRadiusM / 0.0254).toFixed(1);
 
+      const coordSysName = state.coordinateMode === 'shared' ? 'Shared (IFC Survey Point)' : 'Project Base Point (Local)';
       const constraintParams = [
+        { name: 'Coordinate System', value: coordSysName, readonly: true },
         { name: 'Reference Elevation', value: `${refElev.toFixed(2)} m`, type: 'text' },
         { name: 'Workplane state', value: tool?.workPlaneVisible ? 'Active (Grid Visible)' : 'Active (Grid Hidden)', readonly: true },
         { name: 'NEC 358.26 (Bends Limit)', value: `${bendAnalysis.totalDegrees}° / 360° (${bendAnalysis.exceedsNec360 ? 'NON-COMPLIANT' : 'COMPLIANT'})`, readonly: true },
@@ -313,6 +315,7 @@ export function createLateralDock({ state, els, api }) {
         types: typeOptions,
         parameters: {
           'Constraints': [
+            { name: 'Coordinate System', value: state.coordinateMode === 'shared' ? 'Shared (IFC Survey Point)' : 'Project Base Point (Local)', readonly: true },
             { name: 'Reference Elevation', value: `${activeElev.toFixed(2)} m`, type: 'text' },
             { name: 'Workplane state', value: tool?.workPlaneVisible ? 'Active (Grid Visible)' : 'Active (Grid Hidden)', readonly: true },
             { name: 'NEC 358.26 (Bends Limit)', value: `${bendAnalysis.totalDegrees}° / 360° (${bendAnalysis.exceedsNec360 ? 'NON-COMPLIANT' : 'COMPLIANT'})`, readonly: true },
@@ -354,6 +357,7 @@ export function createLateralDock({ state, els, api }) {
         types: typeOptions,
         parameters: {
           'Constraints': [
+            { name: 'Coordinate System', value: state.coordinateMode === 'shared' ? 'Shared (IFC Survey Point)' : 'Project Base Point (Local)', readonly: true },
             { name: 'Reference Elevation', value: `${activeElev.toFixed(2)} m`, type: 'text' },
             { name: 'Workplane state', value: tool?.workPlaneVisible ? 'Active (Grid Visible)' : 'Active (Grid Hidden)', readonly: true },
             { name: 'NEC Standard Limit', value: '360° max cumulative bends (NEC 358.26)', readonly: true },

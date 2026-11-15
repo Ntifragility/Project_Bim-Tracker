@@ -24,6 +24,7 @@ export function exportOverlayIfc({
   schema = 'IFC4',
   projectName = 'Conduit Takeoff Overlay',
   unit = 'METRE',
+  toOriginal = null,
 }) {
   const schemaUpper = schema.toUpperCase().includes('2X3') ? 'IFC2X3' : 'IFC4';
   const timestamp = formatIfcDate();
@@ -108,7 +109,8 @@ export function exportOverlayIfc({
 
     // Create Cartesian points for vertices
     const pointIds = [];
-    for (const pt of nodeCoords) {
+    for (const rawPt of nodeCoords) {
+      const pt = typeof toOriginal === 'function' ? toOriginal(rawPt) : rawPt;
       const pid = nextId();
       add(`#${pid}=IFCCARTESIANPOINT((${Number(pt.x).toFixed(4)},${Number(pt.y).toFixed(4)},${Number(pt.z).toFixed(4)}));`);
       pointIds.push(`#${pid}`);

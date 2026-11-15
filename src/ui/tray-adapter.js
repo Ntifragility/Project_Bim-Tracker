@@ -953,6 +953,18 @@ export function createTrayRibbonDef(ctx) {
     // ─────────────────────────────────────────────────────────
     statusSegments: [
       {
+        id: 'coord-mode',
+        value(c) {
+          const isShared = api.getCoordMode?.() === 'shared';
+          return isShared ? '🌐 Shared (IFC Survey)' : '📐 Project Base Point';
+        },
+        run(c) {
+          const current = api.getCoordMode?.() || 'project';
+          const next = current === 'shared' ? 'project' : 'shared';
+          api.setCoordMode?.(next);
+        },
+      },
+      {
         id: 'selection-count',
         value: (c) => {
           const map = api.getSelectedModelIdMap?.();

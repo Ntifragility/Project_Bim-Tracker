@@ -214,7 +214,13 @@ export function createViewerChrome({ state, els, api }) {
         }
 
         if (change.cursor) {
-          const coordsText = `X: ${change.cursor.x.toFixed(2)}  Y: ${change.cursor.y.toFixed(2)}  Z: ${change.cursor.z.toFixed(2)}${change.snapped ? ' (SNAP)' : ''}`;
+          let coordsText = '';
+          if (state.coordinateMode === 'shared' && engine?.coordinates?.toOriginal) {
+            const orig = engine.coordinates.toOriginal(change.cursor);
+            coordsText = `E: ${orig.x.toFixed(2)} m  N: ${orig.y.toFixed(2)} m  Elev: ${orig.z.toFixed(2)} m (IFC)${change.snapped ? ' (SNAP)' : ''}`;
+          } else {
+            coordsText = `X: ${change.cursor.x.toFixed(2)} m  Y: ${change.cursor.z.toFixed(2)} m  Elev: ${change.cursor.y.toFixed(2)} m (Local)${change.snapped ? ' (SNAP)' : ''}`;
+          }
           if (els.cursorCoords) {
             els.cursorCoords.textContent = coordsText;
           }

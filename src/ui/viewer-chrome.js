@@ -278,6 +278,13 @@ export function initViewerChrome(ctx, dom, api) {
 
   api.excludeHiddenModelsFromPicker = excludeHiddenModelsFromPicker;
   api.resolveWorldGrid = resolveWorldGrid;
+  let coordinateMode = 'project';
+  api.getCoordMode = () => coordinateMode;
+  api.setCoordMode = (mode) => {
+    coordinateMode = mode;
+    api.refreshRibbon?.();
+    api.updatePropertiesPalette?.();
+  };
 
   return {
     setupSidebarTabs,
