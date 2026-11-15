@@ -15,7 +15,7 @@
 
 import * as OBC from '@thatopen/components';
 import * as THREE from 'three';
-import { createRibbon } from 'ribbon-chrome';
+import { createRibbon, createXyzTriad } from 'ribbon-chrome';
 import { createTrayRibbonDef } from './tray-adapter.js';
 
 /**
@@ -130,6 +130,15 @@ export function initViewerChrome(ctx, dom, api) {
         e.stopPropagation();
         ctx.engine.autoOrbit.toggle();
       });
+    }
+
+    // Revit-Style Corner Orientation Triad (UCS Widget)
+    if (dom.container && ctx.world?.camera) {
+      const triad = createXyzTriad(dom.container, {
+        camera: () => ctx.world?.camera?.three,
+        controls: () => ctx.world?.camera?.controls,
+      });
+      api.xyzTriad = triad;
     }
 
     if (dom.btnViewerSettings && dom.viewerSettingsPanel) {

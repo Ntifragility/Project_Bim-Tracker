@@ -746,7 +746,9 @@ export function initPropertiesPanel(ctx, dom, api) {
       if (content) content.style.display = 'none';
     }
     if (dom.propPsetsContainer) dom.propPsetsContainer.innerHTML = '';
-    if (api.propertiesPalette) {
+    if (typeof api.resetRevitPropertiesPalette === 'function') {
+      api.resetRevitPropertiesPalette();
+    } else if (api.propertiesPalette) {
       api.propertiesPalette.clear();
     }
   }
