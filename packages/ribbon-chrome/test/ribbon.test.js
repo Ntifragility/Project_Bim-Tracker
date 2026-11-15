@@ -470,3 +470,73 @@ test('Render-loop contract: calling refresh inside rAF produces console.warn', a
     api.destroy();
   }
 });
+
+test('Group layout: supports columns with big buttons side-by-side with small button stacks', () => {
+  const { doc } = setupMockDom();
+  const host = doc.createElement('div');
+  const ctx = {};
+  const def = {
+    tabs: [
+      {
+        id: 'model',
+        label: 'Model',
+        keytip: 'M',
+        groups: [
+          {
+            id: 'source',
+            label: 'Source',
+            columns: [
+              [
+                {
+                  id: 'test.open',
+                  label: 'Open IFC',
+                  icon: 'open',
+                  size: 'big',
+                  keytip: 'MO',
+                  run(c) { c.opened = true; },
+                },
+              ],
+              [
+                {
+                  id: 'test.sample',
+                  label: 'Load Sample',
+                  icon: 'sample',
+                  size: 'small',
+                  keytip: 'MS',
+                  run(c) { c.sample = true; },
+                },
+                {
+                  id: 'test.cache',
+                  label: 'Open Cache',
+                  icon: 'open',
+                  size: 'small',
+                  keytip: 'MC',
+                  run(c) { c.cache = true; },
+                },
+              ],
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
+  const api = createRibbon(host, def, ctx);
+  try {
+    const group = host.querySelector('.rc-group');
+    assert.ok(group, 'Group element rendered');
+    const cols = group.querySelectorAll('.rc-group-rows');
+    assert.equal(cols.length, 2, 'Two column containers rendered');
+
+    const bigBtn = host.querySelector('[data-command-id="test.open"]');
+    assert.ok(bigBtn.classList.contains('rc-btn-big'), 'Big button in column 1');
+
+    const smallBtns = host.querySelectorAll('.rc-btn-small');
+    assert.equal(smallBtns.length, 2, 'Two small buttons in column 2');
+
+    bigBtn.click();
+    assert.equal(ctx.opened, true, 'Big button click executed');
+  } finally {
+    api.destroy();
+  }
+});

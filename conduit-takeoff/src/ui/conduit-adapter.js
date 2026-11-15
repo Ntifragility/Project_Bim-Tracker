@@ -34,7 +34,7 @@ export function createConduitRibbonDef(ctx) {
           {
             id: 'source',
             label: 'Source',
-            items: [
+            columns: [
               [
                 {
                   id: 'conduit.open-ifc',
@@ -74,8 +74,6 @@ export function createConduitRibbonDef(ctx) {
                     c.api?.openFragFile?.();
                   },
                 },
-              ],
-              [
                 {
                   id: 'conduit.save-frag',
                   label: 'Save Cache (.frag)',
