@@ -205,6 +205,74 @@
       </section>
     </div>
 
+    <!-- Revit-Style Selective IFC Export Dialog (Option B & C) -->
+    <div id="export-ifc-dialog" class="viewer-dialog-backdrop" hidden>
+      <section class="viewer-dialog rc-export-dialog" role="dialog" aria-modal="true" aria-labelledby="export-dialog-title">
+        <div class="rc-nec-header">
+          <div class="rc-nec-header-title">
+            <span class="rc-nec-icon">📦</span>
+            <div>
+              <h2 id="export-dialog-title">Export Conduit Traces to IFC</h2>
+              <p class="rc-nec-subtitle">Select which conduit runs to include in the exported 3D IFC overlay</p>
+            </div>
+          </div>
+          <button id="export-dialog-close" class="rc-dialog-close" type="button" aria-label="Close">✕</button>
+        </div>
+        <div class="rc-export-body">
+          <div class="rc-export-scope-bar">
+            <div class="rc-export-scope-options">
+              <label class="rc-scope-radio-label">
+                <input type="radio" name="export-scope-mode" value="selected" checked />
+                <span>Export Selected / Checked (<strong id="export-selected-count">0</strong>)</span>
+              </label>
+              <label class="rc-scope-radio-label">
+                <input type="radio" name="export-scope-mode" value="all" />
+                <span>Export All Traces (<span id="export-all-count">0</span>)</span>
+              </label>
+            </div>
+            <div class="rc-export-quick-actions">
+              <button type="button" id="btn-export-select-all" class="btn btn-ghost btn-xs">Select All</button>
+              <button type="button" id="btn-export-deselect-all" class="btn btn-ghost btn-xs">Deselect All</button>
+            </div>
+          </div>
+          <div class="rc-export-table-container">
+            <table class="rc-export-table">
+              <thead>
+                <tr>
+                  <th style="width: 38px; text-align: center;"><input type="checkbox" id="export-table-check-all" checked title="Toggle all" /></th>
+                  <th>Run Name / ID</th>
+                  <th>Trade Size</th>
+                  <th>Length</th>
+                  <th>Bends</th>
+                  <th>Sticks</th>
+                </tr>
+              </thead>
+              <tbody id="export-runs-tbody">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+          </div>
+          <div class="rc-export-settings-row">
+            <div class="rc-export-field">
+              <label for="export-ifc-schema">IFC Schema:</label>
+              <select id="export-ifc-schema" class="select-sm">
+                <option value="IFC4" selected>IFC4 (Recommended)</option>
+                <option value="IFC2X3">IFC2X3</option>
+              </select>
+            </div>
+            <div class="rc-export-field" style="flex: 1;">
+              <label for="export-ifc-filename">File Name:</label>
+              <input type="text" id="export-ifc-filename" class="input-sm" value="conduit_overlay.ifc" />
+            </div>
+          </div>
+        </div>
+        <div class="rc-export-footer">
+          <button id="export-dialog-cancel" class="btn btn-secondary" type="button">Cancel</button>
+          <button id="export-dialog-confirm" class="btn btn-primary" type="button">Export IFC</button>
+        </div>
+      </section>
+    </div>
+
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

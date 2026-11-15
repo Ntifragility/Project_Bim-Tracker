@@ -26,10 +26,52 @@ export function createRunsList({ state, els, api }) {
     els.btnExportIfc.disabled = false;
     els.runList.innerHTML = '';
 
+    // Initialize checkedRunIds for selective export (Option B / C)
+    if (!state.checkedRunIds) state.checkedRunIds = new Set();
+    const existingRunIds = new Set(runs.map((r) => r.id));
+    for (const id of state.checkedRunIds) {
+      if (!existingRunIds.has(id)) state.checkedRunIds.delete(id);
+    }
+    if (state.checkedRunIds.size === 0 && runs.length > 0) {
+      for (const run of runs) state.checkedRunIds.add(run.id);
+    }
+
+    // Top selection toolbar for selective export
+    const allChecked = runs.length > 0 && runs.every((r) => state.checkedRunIds.has(r.id));
+    const checkedCount = runs.filter((r) => state.checkedRunIds.has(r.id)).length;
+    const toolbar = document.createElement('div');
+    toolbar.className = 'runs-list-toolbar';
+    toolbar.innerHTML = `
+      <label class="runs-select-all-label" title="Select or deselect all runs for IFC export">
+        <input type="checkbox" id="runs-select-all-checkbox" ${allChecked ? 'checked' : ''} />
+        <span>Export: <strong>${checkedCount}/${runs.length}</strong> checked</span>
+      </label>
+      <button type="button" class="btn-export-quick-btn" title="Open Selective IFC Export Dialog">Export IFC 📦</button>
+    `;
+
+    const selectAllCheckbox = toolbar.querySelector('#runs-select-all-checkbox');
+    selectAllCheckbox.addEventListener('change', () => {
+      if (selectAllCheckbox.checked) {
+        for (const run of runs) state.checkedRunIds.add(run.id);
+      } else {
+        state.checkedRunIds.clear();
+      }
+      renderRunsList(drawingTool);
+      api.updateExportDialogCounts?.();
+    });
+
+    const quickExportBtn = toolbar.querySelector('.btn-export-quick-btn');
+    quickExportBtn.addEventListener('click', () => {
+      api.openExportIfcDialog?.();
+    });
+
+    els.runList.appendChild(toolbar);
+
     for (const run of runs) {
       const takeoff = backend.computeRunTakeoff(state.network, run.id);
       const color = state.diameterRegistry.getColor(run.size);
       const isSelected = state.selectedRunId === run.id;
+      const isChecked = state.checkedRunIds.has(run.id);
 
       const runNodes = (run.nodeIds || []).map((nid) => backend.nodeById(state.network, nid)).filter(Boolean);
       const bendAnalysis = backend.analyzeRunBends(runNodes);
@@ -38,6 +80,9 @@ export function createRunsList({ state, els, api }) {
       card.className = `run-item-card ${isSelected ? 'selected' : ''}`;
       card.innerHTML = `
         <div class="run-item-header">
+          <label class="run-item-check-label" title="Check to include in IFC export" onclick="event.stopPropagation()">
+            <input type="checkbox" class="run-item-checkbox" data-run-id="${run.id}" ${isChecked ? 'checked' : ''} />
+          </label>
           <span class="run-item-title">
             <span class="diameter-color-swatch" style="background: ${color}; color: ${color}"></span>
             <span>${run.name || `Run ${run.id}`} (${run.size})</span>
@@ -53,9 +98,22 @@ export function createRunsList({ state, els, api }) {
         </div>
       `;
 
-      // Click to select
+      // Checkbox for selective IFC export (Option B)
+      const checkInput = card.querySelector('.run-item-checkbox');
+      checkInput.addEventListener('change', (e) => {
+        e.stopPropagation();
+        if (checkInput.checked) {
+          state.checkedRunIds.add(run.id);
+        } else {
+          state.checkedRunIds.delete(run.id);
+        }
+        renderRunsList(drawingTool);
+        api.updateExportDialogCounts?.();
+      });
+
+      // Click to select/focus run in 3D
       card.addEventListener('click', (e) => {
-        if (e.target.closest('.run-item-del-btn')) return;
+        if (e.target.closest('.run-item-del-btn') || e.target.closest('.run-item-check-label')) return;
         state.selectedRunId = isSelected ? null : run.id;
         drawingTool.selectedRunId = state.selectedRunId;
         drawingTool.renderRuns(state.network);
@@ -69,6 +127,12 @@ export function createRunsList({ state, els, api }) {
         api.updatePropertiesPalette?.(state.selectedRunId);
         api.refreshRibbon?.();
       });
+
+      if (isSelected) {
+        requestAnimationFrame(() => {
+          card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        });
+      }
 
       // Delete run
       const delBtn = card.querySelector('.run-item-del-btn');

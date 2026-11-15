@@ -370,13 +370,14 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
   }
 
   function conduitMaterial(colorHex, selected) {
-    const color = new THREE.Color(colorHex);
+    const baseColor = selected ? '#38bdf8' : colorHex;
+    const color = new THREE.Color(baseColor);
     const material = new THREE.MeshPhongMaterial({
       color,
-      shininess: 80,
+      shininess: selected ? 100 : 80,
       specular: new THREE.Color('#ffffff'),
-      emissive: color,
-      emissiveIntensity: selected ? 0.45 : 0.08,
+      emissive: selected ? new THREE.Color('#0284c7') : color,
+      emissiveIntensity: selected ? 0.6 : 0.08,
     });
     material.polygonOffset = true;
     material.polygonOffsetFactor = -2;
@@ -1110,6 +1111,9 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
   // Raycast against completed conduit traces in 3D scene to select/deselect
   function raycastSelectRun(ndc) {
     if (!completedRunsGroup || completedRunsGroup.children.length === 0) return false;
+    const camera = engine.world?.camera?.three;
+    if (!camera) return false;
+
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(ndc, camera);
     const intersects = raycaster.intersectObjects(completedRunsGroup.children, true);
@@ -1121,11 +1125,19 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
         hitRunId = hitObj.userData?.runId;
       }
       if (hitRunId) {
-        selectedRunId = hitRunId;
-        onSelectRun?.(selectedRunId);
+        // Toggle selection: if clicked already selected run, deselect it
+        if (selectedRunId === hitRunId) {
+          selectedRunId = null;
+          onSelectRun?.(null);
+        } else {
+          selectedRunId = hitRunId;
+          onSelectRun?.(selectedRunId);
+        }
+        try { engine.highlighter?.clear('select'); } catch { /* noop */ }
         return true;
       }
     }
+    // Clicking empty space deselects active conduit
     if (selectedRunId !== null) {
       selectedRunId = null;
       onSelectRun?.(null);
@@ -1144,7 +1156,10 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
     if (decision.action === 'place' || decision.action === 'sample') {
       await placePointAtNdc(getCanvasNdc(event));
     } else if (!isDrawingMode && !isPickElevationActive) {
-      raycastSelectRun(getCanvasNdc(event));
+      // Only raycast to select conduit when it was a click (not a camera drag/orbit)
+      if (decision.action === 'select' || (event.button === 0 && !decision.azimuthDelta && !decision.polarDelta && !decision.truckX && !decision.truckY)) {
+        raycastSelectRun(getCanvasNdc(event));
+      }
     }
   }
 
