@@ -135,5 +135,10 @@ test('engine exposes Phase-B APIs (selection, perf, appearanceHistory)', async (
   for (const token of ['CovillafWorldAxesHelper', 'THREE.AxesHelper(16)', 'axes:', 'helper', 'visible', 'toggle()']) {
     assert.ok(src.includes(token), `engine.js contains ${token}`);
   }
+
+  // Optimized .frag conversion and cache loading contract
+  for (const token of ['loadFrag(buffer', 'exportFrag(modelOrId', 'targetModel.getBuffer(false)']) {
+    assert.ok(src.includes(token), `engine.js contains ${token}`);
+  }
 });
 
