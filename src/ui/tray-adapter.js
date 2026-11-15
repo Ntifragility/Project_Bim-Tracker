@@ -37,7 +37,7 @@ export function createTrayRibbonDef(ctx) {
           {
             id: 'model-source',
             label: 'Source',
-            items: [
+            columns: [
               [
                 {
                   id: 'tray.open-ifc',
@@ -82,8 +82,6 @@ export function createTrayRibbonDef(ctx) {
                     }
                   },
                 },
-              ],
-              [
                 {
                   id: 'tray.save-frag',
                   label: 'Save Cache (.frag)',
