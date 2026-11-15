@@ -63,6 +63,30 @@ export function createConduitRibbonDef(ctx) {
                     }
                   },
                 },
+                {
+                  id: 'conduit.open-frag',
+                  label: 'Open Cache (.frag)',
+                  icon: 'open',
+                  size: 'small',
+                  keytip: 'MFC',
+                  tooltip: 'Open optimized .frag cache for instant loading',
+                  run(c) {
+                    c.api?.openFragFile?.();
+                  },
+                },
+              ],
+              [
+                {
+                  id: 'conduit.save-frag',
+                  label: 'Save Cache (.frag)',
+                  icon: 'export',
+                  size: 'small',
+                  keytip: 'MFS',
+                  tooltip: 'Save active model as optimized .frag cache (~90% smaller)',
+                  run(c) {
+                    c.api?.saveFragFile?.();
+                  },
+                },
               ],
             ],
           },
