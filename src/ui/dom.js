@@ -25,6 +25,7 @@ export const btnSidebarToggle = el('sidebar-toggle');
 export const btnLoadSample = el('btn-load-sample');
 export const btnUpload = el('btn-upload');
 export const fileInput = el('file-input');
+export const fragFileInput = el('frag-file-input');
 export const btnResetCamera = el('btn-reset-camera');
 export const btnViewerSettings = el('btn-viewer-settings');
 export const viewerSettingsPanel = el('viewer-settings-panel');

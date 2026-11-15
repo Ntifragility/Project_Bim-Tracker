@@ -569,6 +569,32 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
       }
     },
 
+    async loadFrag(buffer, name = "model.frag") {
+      const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+      const model = await fragments.core.load(bytes, {
+        modelId: name,
+        camera: world.camera.three,
+      });
+      if (model?.object && !world.scene.three.children.includes(model.object)) {
+        world.scene.three.add(model.object);
+      }
+      return model;
+    },
+
+    async exportFrag(modelOrId) {
+      let targetModel = modelOrId;
+      if (typeof modelOrId === "string") {
+        targetModel = fragments.core.models.get(modelOrId);
+      }
+      if (!targetModel) {
+        targetModel = [...fragments.core.models.list.values()][0];
+      }
+      if (!targetModel) {
+        throw new Error("No loaded model found to export as .frag");
+      }
+      return await targetModel.getBuffer(false);
+    },
+
     setSelectionColor(color) {
       const normalized = /^#[0-9a-fA-F]{6}$/.test(color) ? color.toLowerCase() : "#6366f1";
       highlighter.styles.set("select", {

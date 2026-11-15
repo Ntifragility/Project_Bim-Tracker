@@ -147,6 +147,9 @@ export async function initApp() {
   }, api);
   api.refreshLoadedModelsList = loader.refreshLoadedModelsList;
   api.loadModel = loader.loadModel;
+  api.loadFrag = loader.loadFrag;
+  api.openFragFile = loader.openFragFile;
+  api.saveFragFile = loader.saveFragFile;
   api.loadSampleModel = loader.loadSampleModel;
   api.fitModelsToView = loader.fitModelsToView;
   api.fitModelToView = loader.fitModelToView;

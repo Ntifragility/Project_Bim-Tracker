@@ -67,6 +67,36 @@ export function createTrayRibbonDef(ctx) {
                     }
                   },
                 },
+                {
+                  id: 'tray.open-frag',
+                  label: 'Open Cache (.frag)',
+                  icon: 'open',
+                  size: 'small',
+                  keytip: 'MC',
+                  tooltip: 'Open pre-converted optimized binary cache (.frag) instantaneously',
+                  run: () => {
+                    if (typeof api.openFragFile === 'function') {
+                      api.openFragFile();
+                    } else if (dom.fragFileInput) {
+                      dom.fragFileInput.click();
+                    }
+                  },
+                },
+              ],
+              [
+                {
+                  id: 'tray.save-frag',
+                  label: 'Save Cache (.frag)',
+                  icon: 'export',
+                  size: 'small',
+                  keytip: 'MF',
+                  tooltip: 'Save loaded model as optimized .frag FlatBuffers cache (~90% smaller)',
+                  run: () => {
+                    if (typeof api.saveFragFile === 'function') {
+                      api.saveFragFile();
+                    }
+                  },
+                },
               ],
             ],
           },
