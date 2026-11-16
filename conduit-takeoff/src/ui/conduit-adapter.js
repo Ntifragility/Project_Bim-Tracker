@@ -189,6 +189,42 @@ export function createConduitRibbonDef(ctx) {
                   },
                 },
               ],
+              [
+                {
+                  id: 'conduit.tool-section',
+                  label: 'Section',
+                  icon: 'section',
+                  size: 'small',
+                  keytip: 'MVS',
+                  tooltip: 'Toggle Section Plane / Box (Ctrl+X)',
+                  run(c) {
+                    const toolbar = c.api?.reviztoToolbar;
+                    if (toolbar?.openDrawer) {
+                      const drawer = toolbar.getOpenDrawer?.();
+                      toolbar.openDrawer(drawer === 'section' ? null : 'section');
+                    } else {
+                      c.engine?.section?.toggle?.();
+                    }
+                  },
+                },
+                {
+                  id: 'conduit.tool-ruler',
+                  label: 'Ruler',
+                  icon: 'ruler',
+                  size: 'small',
+                  keytip: 'MVRU',
+                  tooltip: 'Toggle 5-Mode Ruler (Ctrl+M)',
+                  run(c) {
+                    const toolbar = c.api?.reviztoToolbar;
+                    if (toolbar?.openDrawer) {
+                      const drawer = toolbar.getOpenDrawer?.();
+                      toolbar.openDrawer(drawer === 'ruler' ? null : 'ruler');
+                    } else {
+                      c.engine?.ruler?.toggleActive?.();
+                    }
+                  },
+                },
+              ],
             ],
           },
         ],

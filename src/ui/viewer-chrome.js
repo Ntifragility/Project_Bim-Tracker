@@ -15,7 +15,7 @@
 
 import * as OBC from '@thatopen/components';
 import * as THREE from 'three';
-import { createRibbon, createXyzTriad, createUnhidePill } from 'ribbon-chrome';
+import { createRibbon, createXyzTriad, createReviztoToolbar } from 'ribbon-chrome';
 import { createTrayRibbonDef } from './tray-adapter.js';
 
 /**
@@ -142,12 +142,95 @@ export function initViewerChrome(ctx, dom, api) {
       api.xyzTriad = triad;
     }
 
-    // Revizto-Style Unhide Floating Viewport Pill
+    // Revizto-Style Viewport Toolbar (Hide/Unhide, Isolate/Ghost, Section Plane/Box, 5-Mode Ruler)
+    let reviztoToolbar = null;
     if (dom.container && ctx.engine?.visibility) {
-      const unhidePill = createUnhidePill(dom.container, {
+      reviztoToolbar = createReviztoToolbar(dom.container, {
         visibility: ctx.engine.visibility,
+        isolation: ctx.engine.isolation,
+        section: ctx.engine.section,
+        ruler: ctx.engine.ruler,
+        getSelectionMap: () => (typeof api.getSelectedModelIdMap === 'function' ? api.getSelectedModelIdMap() : {}),
       });
-      api.unhidePill = unhidePill;
+      api.reviztoToolbar = reviztoToolbar;
+      api.unhidePill = reviztoToolbar;
+
+      const syncSelectPolicy = () => {
+        if (!ctx.highlighter?.config) return;
+        const secState = ctx.engine.section?.getState?.() || {};
+        const rulActive = Boolean(ctx.engine.ruler?.active);
+        const dragActive = Boolean(ctx.engine.section?.isDraggingHandle?.());
+        ctx.highlighter.config.selectEnabled = !(rulActive || secState.surfacePickPending || dragActive);
+      };
+
+      ctx.engine.section?.onChange?.(syncSelectPolicy);
+      ctx.engine.ruler?.onChange?.(syncSelectPolicy);
+      ctx.highlighter?.events?.select?.onHighlight?.add?.(() => ctx.engine.visibility?.notifySelectionChange?.());
+      ctx.highlighter?.events?.select?.onClear?.add?.(() => ctx.engine.visibility?.notifySelectionChange?.());
+
+      const toNdc = (ev) => {
+        const rect = dom.container.getBoundingClientRect();
+        if (!rect.width || !rect.height) return null;
+        return new THREE.Vector2(
+          ((ev.clientX - rect.left) / rect.width) * 2 - 1,
+          -((ev.clientY - rect.top) / rect.height) * 2 + 1,
+        );
+      };
+
+      let downPos = null;
+      let draggingSectionHandle = false;
+
+      dom.container.addEventListener('pointerdown', (ev) => {
+        if (ev.button !== 0) return;
+        downPos = { x: ev.clientX, y: ev.clientY };
+        const ndc = toNdc(ev);
+        if (ndc && ctx.engine.section?.handlePointerDown?.(ndc)) {
+          draggingSectionHandle = true;
+          syncSelectPolicy();
+        }
+      });
+
+      dom.container.addEventListener('pointermove', (ev) => {
+        const ndc = toNdc(ev);
+        if (!ndc) return;
+        if (ctx.engine.section?.active || draggingSectionHandle) {
+          ctx.engine.section?.handlePointerMove?.(ndc);
+        }
+        if (ctx.engine.ruler?.active && !draggingSectionHandle) {
+          ctx.engine.ruler?.handlePointerMove?.(ndc);
+        }
+      });
+
+      dom.container.addEventListener('pointerup', (ev) => {
+        if (ev.button !== 0) return;
+        if (draggingSectionHandle) {
+          draggingSectionHandle = false;
+          ctx.engine.section?.handlePointerUp?.();
+          syncSelectPolicy();
+          downPos = null;
+          return;
+        }
+        if (!downPos) return;
+        const dist = Math.hypot(ev.clientX - downPos.x, ev.clientY - downPos.y);
+        downPos = null;
+        if (dist > 5) return;
+        const ndc = toNdc(ev);
+        if (!ndc) return;
+        const secState = ctx.engine.section?.getState?.() || {};
+        if (secState.surfacePickPending) {
+          ctx.engine.section.handlePointerClick(ndc);
+        } else if (ctx.engine.ruler?.active) {
+          ctx.engine.ruler.handlePointerClick(ndc, { shiftKey: ev.shiftKey });
+        }
+      });
+
+      dom.container.addEventListener('dblclick', (ev) => {
+        const secState = ctx.engine.section?.getState?.() || {};
+        if (secState.active && secState.mode === 'plane' && !ctx.engine.ruler?.active) {
+          const ndc = toNdc(ev);
+          if (ndc) ctx.engine.section.cutAtNdc(ndc);
+        }
+      });
     }
 
     if (dom.btnViewerSettings && dom.viewerSettingsPanel) {
@@ -216,14 +299,17 @@ export function initViewerChrome(ctx, dom, api) {
     // The ribbon joins the guard list: it is an overlay after setupRibbonShell
     // moves the control subtrees into it (same nodes, new parent).
     const ribbonEl = document.getElementById('ribbon');
-    for (const overlay of [ribbonEl, dom.sidebar, dom.excelPanel, dom.viewerSettingsPanel, dom.viewerContextMenu]) {
+    for (const overlay of [ribbonEl, dom.sidebar, dom.excelPanel, dom.viewerSettingsPanel, dom.viewerContextMenu, reviztoToolbar?.element]) {
       if (!overlay) continue;
       overlay.addEventListener('pointerdown', () => {
         ctx.highlighter.config.selectEnabled = false;
       });
       const restoreViewportPicking = () => {
         window.setTimeout(() => {
-          ctx.highlighter.config.selectEnabled = true;
+          const secState = ctx.engine?.section?.getState?.() || {};
+          const rulActive = Boolean(ctx.engine?.ruler?.active);
+          const dragActive = Boolean(ctx.engine?.section?.isDraggingHandle?.());
+          ctx.highlighter.config.selectEnabled = !(rulActive || secState.surfacePickPending || dragActive);
         }, 0);
       };
       overlay.addEventListener('pointerup', restoreViewportPicking);

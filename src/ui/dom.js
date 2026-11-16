@@ -15,7 +15,11 @@ function all(selector) {
 export const container = el('viewer-container');
 export const viewerContextMenu = el('viewer-context-menu');
 export const contextFocusItem = el('context-focus-item');
+export const contextHideItem = el('context-hide-item');
+export const contextUnhideAll = el('context-unhide-all');
 export const contextIsolateItem = el('context-isolate-item');
+export const contextIsolateGhost = el('context-isolate-ghost');
+export const contextSectionBox = el('context-section-box');
 export const contextColorControl = el('context-color-control');
 export const contextSelectionColor = el('context-selection-color');
 export const contextColorHex = el('context-color-hex');

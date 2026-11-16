@@ -76,5 +76,14 @@ export function collectEls() {
     btnExportIfc: document.getElementById('btn-export-ifc'),
     statusText: document.getElementById('status-text'),
     cursorCoords: document.getElementById('cursor-coords'),
+
+    // Context menu
+    viewerContextMenu: document.getElementById('viewer-context-menu'),
+    contextHideItem: document.getElementById('context-hide-item'),
+    contextUnhideAll: document.getElementById('context-unhide-all'),
+    contextIsolateItem: document.getElementById('context-isolate-item'),
+    contextIsolateGhost: document.getElementById('context-isolate-ghost'),
+    contextSectionBox: document.getElementById('context-section-box'),
+    contextShowAll: document.getElementById('context-show-all'),
   };
 }

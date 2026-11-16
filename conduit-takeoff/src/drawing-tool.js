@@ -227,6 +227,12 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
   let selectedRunId = null;
   let isShiftPressed = false;
   let activeJustification = JUSTIFICATION_MODES.CENTER;
+  let draggingSectionHandle = false;
+  let lastLeftDownScreen = null;
+  let lastRenderedNetwork = null;
+  let externalHiddenRunIds = new Set();
+  let externalGhostRunIds = new Set();
+  const externalRunRaycaster = new THREE.Raycaster();
 
   // Track shift key for free-angle vs magnetic snapping
   window.addEventListener('keydown', (e) => {
@@ -239,7 +245,13 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
   function syncViewportMode() {
     const mode = isPickElevationActive ? 'pick-elevation' : (isDrawingMode ? 'drawing' : 'navigate');
     const allowHighlight = viewport.setMode(mode);
-    surfacePicker.applyHighlightPolicy(allowHighlight);
+    const secState = engine.section?.getState?.() || {};
+    const reviztoToolActive = Boolean(
+      engine.ruler?.active ||
+      secState.surfacePickPending ||
+      engine.section?.isDraggingHandle?.()
+    );
+    surfacePicker.applyHighlightPolicy(allowHighlight && !reviztoToolActive);
     bindSelectionPivot();
   }
 
@@ -788,8 +800,36 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
     }
   }
 
+  function applyExternalVisibilityToRuns() {
+    for (const runGroup of completedRunsGroup.children) {
+      const key = String(runGroup.userData?.runId ?? '');
+      const hidden = externalHiddenRunIds.has(key);
+      const ghost = externalGhostRunIds.has(key);
+      runGroup.visible = !hidden;
+      runGroup.traverse((child) => {
+        if (!child.isMesh || !child.material) return;
+        const mats = Array.isArray(child.material) ? child.material : [child.material];
+        for (const m of mats) {
+          if (m.userData.__origOpacity === undefined) {
+            m.userData.__origOpacity = m.opacity ?? 1;
+            m.userData.__origTransparent = Boolean(m.transparent);
+          }
+          if (ghost) {
+            m.opacity = 0.15;
+            m.transparent = true;
+          } else {
+            m.opacity = m.userData.__origOpacity;
+            m.transparent = m.userData.__origTransparent;
+          }
+          m.needsUpdate = true;
+        }
+      });
+    }
+  }
+
   // Render all finished conduit runs stored in the network as continuous seamless tubular lofts
   function renderCompletedRuns(network) {
+    lastRenderedNetwork = network;
     while (completedRunsGroup.children.length > 0) {
       const child = completedRunsGroup.children[0];
       completedRunsGroup.remove(child);
@@ -810,6 +850,8 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
 
       const runGroup = new THREE.Group();
       runGroup.name = `Run_${run.id}`;
+      runGroup.userData.runId = run.id;
+      runGroup.userData.runName = run.name || `Run ${run.id}`;
 
       const colorHex = diameterRegistry.getColor(run.size) || '#f59e0b';
       const isSelected = run.id === selectedRunId;
@@ -827,6 +869,9 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
 
       completedRunsGroup.add(runGroup);
     }
+
+    applyExternalVisibilityToRuns();
+    engine.section?.registerClippedObject?.('conduit-completed-runs', completedRunsGroup);
   }
 
   let pointerTarget = null;
@@ -930,12 +975,14 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
     selectEvents.onHighlight.add(() => {
       ensurePivotListener();
       void lockPivotToSelection(engine.highlighter?.selection?.select);
+      engine.visibility?.notifySelectionChange?.();
     });
     selectEvents.onClear.add(() => {
       selectionToken += 1;
       lockedPivot = null;
       pendingPivot = null;
       pivotMarker.visible = false;
+      engine.visibility?.notifySelectionChange?.();
     });
   }
 
@@ -980,8 +1027,35 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
     pivotMarker.visible = false;
   }
 
+  function raycastRunAtNdc(ndc) {
+    if (!completedRunsGroup.children.length) return null;
+    const camera = engine.world?.camera?.three;
+    if (!camera) return null;
+    externalRunRaycaster.setFromCamera(ndc, camera);
+    const hits = externalRunRaycaster.intersectObjects(completedRunsGroup.children, true);
+    for (const hit of hits) {
+      let cur = hit.object;
+      while (cur) {
+        if (cur.userData?.runId != null && cur.visible) {
+          return cur.userData.runId;
+        }
+        cur = cur.parent;
+      }
+    }
+    return null;
+  }
+
   function handlePointerDown(event) {
     if (event.button === 1) event.preventDefault();
+    if (event.button === 0) {
+      lastLeftDownScreen = { x: event.clientX, y: event.clientY };
+      const ndc = getCanvasNdc(event);
+      if (engine.section?.handlePointerDown?.(ndc)) {
+        draggingSectionHandle = true;
+        syncViewportMode();
+        return;
+      }
+    }
     viewport.pointerDown(event);
     try {
       pointerTarget?.setPointerCapture?.(event.pointerId);
@@ -1005,9 +1079,20 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
     isShiftPressed = Boolean(event.shiftKey);
     lastNdc = getCanvasNdc(event);
     lastScreenPos = { x: event.clientX, y: event.clientY };
+    if (draggingSectionHandle) {
+      engine.section?.handlePointerMove?.(lastNdc);
+      return;
+    }
+    if (engine.section?.active) {
+      engine.section?.handlePointerMove?.(lastNdc);
+    }
     const decision = viewport.pointerMove(event, cameraView());
     if (decision.action === 'orbit' || decision.action === 'pan') {
       handleCameraUpdate();
+      return;
+    }
+    if (engine.ruler?.active) {
+      await engine.ruler.handlePointerMove(lastNdc);
       return;
     }
     await updateCursorAtNdc(lastNdc);
@@ -1101,8 +1186,46 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
   // Pointer up: only a Rust-classified left click places or samples.
   // Orbit, pan, and empty clicks leave the rubberband where it is.
   async function handlePointerUp(event) {
+    if (event.button === 0 && draggingSectionHandle) {
+      draggingSectionHandle = false;
+      engine.section?.handlePointerUp?.();
+      syncViewportMode();
+      lastLeftDownScreen = null;
+      return;
+    }
+
+    const leftMove =
+      event.button === 0 && lastLeftDownScreen
+        ? Math.hypot(event.clientX - lastLeftDownScreen.x, event.clientY - lastLeftDownScreen.y)
+        : 999;
+    lastLeftDownScreen = null;
+
     const decision = viewport.pointerUp(event, cameraView());
     hidePivot();
+
+    if (event.button === 0 && leftMove <= 5) {
+      const ndc = getCanvasNdc(event);
+      const secState = engine.section?.getState?.() || {};
+      if (secState.surfacePickPending) {
+        await engine.section.handlePointerClick(ndc);
+        syncViewportMode();
+        return;
+      }
+      if (engine.ruler?.active) {
+        await engine.ruler.handlePointerClick(ndc, { shiftKey: event.shiftKey });
+        return;
+      }
+      if (!isDrawingMode && !isPickElevationActive) {
+        const hitRunId = raycastRunAtNdc(ndc);
+        if (hitRunId != null) {
+          selectedRunId = selectedRunId === hitRunId ? null : hitRunId;
+          if (lastRenderedNetwork) renderCompletedRuns(lastRenderedNetwork);
+          onStateChange?.({ runSelected: selectedRunId });
+          return;
+        }
+      }
+    }
+
     if (!decision.preserveRubberband) {
       return;
     }
@@ -1541,6 +1664,19 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
 
     renderRuns(network) {
       renderCompletedRuns(network);
+    },
+
+    completedRunsGroup,
+    syncViewportMode,
+    setExternalVisibilityState({ hiddenIds = [], ghostIds = [] } = {}) {
+      externalHiddenRunIds = new Set(Array.from(hiddenIds, String));
+      externalGhostRunIds = new Set(Array.from(ghostIds, String));
+      applyExternalVisibilityToRuns();
+    },
+    getRunBounds(runId) {
+      const runGroup = completedRunsGroup.children.find((c) => String(c.userData?.runId) === String(runId));
+      if (!runGroup) return null;
+      return new THREE.Box3().setFromObject(runGroup);
     },
 
     // ── High-Pro Electrical BIM & Revit Parity Extensions ──────────────

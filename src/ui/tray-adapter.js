@@ -248,6 +248,40 @@ export function createTrayRibbonDef(ctx) {
                   },
                 },
               ],
+              [
+                {
+                  id: 'tray.tool-section',
+                  label: 'Section',
+                  icon: 'section',
+                  size: 'small',
+                  keytip: 'MVS',
+                  tooltip: 'Toggle Section Plane / Box (Ctrl+X)',
+                  run: () => {
+                    const drawer = api.reviztoToolbar?.getOpenDrawer?.();
+                    if (api.reviztoToolbar?.openDrawer) {
+                      api.reviztoToolbar.openDrawer(drawer === 'section' ? null : 'section');
+                    } else {
+                      ctx.engine?.section?.toggle?.();
+                    }
+                  },
+                },
+                {
+                  id: 'tray.tool-ruler',
+                  label: 'Ruler',
+                  icon: 'ruler',
+                  size: 'small',
+                  keytip: 'MVRU',
+                  tooltip: 'Toggle 5-Mode Ruler (Ctrl+M)',
+                  run: () => {
+                    const drawer = api.reviztoToolbar?.getOpenDrawer?.();
+                    if (api.reviztoToolbar?.openDrawer) {
+                      api.reviztoToolbar.openDrawer(drawer === 'ruler' ? null : 'ruler');
+                    } else {
+                      ctx.engine?.ruler?.toggleActive?.();
+                    }
+                  },
+                },
+              ],
             ],
           },
         ],

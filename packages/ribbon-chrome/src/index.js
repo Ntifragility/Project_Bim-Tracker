@@ -10,3 +10,7 @@ export { createPropertiesPalette, DEFAULT_CATEGORIES } from './properties-palett
 export { createProjectBrowser, getDefaultProjectBrowserTree } from './project-browser.js';
 export { createXyzTriad } from './xyz-triad.js';
 export { createUnhidePill } from './unhide-pill.js';
+export {
+  createReviztoToolbar,
+  computeToolbarPresentationState,
+} from './revizto-toolbar.js';
