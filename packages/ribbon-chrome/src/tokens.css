@@ -1252,14 +1252,14 @@
 /* ==== Revizto Floating Viewport Bar & Contextual Section / Ruler Sub-bars ==== */
 .rc-revizto-dock {
   position: absolute;
-  bottom: 14px;
-  left: 50%;
+  top: 68px;
+  left: 55%;
   transform: translateX(-50%);
-  z-index: 420;
+  z-index: 105;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   pointer-events: none;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   max-width: calc(100% - 32px);
@@ -1288,11 +1288,15 @@
 .rc-revizto-subbar {
   display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  width: max-content;
+  min-width: 560px;
+  max-width: calc(100vw - 32px);
+  gap: 10px;
   min-height: 38px;
-  padding: 5px 14px;
-  border-radius: 4px;
+  padding: 5px 16px;
+  border-radius: 3px;
   background: #383838;
   color: #dcdcdc;
   border: 1px solid #525252;
@@ -1304,11 +1308,12 @@
   color: #cccccc;
   font-size: 12px;
   font-weight: 400;
-  margin-right: 12px;
+  margin-right: 16px;
 }
 
 .rc-subbar-spacer {
-  flex: 1 1 8px;
+  flex: 1 1 28px;
+  min-width: 28px;
 }
 
 .rc-subbar-divider {
@@ -1533,7 +1538,8 @@
 
 .rc-popover-menu {
   position: absolute;
-  bottom: calc(100% + 6px);
+  top: calc(100% + 6px);
+  bottom: auto;
   left: 0;
   min-width: 155px;
   padding: 4px;
@@ -1756,6 +1762,65 @@
   border-radius: 7px;
   min-width: 14px;
   height: 14px;
+}
+
+/* Zone 3: Bottom Viewport Visibility Restore Bar (Unhide All / Unisolate / Ghost-Solid) */
+.rc-revizto-bottom-dock {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 105;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.rc-revizto-bottom-dock[hidden] {
+  display: none !important;
+}
+
+.rc-revizto-bottom-dock > * {
+  pointer-events: auto;
+}
+
+.rc-revizto-bottom-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border-radius: 4px;
+  background: #333333;
+  color: #dcdcdc;
+  border: 1px solid #525252;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+
+.rc-bottom-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid #ffffff;
+  background: #ffffff;
+  color: #222222;
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.rc-bottom-action-btn:hover {
+  background: #e5e5e5;
+}
+
+.rc-bottom-seg {
+  margin-left: 2px;
 }
 
 /* Projected 3D Ruler Badges */

@@ -4,6 +4,8 @@ import * as THREE from "three";
 
 import {
   createVisibilityController,
+  createSectionController,
+  createRulerController,
   computeBoxPlaneSpecs,
   isPointClippedByPlanes,
   computeIfcDelta,
@@ -12,6 +14,7 @@ import {
   computeMinDistance,
   collectWorldTrianglesFromObject,
 } from "../src/index.js";
+import { computeToolbarPresentationState } from "ribbon-chrome";
 
 function createFakeVisibilityRig() {
   const hiddenSet = new Set(); // tracked via hider mock: `${modelId}:${id}`
@@ -253,5 +256,104 @@ describe("Revizto Ruler Unit Formatting & Geometry Solvers", () => {
     assert.ok(clashRes);
     assert.equal(clashRes.clashing, true);
     assert.equal(clashRes.distance, 0);
+  });
+});
+
+describe("Revizto Section & Ruler Mutual Exclusion & 3-Zone UI Architecture", () => {
+  it("enforces mutual exclusion between Section and Ruler while keeping scene cuts active", async () => {
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
+    camera.position.set(10, 10, 10);
+    const world = { scene: { three: scene }, camera: { three: camera } };
+
+    let nextPlaneId = 1;
+    const planeList = new Map();
+    const rawClipper = {
+      enabled: false,
+      visible: false,
+      list: planeList,
+      createFromNormalAndCoplanarPoint(_w, normal, point) {
+        const id = `pl-${nextPlaneId++}`;
+        planeList.set(id, {
+          normal: normal.clone(),
+          origin: point.clone(),
+          three: new THREE.Plane().setFromNormalAndCoplanarPoint(normal, point),
+          visible: false,
+          enabled: true,
+          setFromNormalAndCoplanarPoint(n, p) {
+            this.normal.copy(n);
+            this.origin.copy(p);
+            this.three.setFromNormalAndCoplanarPoint(n, p);
+          },
+        });
+        return id;
+      },
+      delete(_w, id) {
+        planeList.delete(id);
+      },
+      deleteAll() {
+        planeList.clear();
+      },
+    };
+
+    const section = createSectionController({ world, rawClipper });
+    const ruler = createRulerController({ world, section });
+    section.setOnToolOpen(() => {
+      if (ruler.active) ruler.setActive(false);
+    });
+
+    // 1. Open Section -> Plane gizmo becomes visible, cut is active
+    await section.setActive(true);
+    assert.equal(section.getState().open, true);
+    assert.equal(section.getState().hasCuts, true);
+    const planeGizmo = scene.getObjectByName("ReviztoSectionPlaneGizmo");
+    assert.ok(planeGizmo);
+    assert.equal(planeGizmo.visible, true);
+
+    // 2. Open Ruler -> automatically closes Section tool & hides Section 3D gizmo, while keeping cut active!
+    ruler.setActive(true);
+    assert.equal(ruler.active, true);
+    assert.equal(section.getState().open, false);
+    assert.equal(section.getState().hasCuts, true);
+    assert.equal(planeGizmo.visible, false);
+
+    // 3. Re-open Section (in Box mode) -> automatically closes Ruler and shows Box gizmo
+    await section.setMode("box");
+    assert.equal(ruler.active, false);
+    assert.equal(section.getState().open, true);
+    const boxGizmo = scene.getObjectByName("ReviztoSectionBoxGizmo");
+    assert.ok(boxGizmo);
+    assert.equal(boxGizmo.visible, true);
+
+    section.dispose();
+    ruler.dispose();
+  });
+
+  it("places Unhide and Unisolate in the bottom bar while keeping top bar fixed as Hide | Isolate | Section | Ruler", () => {
+    const idle = computeToolbarPresentationState({
+      hiddenCount: 0,
+      hasSelection: false,
+      isolateMode: "none",
+    });
+    assert.equal(idle.hideBtn.label, "Hide");
+    assert.equal(idle.isolateBtn.label, "Isolate");
+    assert.equal(idle.bottomBar.visible, false);
+
+    const hiddenAndIsolated = computeToolbarPresentationState({
+      hiddenCount: 4,
+      hasSelection: false,
+      isolateMode: "ghost",
+      openDrawer: "section",
+      sectionState: { open: true, hasCuts: true, mode: "box", boxActive: true },
+    });
+    // Top bar buttons never morph into Unhide/Unisolate
+    assert.equal(hiddenAndIsolated.hideBtn.label, "Hide");
+    assert.equal(hiddenAndIsolated.isolateBtn.label, "Isolate");
+    // Bottom bar surfaces Unhide (4), Unisolate, and Show All
+    assert.equal(hiddenAndIsolated.bottomBar.visible, true);
+    assert.equal(hiddenAndIsolated.bottomBar.unhideVisible, true);
+    assert.equal(hiddenAndIsolated.bottomBar.unhideLabel, "Unhide (4)");
+    assert.equal(hiddenAndIsolated.bottomBar.unisolateVisible, true);
+    assert.equal(hiddenAndIsolated.bottomBar.showAllVisible, true);
   });
 });

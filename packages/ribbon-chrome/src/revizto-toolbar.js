@@ -1,9 +1,9 @@
-// Revizto-style Bottom Floating Viewport Toolbar + Section & 5-Mode Ruler Sub-bars.
+// Revizto 5-style Viewport Toolbar System for ribbon-chrome.
 //
-// Designed for ribbon-chrome (DOM-pure, zero BIM engine imports):
-//   - Capsule: Hide <-> Unhide (N), Isolate <-> Unisolate (+ Solid/Ghost toggle), Section / Uncut, Ruler
-//   - Section Sub-bar: Plane | Box, New (surface pick), Top / Front / Side presets, Flip, Clear, Gizmo toggle, ×
-//   - Ruler Sub-bar: New, 5 Revizto modes (Laser, P2P, MIN, Elevation, Angle), Regular/Chain ⓘ, Units ▾, Color ■ ▾, ΔXYZ, Clear, ×
+// Implements Revizto's 3-Zone Spatial UI Architecture (DOM-pure, zero BIM engine imports):
+//   - Zone 1 (Top Main Strip `#rc-revizto-bar`): 4 clean Revizto buttons (Hide | Isolate | Section | Ruler)
+//   - Zone 2 (Top Contextual Sub-Bar `.rc-revizto-subbar`): Exclusive Section OR Ruler sub-bar directly below
+//   - Zone 3 (Bottom Visibility Restore Bar `#rc-revizto-bottom-bar`): Unhide All (N) / Unisolate / Ghost-Solid at bottom
 
 const DEFAULT_UNITS = [
   { id: "m", label: "Meters", short: "Meters" },
@@ -25,7 +25,7 @@ const DEFAULT_COLORS = [
 ];
 
 /**
- * Pure presentation helper so HUD morph states can be tested cleanly without DOM.
+ * Pure presentation helper so HUD states for Top Bar and Bottom Restore Bar can be tested cleanly without DOM.
  */
 export function computeToolbarPresentationState({
   hiddenCount = 0,
@@ -36,103 +36,80 @@ export function computeToolbarPresentationState({
   rulerState = {},
   openDrawer = null,
 } = {}) {
-  let hideBtn;
-  if (hasSelection) {
-    hideBtn = {
-      label: "Hide",
-      action: "hide",
-      disabled: false,
-      highlighted: false,
-      title: "Hide Selected Elements (Ctrl+H)",
-    };
-  } else if (hiddenCount > 0) {
-    hideBtn = {
-      label: `Unhide (${hiddenCount})`,
-      action: "unhideAll",
-      disabled: false,
-      highlighted: true,
-      title: "Unhide All Hidden Elements (Ctrl+Shift+H)",
-    };
-  } else {
-    hideBtn = {
-      label: "Hide",
-      action: "hide",
-      disabled: true,
-      highlighted: false,
-      title: "Select elements to hide (Ctrl+H)",
-    };
-  }
-
-  const unhideChipVisible = Boolean(hasSelection && hiddenCount > 0);
   const isolated = isolateMode !== "none";
 
-  let isolateBtn;
-  if (hasSelection) {
-    isolateBtn = {
-      label: "Isolate",
-      action: "isolate",
-      disabled: false,
-      active: isolated,
-      title:
-        preferredIsolateMode === "ghost"
-          ? "Isolate in Transparency (Shift+I)"
-          : "Isolate Solid (Ctrl+I)",
-    };
-  } else if (isolated) {
-    isolateBtn = {
-      label: "Unisolate",
-      action: "unisolate",
-      disabled: false,
-      active: true,
-      title: "Unisolate — restore surrounding elements",
-    };
-  } else {
-    isolateBtn = {
-      label: "Isolate",
-      action: "isolate",
-      disabled: true,
-      active: false,
-      title: "Select elements to isolate",
-    };
-  }
+  // Top bar Hide & Isolate are pure selection actions; Unhide/Unisolate live in the Bottom Bar
+  const hideBtn = {
+    label: "Hide",
+    action: "hide",
+    disabled: !hasSelection,
+    highlighted: false,
+    title: hasSelection
+      ? "Hide Selected Elements (Ctrl+H)"
+      : "Select elements in the viewport to hide (Ctrl+H)",
+  };
+
+  const isolateBtn = {
+    label: "Isolate",
+    action: "isolate",
+    disabled: !hasSelection,
+    active: false,
+    title: hasSelection
+      ? preferredIsolateMode === "ghost"
+        ? "Isolate Selection in Transparency (Shift+I)"
+        : "Isolate Selection (Ctrl+I)"
+      : "Select elements in the viewport to isolate",
+  };
 
   const hasCuts = Boolean(sectionState.hasCuts);
+  const sectionOpen = Boolean(sectionState.open ?? openDrawer === "section");
+  const rulerOpen = Boolean(rulerState.active || openDrawer === "ruler");
+
   const cutBadge =
     sectionState.mode === "box" && sectionState.boxActive
       ? "Box"
       : sectionState.planeCount > 0
-        ? String(sectionState.planeCount)
+        ? "Cut"
         : "";
 
   const sectionBtn = {
     label: "Section",
     badge: cutBadge,
-    active: Boolean(sectionState.active || openDrawer === "section" || hasCuts),
+    active: sectionOpen && !rulerOpen,
     hasCuts,
-    uncutVisible: hasCuts,
   };
 
   const count = Number(rulerState.count || 0);
   const rulerBtn = {
     label: "Ruler",
     badge: count > 0 ? String(count) : "",
-    active: Boolean(rulerState.active || openDrawer === "ruler"),
+    active: rulerOpen,
+  };
+
+  // Bottom bar state (Unhide / Unisolate / Ghost-Solid toggle)
+  const bottomBar = {
+    visible: hiddenCount > 0 || isolated,
+    unhideVisible: hiddenCount > 0,
+    unhideLabel: `Unhide (${hiddenCount})`,
+    unisolateVisible: isolated,
+    unisolateLabel: "Unisolate",
+    isolateMode,
+    preferredIsolateMode,
+    showAllVisible: hiddenCount > 0 && isolated,
   };
 
   return {
     hideBtn,
-    unhideChipVisible,
-    unhideChipLabel: `Unhide (${hiddenCount})`,
     isolateBtn,
-    unisolateChipVisible: Boolean(hasSelection && isolated),
     sectionBtn,
     rulerBtn,
+    bottomBar,
   };
 }
 
 const ICONS = {
   hide: `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="2" y1="2" x2="22" y2="22"/></svg>`,
-  unhide: `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`,
+  unhide: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`,
   isolate: `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="1.5" stroke-dasharray="3 3"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg>`,
   section: `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7l8-4 8 4v10l-8 4-8-4V7z"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="12" x2="12" y2="21"/></svg>`,
   ruler: `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21.3 8.7L8.7 21.3a1 1 0 0 1-1.4 0l-4.6-4.6a1 1 0 0 1 0-1.4L15.3 2.7a1 1 0 0 1 1.4 0l4.6 4.6a1 1 0 0 1 0 1.4z"/><line x1="8" y1="10" x2="10.5" y2="12.5"/><line x1="11" y1="7" x2="13.5" y2="9.5"/><line x1="14" y1="4" x2="16.5" y2="6.5"/></svg>`,
@@ -148,7 +125,10 @@ const ICONS = {
 };
 
 /**
- * Mounts the sleek Revizto-style bottom floating capsule + collapsible Section & Ruler sub-bars.
+ * Mounts the Revizto 5 3-zone viewport UI:
+ *   1. Top Main Tool Strip (`#rc-revizto-bar`)
+ *   2. Top Contextual Sub-Bar (`.rc-revizto-subbar-host`)
+ *   3. Bottom Visibility Restore Bar (`#rc-revizto-bottom-bar`)
  */
 export function createReviztoToolbar(
   container,
@@ -184,6 +164,7 @@ export function createReviztoToolbar(
     mode: isolation?.mode ?? "none",
   };
   let secState = section?.getState?.() ?? {
+    open: false,
     active: false,
     mode: "plane",
     planeCount: 0,
@@ -203,28 +184,36 @@ export function createReviztoToolbar(
     hintText: "",
   };
 
-  // Wrapper anchored bottom-center inside viewport container
+  // Zone 1 & Zone 2: Top dock (main 4-button strip + exclusive Section/Ruler sub-bar + hint)
   const root = document.createElement("div");
   root.id = "rc-revizto-dock";
   root.className = "rc-revizto-dock";
-
-  const hintEl = document.createElement("div");
-  hintEl.className = "rc-revizto-hint";
-  hintEl.hidden = true;
-  root.appendChild(hintEl);
-
-  const subbarHost = document.createElement("div");
-  subbarHost.className = "rc-revizto-subbar-host";
-  root.appendChild(subbarHost);
 
   const capsule = document.createElement("div");
   capsule.id = "rc-revizto-bar";
   capsule.className = "rc-revizto-bar";
   root.appendChild(capsule);
 
+  const subbarHost = document.createElement("div");
+  subbarHost.className = "rc-revizto-subbar-host";
+  root.appendChild(subbarHost);
+
+  const hintEl = document.createElement("div");
+  hintEl.className = "rc-revizto-hint";
+  hintEl.hidden = true;
+  root.appendChild(hintEl);
+
+  // Zone 3: Bottom Visibility Restore Bar (Unhide All / Unisolate / Ghost-Solid)
+  const bottomDock = document.createElement("div");
+  bottomDock.id = "rc-revizto-bottom-dock";
+  bottomDock.className = "rc-revizto-bottom-dock";
+  bottomDock.hidden = true;
+
   // Stop canvas pointer events from leaking through the HUD
-  root.addEventListener("pointerdown", (e) => e.stopPropagation());
-  root.addEventListener("contextmenu", (e) => e.stopPropagation());
+  for (const hostNode of [root, bottomDock]) {
+    hostNode.addEventListener("pointerdown", (e) => e.stopPropagation());
+    hostNode.addEventListener("contextmenu", (e) => e.stopPropagation());
+  }
 
   function el(tag, className, attrs = {}) {
     const node = document.createElement(tag);
@@ -257,12 +246,13 @@ export function createReviztoToolbar(
   function setDrawer(nextDrawer) {
     closePopovers();
     openDrawer = nextDrawer;
+    // Strict mutual exclusion between Section and Ruler
     if (nextDrawer === "section") {
-      section?.setActive?.(true);
       ruler?.setActive?.(false);
+      section?.setActive?.(true);
     } else if (nextDrawer === "ruler") {
-      ruler?.setActive?.(true);
       section?.setActive?.(false);
+      ruler?.setActive?.(true);
     } else {
       section?.setActive?.(false);
       ruler?.setActive?.(false);
@@ -274,7 +264,12 @@ export function createReviztoToolbar(
   }
 
   function renderHint() {
-    const hint = secState.hintText || rulState.hintText || "";
+    const hint =
+      openDrawer === "section"
+        ? secState.hintText || ""
+        : openDrawer === "ruler"
+          ? rulState.hintText || ""
+          : "";
     if (!hint) {
       hintEl.hidden = true;
       hintEl.textContent = "";
@@ -285,24 +280,25 @@ export function createReviztoToolbar(
   }
 
   function renderSectionSubbar() {
+    // Matches Revizto 5 Section bar: Section | [Plane | Box] | (New) (Clear) ... [💬+] ✕
     const bar = el("div", "rc-revizto-subbar rc-section-subbar");
 
     const title = el("span", "rc-subbar-title", { text: "Section" });
     bar.appendChild(title);
 
-    // Plane | Box segmented stadium pill (mirrors Revizto screenshot #1)
+    // Plane | Box segmented stadium pill
     const seg = el("div", "rc-seg-pill");
     const planeBtn = el("button", `rc-seg-btn${secState.mode === "plane" ? " is-active" : ""}`, {
       type: "button",
       text: "Plane",
-      title: "Cut with oriented clipping planes",
+      title: "Section Plane — drag arrow to slide, drag rings to tilt",
     });
     planeBtn.addEventListener("click", () => section?.setMode?.("plane"));
 
     const boxBtn = el("button", `rc-seg-btn${secState.mode === "box" ? " is-active" : ""}`, {
       type: "button",
       text: "Box",
-      title: "6-face interactive Section Box",
+      title: "Section Box — hover any face or arrow and drag to crop",
     });
     boxBtn.addEventListener("click", () => section?.setMode?.("box"));
     seg.appendChild(planeBtn);
@@ -318,8 +314,8 @@ export function createReviztoToolbar(
         text: "New",
         title:
           secState.mode === "plane"
-            ? "Click any model surface to slice at its plane"
-            : "Fit new Section Box around model or selection",
+            ? "Align cut plane to any model surface (click a wall, floor, or pipe)"
+            : "Fit Section Box to current selection (or reset to full model)",
       },
     );
     newBtn.addEventListener("click", async () => {
@@ -338,65 +334,31 @@ export function createReviztoToolbar(
     const clearBtn = el("button", "rc-pill-btn", {
       type: "button",
       text: "Clear",
-      title: "Clear all section cuts (Uncut)",
+      title: "Clear active section cut",
     });
     clearBtn.disabled = !secState.hasCuts;
     clearBtn.addEventListener("click", () => section?.clearAll?.());
     bar.appendChild(clearBtn);
 
-    if (secState.mode === "plane") {
-      for (const [preset, label, titleText] of [
-        ["top", "Top", "Horizontal cut slicing top-to-bottom"],
-        ["front", "Front", "Vertical cut slicing front-to-back"],
-        ["right", "Side", "Vertical cut slicing side-to-side"],
-      ]) {
-        const pBtn = el("button", "rc-subbar-chip", {
-          type: "button",
-          text: label,
-          title: titleText,
-        });
-        pBtn.addEventListener("click", () => section?.createPresetCut?.(preset));
-        bar.appendChild(pBtn);
-      }
-
+    if (secState.mode === "plane" && secState.planeCount > 0) {
       const flipBtn = el("button", "rc-icon-btn", {
         type: "button",
-        title: "Flip active cut plane direction",
+        title: "Flip section plane direction",
         html: ICONS.flip,
       });
-      flipBtn.disabled = !secState.planeCount;
       flipBtn.addEventListener("click", () => section?.flipActivePlane?.());
       bar.appendChild(flipBtn);
-    } else {
-      const fitSelBtn = el("button", "rc-subbar-chip", {
-        type: "button",
-        text: "Selection",
-        title: "Fit Section Box tightly around current selection",
-      });
-      fitSelBtn.addEventListener("click", async () => {
-        const sel = await resolveSelectionMap();
-        await section?.setBoxToSelection?.(sel);
-      });
-      bar.appendChild(fitSelBtn);
-
-      const fitModelBtn = el("button", "rc-subbar-chip", {
-        type: "button",
-        text: "Reset Box",
-        title: "Reset Section Box to full model bounds",
-      });
-      fitModelBtn.addEventListener("click", () => section?.setBoxToModel?.());
-      bar.appendChild(fitModelBtn);
     }
 
     bar.appendChild(el("span", "rc-subbar-spacer"));
 
-    // Far-right Gizmo / Handles toggle with Revizto speech-bubble+ icon + thin × close
+    // Far-right Gizmo / Issue stamp button + thin × close
     const gizmoBtn = el(
       "button",
-      `rc-icon-btn${secState.handlesVisible !== false ? " is-active" : ""}`,
+      `rc-icon-btn rc-subbar-stamp-btn${secState.handlesVisible !== false ? " is-active" : ""}`,
       {
         type: "button",
-        title: "Toggle section box / plane handles",
+        title: "Toggle 3D section gizmo visibility",
         html: ICONS.commentPlus,
       },
     );
@@ -405,7 +367,7 @@ export function createReviztoToolbar(
 
     const closeBtn = el("button", "rc-icon-btn rc-close-btn", {
       type: "button",
-      title: "Close Section Bar (keeps active cuts)",
+      title: "Close Section tool (keeps active cut on model)",
       html: ICONS.close,
     });
     closeBtn.addEventListener("click", () => setDrawer(null));
@@ -415,6 +377,7 @@ export function createReviztoToolbar(
   }
 
   function renderRulerSubbar() {
+    // Matches Revizto 5 Ruler bar: Ruler | (New) | [5 modes] | [Regular] i | [■▾] [💬+] (Meters ▾) ✕
     const bar = el("div", "rc-revizto-subbar rc-ruler-subbar");
 
     const title = el("span", "rc-subbar-title", { text: "Ruler" });
@@ -424,7 +387,7 @@ export function createReviztoToolbar(
     const newBtn = el("button", "rc-pill-btn", {
       type: "button",
       text: "New",
-      title: "Start a new measurement",
+      title: "Start a new measurement (or clear measurements on double-clear)",
     });
     newBtn.addEventListener("click", () => ruler?.startNewMeasurement?.());
     bar.appendChild(newBtn);
@@ -473,44 +436,7 @@ export function createReviztoToolbar(
     });
     bar.appendChild(infoDot);
 
-    // Unit selector stadium pill dropdown with hollow caret (mirrors Revizto screenshot #2)
-    const unitWrap = el("div", "rc-dropdown-wrap");
-    const activeUnitDef = DEFAULT_UNITS.find((u) => u.id === rulState.unit) || DEFAULT_UNITS[0];
-    const unitBtn = el("button", "rc-pill-btn rc-unit-btn", {
-      type: "button",
-      title: "Change measurement units",
-    });
-    unitBtn.appendChild(el("span", "", { text: activeUnitDef.label }));
-    unitBtn.appendChild(el("span", "rc-unit-caret", { html: ICONS.hollowCaret }));
-    unitBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      colorMenuOpen = false;
-      unitsMenuOpen = !unitsMenuOpen;
-      render();
-    });
-    unitWrap.appendChild(unitBtn);
-
-    if (unitsMenuOpen) {
-      const menu = el("div", "rc-popover-menu rc-units-menu");
-      for (const u of DEFAULT_UNITS) {
-        const item = el(
-          "button",
-          `rc-popover-item${rulState.unit === u.id ? " is-active" : ""}`,
-          {
-            type: "button",
-            text: `${u.label} (${u.id})`,
-          },
-        );
-        item.addEventListener("click", () => {
-          ruler?.setUnit?.(u.id);
-          unitsMenuOpen = false;
-          render();
-        });
-        menu.appendChild(item);
-      }
-      unitWrap.appendChild(menu);
-    }
-    bar.appendChild(unitWrap);
+    bar.appendChild(el("span", "rc-subbar-spacer"));
 
     // Color square swatch button + dropdown palette
     const colorWrap = el("div", "rc-dropdown-wrap");
@@ -554,7 +480,7 @@ export function createReviztoToolbar(
     // Revizto speech-bubble [+] button (toggles ΔXYZ axis leg guides)
     const deltaBtn = el(
       "button",
-      `rc-icon-btn${rulState.showDeltas ? " is-active" : ""}`,
+      `rc-icon-btn rc-subbar-stamp-btn${rulState.showDeltas ? " is-active" : ""}`,
       {
         type: "button",
         title: "Toggle IFC ΔX / ΔY / ΔZ guide legs",
@@ -564,9 +490,47 @@ export function createReviztoToolbar(
     deltaBtn.addEventListener("click", () => ruler?.setShowDeltas?.(!rulState.showDeltas));
     bar.appendChild(deltaBtn);
 
-    // Clear all measurements button when measurements > 0
+    // Unit selector stadium pill dropdown with hollow caret
+    const unitWrap = el("div", "rc-dropdown-wrap");
+    const activeUnitDef = DEFAULT_UNITS.find((u) => u.id === rulState.unit) || DEFAULT_UNITS[0];
+    const unitBtn = el("button", "rc-pill-btn rc-unit-btn", {
+      type: "button",
+      title: "Change measurement units",
+    });
+    unitBtn.appendChild(el("span", "", { text: activeUnitDef.label }));
+    unitBtn.appendChild(el("span", "rc-unit-caret", { html: ICONS.hollowCaret }));
+    unitBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      colorMenuOpen = false;
+      unitsMenuOpen = !unitsMenuOpen;
+      render();
+    });
+    unitWrap.appendChild(unitBtn);
+
+    if (unitsMenuOpen) {
+      const menu = el("div", "rc-popover-menu rc-units-menu");
+      for (const u of DEFAULT_UNITS) {
+        const item = el(
+          "button",
+          `rc-popover-item${rulState.unit === u.id ? " is-active" : ""}`,
+          {
+            type: "button",
+            text: `${u.label} (${u.id})`,
+          },
+        );
+        item.addEventListener("click", () => {
+          ruler?.setUnit?.(u.id);
+          unitsMenuOpen = false;
+          render();
+        });
+        menu.appendChild(item);
+      }
+      unitWrap.appendChild(menu);
+    }
+    bar.appendChild(unitWrap);
+
     if (rulState.count > 0) {
-      const clearBtn = el("button", "rc-pill-btn rc-danger-subtle", {
+      const clearBtn = el("button", "rc-pill-btn", {
         type: "button",
         text: "Clear",
         title: "Clear all measurements",
@@ -574,8 +538,6 @@ export function createReviztoToolbar(
       clearBtn.addEventListener("click", () => ruler?.clearAll?.());
       bar.appendChild(clearBtn);
     }
-
-    bar.appendChild(el("span", "rc-subbar-spacer"));
 
     // Thin × close button
     const closeBtn = el("button", "rc-icon-btn rc-close-btn", {
@@ -587,6 +549,98 @@ export function createReviztoToolbar(
     bar.appendChild(closeBtn);
 
     return bar;
+  }
+
+  function renderBottomBar(bottomState) {
+    bottomDock.innerHTML = "";
+    if (!bottomState.visible) {
+      bottomDock.hidden = true;
+      return;
+    }
+    bottomDock.hidden = false;
+
+    const bar = el("div", "rc-revizto-bottom-bar", { id: "rc-revizto-bottom-bar" });
+
+    // 1. Unhide All (N) button at the bottom
+    if (bottomState.unhideVisible) {
+      const unhideBtn = el("button", "rc-bottom-action-btn is-unhide", {
+        type: "button",
+        title: "Unhide all hidden elements (Ctrl+Shift+H)",
+        "data-action": "unhideAll",
+      });
+      unhideBtn.innerHTML = `${ICONS.unhide}<span>${bottomState.unhideLabel}</span>`;
+      unhideBtn.addEventListener("click", () => visibility?.unhideAll?.());
+      bar.appendChild(unhideBtn);
+    }
+
+    if (bottomState.unhideVisible && bottomState.unisolateVisible) {
+      bar.appendChild(el("span", "rc-capsule-sep"));
+    }
+
+    // 2. Unisolate + Ghost/Solid toggle at the bottom
+    if (bottomState.unisolateVisible) {
+      const unisoBtn = el("button", "rc-bottom-action-btn is-unisolate", {
+        type: "button",
+        title: "Unisolate — restore surrounding elements",
+        "data-action": "unisolate",
+      });
+      unisoBtn.innerHTML = `${ICONS.isolate}<span>${bottomState.unisolateLabel}</span>`;
+      unisoBtn.addEventListener("click", () => isolation?.resetIsolation?.());
+      bar.appendChild(unisoBtn);
+
+      // Segmented Ghost | Hide mode toggle inside bottom isolation bar
+      const modeSeg = el("div", "rc-seg-pill rc-bottom-seg");
+      const ghostOpt = el(
+        "button",
+        `rc-seg-btn${preferredIsolateMode === "ghost" ? " is-active" : ""}`,
+        {
+          type: "button",
+          text: "Ghost",
+          title: "Show unselected context in ghost transparency",
+        },
+      );
+      ghostOpt.addEventListener("click", async () => {
+        preferredIsolateMode = "ghost";
+        await isolation?.isolate?.(undefined, { mode: "ghost" });
+        render();
+      });
+
+      const solidOpt = el(
+        "button",
+        `rc-seg-btn${preferredIsolateMode === "hard" ? " is-active" : ""}`,
+        {
+          type: "button",
+          text: "Hide Rest",
+          title: "Completely hide unselected elements",
+        },
+      );
+      solidOpt.addEventListener("click", async () => {
+        preferredIsolateMode = "hard";
+        await isolation?.isolate?.(undefined, { mode: "hard" });
+        render();
+      });
+
+      modeSeg.appendChild(ghostOpt);
+      modeSeg.appendChild(solidOpt);
+      bar.appendChild(modeSeg);
+    }
+
+    // 3. Show All when both hidden and isolated are active
+    if (bottomState.showAllVisible) {
+      bar.appendChild(el("span", "rc-capsule-sep"));
+      const showAllBtn = el("button", "rc-pill-btn", {
+        type: "button",
+        text: "Show All",
+        title: "Reset both isolation and hidden elements",
+      });
+      showAllBtn.addEventListener("click", async () => {
+        await isolation?.resetIsolation?.();
+        await visibility?.unhideAll?.();
+      });
+      bar.appendChild(showAllBtn);
+    }
+
+    bottomDock.appendChild(bar);
   }
 
   function render() {
@@ -608,97 +662,42 @@ export function createReviztoToolbar(
       openDrawer,
     });
 
+    // Zone 1: Top 4-button Revizto Strip (Hide | Isolate | Section | Ruler)
     capsule.innerHTML = "";
 
-    // 1. Hide / Unhide
-    const hideBtn = el(
-      "button",
-      `rc-revizto-btn${pres.hideBtn.highlighted ? " is-unhide" : ""}`,
-      {
-        type: "button",
-        title: pres.hideBtn.title,
-        "data-action": pres.hideBtn.action,
-      },
-    );
+    // 1. Hide
+    const hideBtn = el("button", "rc-revizto-btn", {
+      type: "button",
+      title: pres.hideBtn.title,
+      "data-action": "hide",
+    });
     hideBtn.disabled = pres.hideBtn.disabled;
-    hideBtn.innerHTML = `${pres.hideBtn.action === "unhideAll" ? ICONS.unhide : ICONS.hide}<span>${pres.hideBtn.label}</span>`;
+    hideBtn.innerHTML = `${ICONS.hide}<span>${pres.hideBtn.label}</span>`;
     hideBtn.addEventListener("click", async () => {
-      if (pres.hideBtn.action === "hide") {
-        const map = await resolveSelectionMap();
-        await visibility?.hideSelection?.(map);
-      } else {
-        await visibility?.unhideAll?.();
-      }
+      const map = await resolveSelectionMap();
+      await visibility?.hideSelection?.(map);
     });
     capsule.appendChild(hideBtn);
 
-    if (pres.unhideChipVisible) {
-      const chip = el("button", "rc-revizto-btn rc-revizto-chip is-unhide", {
-        type: "button",
-        title: "Unhide all hidden elements (Ctrl+Shift+H)",
-      });
-      chip.innerHTML = `${ICONS.unhide}<span>${pres.unhideChipLabel}</span>`;
-      chip.addEventListener("click", () => visibility?.unhideAll?.());
-      capsule.appendChild(chip);
-    }
-
     capsule.appendChild(el("span", "rc-capsule-sep"));
 
-    // 2. Isolate / Unisolate + Solid/Ghost split toggle
-    const isoWrap = el("div", "rc-iso-group");
-    const isoBtn = el(
-      "button",
-      `rc-revizto-btn${pres.isolateBtn.active ? " is-active" : ""}`,
-      {
-        type: "button",
-        title: pres.isolateBtn.title,
-        "data-action": pres.isolateBtn.action,
-      },
-    );
+    // 2. Isolate
+    const isoBtn = el("button", "rc-revizto-btn", {
+      type: "button",
+      title: pres.isolateBtn.title,
+      "data-action": "isolate",
+    });
     isoBtn.disabled = pres.isolateBtn.disabled;
     isoBtn.innerHTML = `${ICONS.isolate}<span>${pres.isolateBtn.label}</span>`;
     isoBtn.addEventListener("click", async () => {
-      if (pres.isolateBtn.action === "isolate") {
-        const map = await resolveSelectionMap();
-        await isolation?.isolate?.(map, { mode: preferredIsolateMode });
-      } else {
-        await isolation?.resetIsolation?.();
-      }
+      const map = await resolveSelectionMap();
+      await isolation?.isolate?.(map, { mode: preferredIsolateMode });
     });
-    isoWrap.appendChild(isoBtn);
-
-    const modeBtn = el(
-      "button",
-      `rc-iso-style-pill${preferredIsolateMode === "ghost" ? " is-ghost" : ""}`,
-      {
-        type: "button",
-        text: preferredIsolateMode === "ghost" ? "Ghost" : "Solid",
-        title: "Switch Isolate mode between Ghost (transparent context) and Solid (hide others)",
-      },
-    );
-    modeBtn.addEventListener("click", async () => {
-      preferredIsolateMode = preferredIsolateMode === "ghost" ? "hard" : "ghost";
-      if (isoState.mode !== "none") {
-        await isolation?.isolate?.(undefined, { mode: preferredIsolateMode });
-      }
-      render();
-    });
-    isoWrap.appendChild(modeBtn);
-
-    if (pres.unisolateChipVisible) {
-      const resetChip = el("button", "rc-revizto-btn rc-revizto-chip is-active", {
-        type: "button",
-        text: "Unisolate",
-        title: "Restore isolated elements",
-      });
-      resetChip.addEventListener("click", () => isolation?.resetIsolation?.());
-      isoWrap.appendChild(resetChip);
-    }
-    capsule.appendChild(isoWrap);
+    capsule.appendChild(isoBtn);
 
     capsule.appendChild(el("span", "rc-capsule-sep"));
 
-    // 3. Section / Uncut
+    // 3. Section
     const secBtn = el(
       "button",
       `rc-revizto-btn${pres.sectionBtn.active ? " is-active" : ""}`,
@@ -716,16 +715,6 @@ export function createReviztoToolbar(
     });
     capsule.appendChild(secBtn);
 
-    if (pres.sectionBtn.uncutVisible) {
-      const uncutBtn = el("button", "rc-revizto-btn rc-revizto-chip is-danger-chip", {
-        type: "button",
-        text: "Uncut",
-        title: "Clear all section cuts",
-      });
-      uncutBtn.addEventListener("click", () => section?.clearAll?.());
-      capsule.appendChild(uncutBtn);
-    }
-
     capsule.appendChild(el("span", "rc-capsule-sep"));
 
     // 4. Ruler
@@ -734,7 +723,7 @@ export function createReviztoToolbar(
       `rc-revizto-btn${pres.rulerBtn.active ? " is-active" : ""}`,
       {
         type: "button",
-        title: "Toggle 5-Mode Ruler (Ctrl+M)",
+        title: "Toggle 5-Mode Ruler (M)",
         "data-action": "ruler",
       },
     );
@@ -745,9 +734,12 @@ export function createReviztoToolbar(
       setDrawer(openDrawer === "ruler" ? null : "ruler");
     });
     capsule.appendChild(rulBtn);
+
+    // Zone 3: Bottom Unhide / Unisolate Bar
+    renderBottomBar(pres.bottomBar);
   }
 
-  // Subscribe to controllers
+  // Subscribe to controllers with strict mutual exclusion on openDrawer
   if (visibility?.onChange) {
     unsubs.push(
       visibility.onChange((s) => {
@@ -769,8 +761,11 @@ export function createReviztoToolbar(
     unsubs.push(
       section.onChange((s) => {
         secState = s;
-        if (s.active && openDrawer !== "section") {
+        if (s.open && openDrawer !== "section") {
           openDrawer = "section";
+          ruler?.setActive?.(false);
+        } else if (!s.open && openDrawer === "section") {
+          openDrawer = null;
         }
         render();
       }),
@@ -783,6 +778,7 @@ export function createReviztoToolbar(
         rulState = s;
         if (s.active && openDrawer !== "ruler") {
           openDrawer = "ruler";
+          section?.setActive?.(false);
         } else if (!s.active && openDrawer === "ruler") {
           openDrawer = null;
         }
@@ -799,11 +795,14 @@ export function createReviztoToolbar(
   };
   document.addEventListener("click", onDocClick);
 
-  container.appendChild(root);
+  const dockHost = container.parentElement || container;
+  dockHost.appendChild(root);
+  dockHost.appendChild(bottomDock);
   render();
 
   return {
     element: root,
+    bottomElement: bottomDock,
     update(patch = {}) {
       if ("hiddenCount" in patch) visState.hiddenCount = patch.hiddenCount;
       if ("hasSelection" in patch) visState.hasSelection = patch.hasSelection;
@@ -826,6 +825,7 @@ export function createReviztoToolbar(
         try { fn?.(); } catch { /* noop */ }
       }
       if (root.parentNode) root.parentNode.removeChild(root);
+      if (bottomDock.parentNode) bottomDock.parentNode.removeChild(bottomDock);
     },
   };
 }

@@ -1016,7 +1016,10 @@ export function createRulerController({
     state.draftObjects = [];
     hoverStatusText = "";
     clearPreview();
-    if (!state.active) state.active = true;
+    if (!state.active) {
+      state.active = true;
+      try { section?.setActive?.(false); } catch { /* noop */ }
+    }
     startOverlaySyncLoop();
     emit();
   }
@@ -1032,6 +1035,7 @@ export function createRulerController({
       reticleMesh.visible = false;
       clearPreview();
     } else {
+      try { section?.setActive?.(false); } catch { /* noop */ }
       startOverlaySyncLoop();
     }
     emit();
@@ -1049,7 +1053,10 @@ export function createRulerController({
     state.draftObjects = [];
     hoverStatusText = "";
     clearPreview();
-    if (!state.active) state.active = true;
+    if (!state.active) {
+      state.active = true;
+      try { section?.setActive?.(false); } catch { /* noop */ }
+    }
     startOverlaySyncLoop();
     emit();
   }

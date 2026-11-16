@@ -490,6 +490,11 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
     pick: (ndc, opts) => engine.pick(ndc, opts),
   });
 
+  // Mutual exclusion: opening Section automatically closes Ruler tool mode
+  section.setOnToolOpen(() => {
+    if (ruler.active) ruler.setActive(false);
+  });
+
   const engine = {
     name: "COVILLAF",
     components,
