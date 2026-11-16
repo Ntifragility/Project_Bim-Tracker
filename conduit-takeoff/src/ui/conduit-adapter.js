@@ -19,6 +19,7 @@ export function createConduitRibbonDef(ctx) {
     appId: 'conduit',
     qat: [
       'conduit.proj-save',
+      'conduit.proj-ifc',
       'conduit.trace-undo',
       'conduit.trace-redo',
     ],
@@ -83,6 +84,23 @@ export function createConduitRibbonDef(ctx) {
                   tooltip: 'Save active model as optimized .frag cache (~90% smaller)',
                   run(c) {
                     c.api?.saveFragFile?.();
+                  },
+                },
+                {
+                  id: 'conduit.model-export-ifc',
+                  label: 'Export IFC',
+                  icon: 'export',
+                  size: 'small',
+                  keytip: 'MEI',
+                  tooltip: 'Export traced conduit runs to 3D IFC overlay',
+                  enabled(c) {
+                    const runsCount = c.state?.network?.runs?.length || 0;
+                    const btn = c.els?.btnExportIfc || getDoc()?.getElementById('btn-export-ifc');
+                    return runsCount > 0 || Boolean(btn && !btn.disabled);
+                  },
+                  run(c) {
+                    const btn = c.els?.btnExportIfc || getDoc()?.getElementById('btn-export-ifc');
+                    btn?.click();
                   },
                 },
               ],
@@ -488,6 +506,25 @@ export function createConduitRibbonDef(ctx) {
             items: [
               [
                 {
+                  id: 'conduit.proj-ifc',
+                  label: 'Export IFC',
+                  icon: 'export',
+                  size: 'big',
+                  keytip: 'PEI',
+                  tooltip: 'Export Overlay IFC for Revizto',
+                  enabled(c) {
+                    const runsCount = c.state?.network?.runs?.length || 0;
+                    const btn = c.els?.btnExportIfc || getDoc()?.getElementById('btn-export-ifc');
+                    return runsCount > 0 || Boolean(btn && !btn.disabled);
+                  },
+                  run(c) {
+                    const btn = c.els?.btnExportIfc || getDoc()?.getElementById('btn-export-ifc');
+                    btn?.click();
+                  },
+                },
+              ],
+              [
+                {
                   id: 'conduit.proj-csv',
                   label: 'CSV',
                   icon: 'csv',
@@ -501,25 +538,6 @@ export function createConduitRibbonDef(ctx) {
                   },
                   run(c) {
                     const btn = c.els?.btnExportCsv || getDoc()?.getElementById('btn-export-csv');
-                    btn?.click();
-                  },
-                },
-              ],
-              [
-                {
-                  id: 'conduit.proj-ifc',
-                  label: 'IFC',
-                  icon: 'export',
-                  size: 'small',
-                  keytip: 'PEI',
-                  tooltip: 'Export Overlay IFC for Revizto',
-                  enabled(c) {
-                    const runsCount = c.state?.network?.runs?.length || 0;
-                    const btn = c.els?.btnExportIfc || getDoc()?.getElementById('btn-export-ifc');
-                    return runsCount > 0 || Boolean(btn && !btn.disabled);
-                  },
-                  run(c) {
-                    const btn = c.els?.btnExportIfc || getDoc()?.getElementById('btn-export-ifc');
                     btn?.click();
                   },
                 },

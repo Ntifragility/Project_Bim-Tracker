@@ -62,6 +62,15 @@ export function createModelLoad({ state, els, engine, api }) {
       engine.world.scene.three.add(modelObject);
     }
 
+    // Sync active parent model's exact 64-bit coordination matrix for accurate Revizto export
+    try {
+      const coordMatrix = await model.getCoordinationMatrix?.();
+      if (coordMatrix && engine.fragments) {
+        engine.fragments.baseCoordinationModel = model.modelId;
+        engine.fragments.baseCoordinationMatrix = coordMatrix.clone();
+      }
+    } catch { /* ignore if unavailable in headless test */ }
+
     // Safely fit camera to model
     fitCameraToModel(engine, model);
 
@@ -105,6 +114,15 @@ export function createModelLoad({ state, els, engine, api }) {
     if (modelObject && !engine.world.scene.three.children.includes(modelObject)) {
       engine.world.scene.three.add(modelObject);
     }
+
+    // Sync active parent model's exact 64-bit coordination matrix for accurate Revizto export
+    try {
+      const coordMatrix = await model.getCoordinationMatrix?.();
+      if (coordMatrix && engine.fragments) {
+        engine.fragments.baseCoordinationModel = model.modelId;
+        engine.fragments.baseCoordinationMatrix = coordMatrix.clone();
+      }
+    } catch { /* ignore if unavailable in headless test */ }
 
     fitCameraToModel(engine, model);
 

@@ -50,6 +50,20 @@ function hexToRgb(hex) {
   return { r: 0.96, g: 0.62, b: 0.04 };
 }
 
+function dedupeConsecutivePoints(points, minDist = 5e-4) {
+  if (!Array.isArray(points) || points.length === 0) return [];
+  const out = [points[0]];
+  for (let i = 1; i < points.length; i++) {
+    const prev = out[out.length - 1];
+    const cur = points[i];
+    const d = Math.hypot(cur.x - prev.x, cur.y - prev.y, cur.z - prev.z);
+    if (d >= minDist) {
+      out.push(cur);
+    }
+  }
+  return out;
+}
+
 export function exportOverlayIfc({
   runs = [],
   nodes = {},
@@ -165,15 +179,13 @@ export function exportOverlayIfc({
     const runName = run.name || `Run ${run.id}`;
     const runSize = run.size || run.diameter || '3/4"';
     const runSystem = run.system || 'Power';
-    const runLen = Number(run.length || 0).toFixed(3);
     const radiusM = getConduitRadiusMeters(runSize);
     const minBendRadiusM = run.minBendRadiusM || getNecBendRadiusM(runSize);
 
     // Extract continuous 3D centerline with smooth circular SLERP arc fillets for elbows
     const curvedPath = extractRunCenterline(nodeCoords, minBendRadiusM, 12);
 
-    // Create Cartesian points for vertices along the smooth curved path
-    const pointIds = [];
+    const transformedPoints = [];
     for (const rawPt of curvedPath) {
       let pt = rawPt;
       if (typeof toOriginal === 'function') {
@@ -186,12 +198,38 @@ export function exportOverlayIfc({
           pt = rawPt;
         }
       }
+      transformedPoints.push({ x: Number(pt.x), y: Number(pt.y), z: Number(pt.z) });
+    }
+
+    const cleanPoints = dedupeConsecutivePoints(transformedPoints, 5e-4);
+    if (cleanPoints.length < 2) continue;
+
+    let computedLen = 0;
+    for (let i = 1; i < cleanPoints.length; i++) {
+      computedLen += Math.hypot(
+        cleanPoints[i].x - cleanPoints[i - 1].x,
+        cleanPoints[i].y - cleanPoints[i - 1].y,
+        cleanPoints[i].z - cleanPoints[i - 1].z,
+      );
+    }
+    const numericRunLen = Number(run.length);
+    const runLen = (Number.isFinite(numericRunLen) && numericRunLen > 0 ? numericRunLen : computedLen).toFixed(3);
+
+    // Factor run's 64-bit world origin into IfcLocalPlacement and keep polyline vertices local
+    // near (0,0,0) so 32-bit GPU/tessellator buffers retain sub-millimetre pipe precision even
+    // at 8,000+ km UTM coordinates while Revizto/BIM viewers apply full f64 placement.
+    const origin = cleanPoints[0];
+    const pointIds = [];
+    for (const pt of cleanPoints) {
+      const lx = pt.x - origin.x;
+      const ly = pt.y - origin.y;
+      const lz = pt.z - origin.z;
       const pid = nextId();
-      add(`#${pid}=IFCCARTESIANPOINT((${Number(pt.x).toFixed(4)},${Number(pt.y).toFixed(4)},${Number(pt.z).toFixed(4)}));`);
+      add(`#${pid}=IFCCARTESIANPOINT((${lx.toFixed(4)},${ly.toFixed(4)},${lz.toFixed(4)}));`);
       pointIds.push(`#${pid}`);
     }
 
-    // 1. Directrix Polyline
+    // 1. Directrix Polyline (local to run origin)
     const polylineId = nextId();
     add(`#${polylineId}=IFCPOLYLINE((${pointIds.join(',')}));`);
 
@@ -205,9 +243,13 @@ export function exportOverlayIfc({
     const prodShapeFlowId = nextId();
     add(`#${prodShapeFlowId}=IFCPRODUCTDEFINITIONSHAPE($,$,(#${shapeRepBodyId}));`);
 
-    // 3. Physical Placement
+    // 3. Physical Placement at exact 64-bit UTM/world anchor
+    const runOriginPtId = nextId();
+    add(`#${runOriginPtId}=IFCCARTESIANPOINT((${origin.x.toFixed(4)},${origin.y.toFixed(4)},${origin.z.toFixed(4)}));`);
+    const runAxisPlacementId = nextId();
+    add(`#${runAxisPlacementId}=IFCAXIS2PLACEMENT3D(#${runOriginPtId},#${axisZId},#${axisXId});`);
     const elemPlacementId = nextId();
-    add(`#${elemPlacementId}=IFCLOCALPLACEMENT(#${storeyPlacementId},#${wcsId});`);
+    add(`#${elemPlacementId}=IFCLOCALPLACEMENT(#${storeyPlacementId},#${runAxisPlacementId});`);
 
     // 4. Physical 3D MEP Element: IFCFLOWSEGMENT
     const flowGuid = makeGuid(runIdx++);
@@ -250,7 +292,7 @@ export function exportOverlayIfc({
     add(`#${presStyleAssignId}=IFCPRESENTATIONSTYLEASSIGNMENT((#${surfaceStyleId}));`);
 
     const styledItemId = nextId();
-    add(`#${styledItemId}=IFCSTYLEDITEM(#${shapeRepBodyId},(#${presStyleAssignId}),$);`);
+    add(`#${styledItemId}=IFCSTYLEDITEM(#${sweptSolidId},(#${presStyleAssignId}),$);`);
 
     // 7. Pset_ConduitRun properties (attached to both FlowSegment and Annotation)
     const pSizeId = nextId();

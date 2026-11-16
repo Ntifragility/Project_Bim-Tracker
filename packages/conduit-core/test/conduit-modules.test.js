@@ -219,3 +219,65 @@ test('IFC Exporter: generates valid STEP IFC file with polylines and Pset_Condui
   assert.ok(shiftIfc.includes('8599997.5000'), 'Northing applied to Cartesian points');
   assert.ok(shiftIfc.includes('100.0000'), 'Elevation applied to Cartesian points');
 });
+
+test('exportOverlayIfc: produces valid 3D SweptDiskSolid triangles in web-ifc with UTM coordinates and deduplicated points', async () => {
+  const { default: WebIFC } = await import('web-ifc');
+
+  const runs = [
+    { id: 'r-utm', name: 'Conduit UTM 1', size: '4"', system: 'Power', nodeIds: ['u1', 'u2', 'u3', 'u4'] },
+  ];
+  const nodes = {
+    u1: { id: 'u1', x: 209296.9877, y: 391.0863, z: -8114447.8160 },
+    u2: { id: 'u2', x: 209296.98772, y: 391.08631, z: -8114447.81601 }, // micro-duplicate (< 0.5mm)
+    u3: { id: 'u3', x: 209290.6100, y: 380.4984, z: -8114457.4962 },
+    u4: { id: 'u4', x: 209294.0728, y: 380.9349, z: -8114459.6225 },
+  };
+
+  const ifcText = exportOverlayIfc({
+    runs,
+    nodes,
+    schema: 'IFC4',
+    toOriginal: (p) => ({ x: p.x, y: -p.z, z: p.y }),
+  });
+
+  // Verify fallback length computation is non-zero
+  assert.ok(!ifcText.includes('IFCLENGTHMEASURE(0.000)'), 'Computed fallback length must be non-zero');
+
+  // Verify IFCSTYLEDITEM targets IFCSWEPTDISKSOLID entity rather than IFCSHAPEREPRESENTATION
+  const sweptMatch = ifcText.match(/#(\d+)=IFCSWEPTDISKSOLID\(/);
+  assert.ok(sweptMatch, 'IFC contains IFCSWEPTDISKSOLID');
+  const sweptId = sweptMatch[1];
+  assert.ok(
+    ifcText.includes(`IFCSTYLEDITEM(#${sweptId},`),
+    'IFCSTYLEDITEM targets IFCSWEPTDISKSOLID entity'
+  );
+
+  // Verify run placement uses f64 UTM anchor while polyline starts locally at origin
+  assert.ok(ifcText.includes('(209296.9877,8114447.8160,391.0863)'), 'UTM world anchor present on placement');
+  assert.ok(ifcText.includes('(0.0000,0.0000,0.0000)'), 'Local polyline origin starts at zero');
+
+  // Verify web-ifc produces valid 3D triangles when re-opening the exported file
+  const api = new WebIFC.IfcAPI();
+  await api.Init((p) => `node_modules/web-ifc/${p}`);
+  const modelID = api.OpenModel(new Uint8Array(Buffer.from(ifcText)), { COORDINATE_TO_ORIGIN: true });
+  let meshCount = 0;
+  let triangleCount = 0;
+  api.StreamAllMeshes(modelID, (mesh) => {
+    meshCount++;
+    for (let i = 0; i < mesh.geometries.size(); i++) {
+      const geom = api.GetGeometry(modelID, mesh.geometries.get(i).geometryExpressID);
+      const indices = api.GetIndexArray(geom.GetIndexData(), geom.GetIndexDataSize());
+      triangleCount += indices.length / 3;
+      geom.delete();
+    }
+  });
+  const coordMat = api.GetCoordinationMatrix(modelID);
+  api.CloseModel(modelID);
+
+  assert.equal(meshCount, 1, 'Expected 1 3D mesh for the exported conduit run');
+  assert.ok(triangleCount > 0, `Expected non-zero 3D triangles (got ${triangleCount})`);
+  // Verify web-ifc coordination matrix restores the exact UTM site translation (-X, -Elev, +Y_ifc)
+  assert.ok(Math.abs(coordMat[12] + 209296.9877) < 0.25, `Expected easting shift (~-209297), got ${coordMat[12]}`);
+  assert.ok(Math.abs(coordMat[13] + 391.0863) < 0.25, `Expected elev shift (~-391), got ${coordMat[13]}`);
+  assert.ok(Math.abs(coordMat[14] - 8114447.816) < 0.25, `Expected northing shift (~+8114448), got ${coordMat[14]}`);
+});

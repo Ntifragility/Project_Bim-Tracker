@@ -406,8 +406,16 @@ export function createProjectIo({ state, els, engine, api }) {
               return { x: pt.x, y: -pt.z, z: pt.y };
             };
 
+        const enrichedRuns = runsToExport.map((r) => {
+          const takeoff = backend.computeRunTakeoff(state.network, r.id);
+          return {
+            ...r,
+            length: takeoff?.length ?? r.length ?? 0,
+          };
+        });
+
         const ifcContent = exportOverlayIfc({
-          runs: runsToExport,
+          runs: enrichedRuns,
           nodes: state.network.nodes,
           schema: selectedSchema,
           projectName: `${state.sourceModel.name || 'Project'} Conduit Overlay`,
