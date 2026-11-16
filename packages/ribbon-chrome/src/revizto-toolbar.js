@@ -131,19 +131,20 @@ export function computeToolbarPresentationState({
 }
 
 const ICONS = {
-  hide: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`,
-  unhide: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`,
-  isolate: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="3 3"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg>`,
-  section: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7l8-4 8 4v10l-8 4-8-4V7z"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="12" x2="12" y2="21"/></svg>`,
-  ruler: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.3 8.7L8.7 21.3a1 1 0 0 1-1.4 0l-4.6-4.6a1 1 0 0 1 0-1.4L15.3 2.7a1 1 0 0 1 1.4 0l4.6 4.6a1 1 0 0 1 0 1.4z"/><line x1="8" y1="10" x2="10.5" y2="12.5"/><line x1="11" y1="7" x2="13.5" y2="9.5"/><line x1="14" y1="4" x2="16.5" y2="6.5"/></svg>`,
-  laser: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 19 8 11 16 11 21 19"/><circle cx="12" cy="15" r="1.8"/><line x1="12" y1="15" x2="12" y2="3"/><polyline points="8.5 6.5 12 3 15.5 6.5"/></svg>`,
-  p2p: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2.2"/><circle cx="12" cy="12" r="0.6" fill="currentColor"/><line x1="12" y1="3" x2="12" y2="9.5"/><line x1="14" y1="13.5" x2="20" y2="18"/><line x1="10" y1="13.5" x2="4" y2="18"/></svg>`,
-  minDistance: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="4" x2="3" y2="20"/><line x1="21" y1="4" x2="21" y2="20"/><line x1="5" y1="14" x2="19" y2="14"/><polyline points="8 11 5 14 8 17"/><polyline points="16 11 19 14 16 17"/><text x="12" y="9" text-anchor="middle" font-size="6.5" font-weight="700" stroke="none" fill="currentColor" font-family="sans-serif">MIN</text></svg>`,
-  elevation: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="17" r="2.2"/><line x1="7.7" y1="17" x2="14" y2="17"/><line x1="14" y1="5" x2="14" y2="17"/><polyline points="10.5 13.5 14 17 17.5 13.5"/><line x1="4" y1="20.5" x2="20" y2="20.5"/></svg>`,
-  angle: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="19 6 4 19 20 19"/><path d="M12.5 19a8.5 8.5 0 0 0-3-6.5"/></svg>`,
-  flip: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>`,
-  gizmo: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>`,
-  close: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
+  hide: `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="2" y1="2" x2="22" y2="22"/></svg>`,
+  unhide: `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`,
+  isolate: `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="1.5" stroke-dasharray="3 3"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg>`,
+  section: `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7l8-4 8 4v10l-8 4-8-4V7z"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="12" x2="12" y2="21"/></svg>`,
+  ruler: `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21.3 8.7L8.7 21.3a1 1 0 0 1-1.4 0l-4.6-4.6a1 1 0 0 1 0-1.4L15.3 2.7a1 1 0 0 1 1.4 0l4.6 4.6a1 1 0 0 1 0 1.4z"/><line x1="8" y1="10" x2="10.5" y2="12.5"/><line x1="11" y1="7" x2="13.5" y2="9.5"/><line x1="14" y1="4" x2="16.5" y2="6.5"/></svg>`,
+  laser: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 19 7 12 17 12 21 19"/><circle cx="12" cy="15.5" r="2"/><line x1="10" y1="15.5" x2="14" y2="15.5"/><line x1="12" y1="15.5" x2="12" y2="3"/><polyline points="8.5 6.5 12 3 15.5 6.5"/></svg>`,
+  p2p: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="2.4"/><circle cx="12" cy="13" r="0.6" fill="currentColor"/><line x1="12" y1="3" x2="12" y2="10.6"/><line x1="9.9" y1="14.2" x2="3.5" y2="18.5"/><line x1="14.1" y1="14.2" x2="20.5" y2="18.5"/></svg>`,
+  minDistance: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="4" x2="3" y2="20"/><line x1="21" y1="4" x2="21" y2="20"/><text x="12" y="10" text-anchor="middle" font-size="7" font-weight="600" stroke="none" fill="currentColor" font-family="sans-serif">MIN</text><line x1="5" y1="15" x2="19" y2="15"/><polyline points="8 12.5 5 15 8 17.5"/><polyline points="16 12.5 19 15 16 17.5"/></svg>`,
+  elevation: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="18.5" r="1.8"/><line x1="6.8" y1="18.5" x2="18.5" y2="18.5"/><line x1="11.5" y1="5" x2="16.5" y2="5"/><line x1="14" y1="5" x2="14" y2="16.5"/><polyline points="11 13 14 16.5 17 13"/></svg>`,
+  angle: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="5" x2="4" y2="19"/><line x1="4" y1="19" x2="20" y2="19"/><path d="M12.5 19 A 8.5 8.5 0 0 0 10 13"/></svg>`,
+  commentPlus: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v12H8l-4 4V4z"/><line x1="12" y1="7" x2="12" y2="13"/><line x1="9" y1="10" x2="15" y2="10"/></svg>`,
+  hollowCaret: `<svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><polygon points="2,3.5 10,3.5 6,9"/></svg>`,
+  flip: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>`,
+  close: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="19" y1="5" x2="5" y2="19"/><line x1="5" y1="5" x2="19" y2="19"/></svg>`,
 };
 
 /**
@@ -289,7 +290,7 @@ export function createReviztoToolbar(
     const title = el("span", "rc-subbar-title", { text: "Section" });
     bar.appendChild(title);
 
-    // Plane | Box segmented control (mirrors Revizto screenshot #1)
+    // Plane | Box segmented stadium pill (mirrors Revizto screenshot #1)
     const seg = el("div", "rc-seg-pill");
     const planeBtn = el("button", `rc-seg-btn${secState.mode === "plane" ? " is-active" : ""}`, {
       type: "button",
@@ -308,7 +309,7 @@ export function createReviztoToolbar(
     seg.appendChild(boxBtn);
     bar.appendChild(seg);
 
-    // New button
+    // New stadium pill
     const newBtn = el(
       "button",
       `rc-pill-btn${secState.surfacePickPending ? " is-active" : ""}`,
@@ -333,7 +334,7 @@ export function createReviztoToolbar(
     });
     bar.appendChild(newBtn);
 
-    // Clear button
+    // Clear stadium pill
     const clearBtn = el("button", "rc-pill-btn", {
       type: "button",
       text: "Clear",
@@ -342,9 +343,6 @@ export function createReviztoToolbar(
     clearBtn.disabled = !secState.hasCuts;
     clearBtn.addEventListener("click", () => section?.clearAll?.());
     bar.appendChild(clearBtn);
-
-    const divider = el("span", "rc-subbar-divider");
-    bar.appendChild(divider);
 
     if (secState.mode === "plane") {
       for (const [preset, label, titleText] of [
@@ -390,14 +388,16 @@ export function createReviztoToolbar(
       bar.appendChild(fitModelBtn);
     }
 
-    // Gizmo / handle visibility toggle (mirrors Revizto right-side eye/gizmo icon)
+    bar.appendChild(el("span", "rc-subbar-spacer"));
+
+    // Far-right Gizmo / Handles toggle with Revizto speech-bubble+ icon + thin × close
     const gizmoBtn = el(
       "button",
       `rc-icon-btn${secState.handlesVisible !== false ? " is-active" : ""}`,
       {
         type: "button",
         title: "Toggle section box / plane handles",
-        html: ICONS.gizmo,
+        html: ICONS.commentPlus,
       },
     );
     gizmoBtn.addEventListener("click", () => section?.toggleHandlesVisible?.());
@@ -420,7 +420,7 @@ export function createReviztoToolbar(
     const title = el("span", "rc-subbar-title", { text: "Ruler" });
     bar.appendChild(title);
 
-    // New pill button
+    // New stadium pill
     const newBtn = el("button", "rc-pill-btn", {
       type: "button",
       text: "New",
@@ -429,7 +429,7 @@ export function createReviztoToolbar(
     newBtn.addEventListener("click", () => ruler?.startNewMeasurement?.());
     bar.appendChild(newBtn);
 
-    // 5 Revizto mode icons
+    // 5 Revizto mode icons (active square is white with dark icon)
     const modeDefs = [
       { id: "laser", icon: ICONS.laser, title: "Laser (Perpendicular surface normal distance)" },
       { id: "p2p", icon: ICONS.p2p, title: "Point-to-Point distance (ΔX / ΔY / ΔZ)" },
@@ -454,10 +454,10 @@ export function createReviztoToolbar(
     }
     bar.appendChild(modeGroup);
 
-    // Regular / Chain pill + info badge
+    // Regular / Chain rectangular box + light-blue info circle
     const chainBtn = el(
       "button",
-      `rc-subbar-chip rc-chain-btn${rulState.chain ? " is-active" : ""}`,
+      `rc-regular-box rc-chain-btn${rulState.chain ? " is-active" : ""}`,
       {
         type: "button",
         text: rulState.chain ? "Chain" : "Regular",
@@ -473,14 +473,15 @@ export function createReviztoToolbar(
     });
     bar.appendChild(infoDot);
 
-    // Unit selector dropdown
+    // Unit selector stadium pill dropdown with hollow caret (mirrors Revizto screenshot #2)
     const unitWrap = el("div", "rc-dropdown-wrap");
     const activeUnitDef = DEFAULT_UNITS.find((u) => u.id === rulState.unit) || DEFAULT_UNITS[0];
     const unitBtn = el("button", "rc-pill-btn rc-unit-btn", {
       type: "button",
-      text: `${activeUnitDef.short} ▾`,
       title: "Change measurement units",
     });
+    unitBtn.appendChild(el("span", "", { text: activeUnitDef.label }));
+    unitBtn.appendChild(el("span", "rc-unit-caret", { html: ICONS.hollowCaret }));
     unitBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       colorMenuOpen = false;
@@ -511,7 +512,7 @@ export function createReviztoToolbar(
     }
     bar.appendChild(unitWrap);
 
-    // Color swatch dropdown
+    // Color square swatch button + dropdown palette
     const colorWrap = el("div", "rc-dropdown-wrap");
     const colorBtn = el("button", "rc-color-btn", {
       type: "button",
@@ -550,20 +551,20 @@ export function createReviztoToolbar(
     }
     bar.appendChild(colorWrap);
 
-    // Delta XYZ toggle
+    // Revizto speech-bubble [+] button (toggles ΔXYZ axis leg guides)
     const deltaBtn = el(
       "button",
-      `rc-subbar-chip${rulState.showDeltas ? " is-active" : ""}`,
+      `rc-icon-btn${rulState.showDeltas ? " is-active" : ""}`,
       {
         type: "button",
-        text: "ΔXYZ",
-        title: "Show IFC X/Y/Z axis leg guides",
+        title: "Toggle IFC ΔX / ΔY / ΔZ guide legs",
+        html: ICONS.commentPlus,
       },
     );
     deltaBtn.addEventListener("click", () => ruler?.setShowDeltas?.(!rulState.showDeltas));
     bar.appendChild(deltaBtn);
 
-    // Clear all measurements button
+    // Clear all measurements button when measurements > 0
     if (rulState.count > 0) {
       const clearBtn = el("button", "rc-pill-btn rc-danger-subtle", {
         type: "button",
@@ -574,7 +575,9 @@ export function createReviztoToolbar(
       bar.appendChild(clearBtn);
     }
 
-    // Close button
+    bar.appendChild(el("span", "rc-subbar-spacer"));
+
+    // Thin × close button
     const closeBtn = el("button", "rc-icon-btn rc-close-btn", {
       type: "button",
       title: "Exit Ruler (Esc)",
