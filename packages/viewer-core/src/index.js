@@ -1,5 +1,10 @@
 export { createCovillafEngine, createEngine, appearanceStyleName } from "./engine.js";
 export { createCoordinateFrame } from "./coordinates.js";
+export {
+  createCameraNavigationController,
+  computeAdaptiveFrustum,
+  computeSurfaceZoomStep,
+} from "./camera-navigation.js";
 export { createVisibilityController } from "./visibility-controller.js";
 export { createSectionController, computeBoxPlaneSpecs, isPointClippedByPlanes } from "./section-controller.js";
 export {

@@ -8,6 +8,7 @@ import { createCoordinateFrame } from "./coordinates.js";
 import { createVisibilityController } from "./visibility-controller.js";
 import { createSectionController, isPointClippedByPlanes } from "./section-controller.js";
 import { createRulerController } from "./ruler-controller.js";
+import { createCameraNavigationController } from "./camera-navigation.js";
 
 const WASM_PATH = "/covillaf/web-ifc/";
 
@@ -495,6 +496,13 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
     if (ruler.active) ruler.setActive(false);
   });
 
+  const cameraNav = createCameraNavigationController({
+    world,
+    fragments,
+    pick: (ndc, opts) => engine.pick(ndc, opts),
+    container,
+  });
+
   const engine = {
     name: "COVILLAF",
     components,
@@ -506,6 +514,7 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
     clipper,
     section,
     ruler,
+    cameraNav,
     isolation,
     visibility: visibility,
     exportPng,
@@ -557,8 +566,9 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
     },
 
     async loadIfc(buffer, name, onProgress) {
+      let model;
       try {
-        return await ifcLoader.load(buffer, true, name, {
+        model = await ifcLoader.load(buffer, true, name, {
           instanceCallback: (importer) => {
             importer.addAllAttributes();
             importer.addAllRelations();
@@ -569,8 +579,10 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
         });
       } catch (error) {
         console.warn("[COVILLAF] Loading with options failed, attempting a simple load:", error);
-        return ifcLoader.load(buffer, true, name);
+        model = await ifcLoader.load(buffer, true, name);
       }
+      cameraNav.refreshModelBounds(model?.box || null);
+      return model;
     },
 
     async loadFrag(buffer, name = "model.frag") {
@@ -582,6 +594,7 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
       if (model?.object && !world.scene.three.children.includes(model.object)) {
         world.scene.three.add(model.object);
       }
+      cameraNav.refreshModelBounds(model?.box || null);
       return model;
     },
 
@@ -654,6 +667,7 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
     },
 
     dispose() {
+      cameraNav.dispose();
       ruler.dispose();
       section.dispose();
       autoOrbit.dispose();
