@@ -1,6 +1,10 @@
 // IFC Exporter for Conduit Overlay.
-// Generates a valid STEP-format IFC (IFC2X3 or IFC4) containing 3D polylines
-// for traced conduit runs with Pset_ConduitRun properties, federatable in Revizto and BIM viewers.
+// Generates a valid STEP-format IFC (IFC2X3 or IFC4) containing 3D solid conduits (IfcSweptDiskSolid)
+// with smooth circular bend arcs (NEC Chapter 9 Table 2) and polylines with Pset_ConduitRun properties,
+// federatable in Revizto, That Open, Navisworks and BIM viewers.
+
+import { extractRunCenterline } from './centerline-builder.js';
+import { getNecBendRadiusM } from './fitting-solver.js';
 
 function formatIfcDate(d = new Date()) {
   return d.toISOString().replace(/[-:]/g, '').split('.')[0];
@@ -18,6 +22,48 @@ function makeGuid(index) {
   return str;
 }
 
+function getConduitRadiusMeters(size) {
+  if (!size) return 0.012;
+  const s = String(size).toLowerCase().trim();
+  if (s.includes('1/2') || s === '16' || s.includes('16mm')) return 0.009;    // ~18mm OD
+  if (s.includes('3/4') || s === '21' || s.includes('21mm')) return 0.0117;   // ~23.4mm OD
+  if (s === '1' || s.includes('1"') || s === '27') return 0.0148;             // ~29.5mm OD
+  if (s.includes('1 1/4') || s.includes('1-1/4') || s === '35') return 0.0192;
+  if (s.includes('1 1/2') || s.includes('1-1/2') || s === '41') return 0.0221;
+  if (s.startsWith('2') || s === '53') return 0.0279;
+  if (s.includes('2 1/2') || s.includes('2-1/2') || s === '63') return 0.0365;
+  if (s.startsWith('3') || s === '78') return 0.0445;
+  if (s.startsWith('4') || s === '103') return 0.0572;
+  return 0.012;
+}
+
+function hexToRgb(hex) {
+  if (!hex || typeof hex !== 'string') return { r: 0.96, g: 0.62, b: 0.04 };
+  const clean = hex.replace('#', '');
+  if (clean.length === 6) {
+    return {
+      r: parseInt(clean.slice(0, 2), 16) / 255,
+      g: parseInt(clean.slice(2, 4), 16) / 255,
+      b: parseInt(clean.slice(4, 6), 16) / 255,
+    };
+  }
+  return { r: 0.96, g: 0.62, b: 0.04 };
+}
+
+function dedupeConsecutivePoints(points, minDist = 5e-4) {
+  if (!Array.isArray(points) || points.length === 0) return [];
+  const out = [points[0]];
+  for (let i = 1; i < points.length; i++) {
+    const prev = out[out.length - 1];
+    const cur = points[i];
+    const d = Math.hypot(cur.x - prev.x, cur.y - prev.y, cur.z - prev.z);
+    if (d >= minDist) {
+      out.push(cur);
+    }
+  }
+  return out;
+}
+
 export function exportOverlayIfc({
   runs = [],
   nodes = {},
@@ -25,6 +71,7 @@ export function exportOverlayIfc({
   projectName = 'Conduit Takeoff Overlay',
   unit = 'METRE',
   toOriginal = null,
+  colorMap = null,
 }) {
   const schemaUpper = schema.toUpperCase().includes('2X3') ? 'IFC2X3' : 'IFC4';
   const timestamp = formatIfcDate();
@@ -87,13 +134,35 @@ export function exportOverlayIfc({
   const projectId = nextId();
   add(`#${projectId}=IFCPROJECT('${makeGuid(1)}',#${ownerHistId},'${projectName}',$,$,$,$,(#${geomContextId}),#${unitAssignId});`);
 
+  // Hierarchical spatial structure: Project -> Site -> Building -> BuildingStorey
+  const sitePlacementId = nextId();
+  add(`#${sitePlacementId}=IFCLOCALPLACEMENT($,#${wcsId});`);
+
   const siteId = nextId();
-  add(`#${siteId}=IFCSITE('${makeGuid(2)}',#${ownerHistId},'Default Site',$,$,#${wcsId},$,$,.ELEMENT.,$,$,$,$,$);`);
+  add(`#${siteId}=IFCSITE('${makeGuid(2)}',#${ownerHistId},'Default Site',$,$,#${sitePlacementId},$,$,.ELEMENT.,$,$,$,$,$);`);
 
   const relProjSiteId = nextId();
   add(`#${relProjSiteId}=IFCRELAGGREGATES('${makeGuid(3)}',#${ownerHistId},$,$,#${projectId},(#${siteId}));`);
 
-  const runEntityIds = [];
+  const bldgPlacementId = nextId();
+  add(`#${bldgPlacementId}=IFCLOCALPLACEMENT(#${sitePlacementId},#${wcsId});`);
+
+  const bldgId = nextId();
+  add(`#${bldgId}=IFCBUILDING('${makeGuid(4)}',#${ownerHistId},'Default Building',$,$,#${bldgPlacementId},$,$,.ELEMENT.,$,$,$);`);
+
+  const relSiteBldgId = nextId();
+  add(`#${relSiteBldgId}=IFCRELAGGREGATES('${makeGuid(5)}',#${ownerHistId},$,$,#${siteId},(#${bldgId}));`);
+
+  const storeyPlacementId = nextId();
+  add(`#${storeyPlacementId}=IFCLOCALPLACEMENT(#${bldgPlacementId},#${wcsId});`);
+
+  const storeyId = nextId();
+  add(`#${storeyId}=IFCBUILDINGSTOREY('${makeGuid(6)}',#${ownerHistId},'Level 1',$,$,#${storeyPlacementId},$,$,.ELEMENT.,0.);`);
+
+  const relBldgStoreyId = nextId();
+  add(`#${relBldgStoreyId}=IFCRELAGGREGATES('${makeGuid(7)}',#${ownerHistId},$,$,#${bldgId},(#${storeyId}));`);
+
+  const containedElementIds = [];
   let runIdx = 10;
 
   for (const run of runs) {
@@ -107,43 +176,125 @@ export function exportOverlayIfc({
 
     if (nodeCoords.length < 2) continue;
 
-    // Create Cartesian points for vertices
-    const pointIds = [];
-    for (const rawPt of nodeCoords) {
-      const pt = typeof toOriginal === 'function' ? toOriginal(rawPt) : rawPt;
-      const pid = nextId();
-      add(`#${pid}=IFCCARTESIANPOINT((${Number(pt.x).toFixed(4)},${Number(pt.y).toFixed(4)},${Number(pt.z).toFixed(4)}));`);
-      pointIds.push(`#${pid}`);
-    }
-
-    // Polyline
-    const polylineId = nextId();
-    add(`#${polylineId}=IFCPOLYLINE((${pointIds.join(',')}));`);
-
-    // Geometric curve set
-    const curveSetId = nextId();
-    add(`#${curveSetId}=IFCGEOMETRICCURVESET((#${polylineId}));`);
-
-    // Shape representation
-    const shapeRepId = nextId();
-    add(`#${shapeRepId}=IFCSHAPEREPRESENTATION(#${geomContextId},'Body','GeometricCurveSet',(#${curveSetId}));`);
-
-    // Product definition shape
-    const prodShapeId = nextId();
-    add(`#${prodShapeId}=IFCPRODUCTDEFINITIONSHAPE($,$,(#${shapeRepId}));`);
-
-    // Annotation product
-    const runGuid = makeGuid(runIdx++);
-    const annotationId = nextId();
     const runName = run.name || `Run ${run.id}`;
     const runSize = run.size || run.diameter || '3/4"';
     const runSystem = run.system || 'Power';
-    const runLen = Number(run.length || 0).toFixed(3);
+    const radiusM = getConduitRadiusMeters(runSize);
+    const minBendRadiusM = run.minBendRadiusM || getNecBendRadiusM(runSize);
 
-    add(`#${annotationId}=IFCANNOTATION('${runGuid}',#${ownerHistId},'${runName}','Conduit Polyline',#${wcsId},#${prodShapeId},'${runSize}');`);
-    runEntityIds.push(`#${annotationId}`);
+    // Extract continuous 3D centerline with smooth circular SLERP arc fillets for elbows
+    const curvedPath = extractRunCenterline(nodeCoords, minBendRadiusM, 12);
 
-    // Pset_ConduitRun properties
+    const transformedPoints = [];
+    for (const rawPt of curvedPath) {
+      let pt = rawPt;
+      if (typeof toOriginal === 'function') {
+        try {
+          const res = toOriginal(rawPt);
+          if (res && Number.isFinite(res.x) && Number.isFinite(res.y) && Number.isFinite(res.z)) {
+            pt = res;
+          }
+        } catch {
+          pt = rawPt;
+        }
+      }
+      transformedPoints.push({ x: Number(pt.x), y: Number(pt.y), z: Number(pt.z) });
+    }
+
+    const cleanPoints = dedupeConsecutivePoints(transformedPoints, 5e-4);
+    if (cleanPoints.length < 2) continue;
+
+    let computedLen = 0;
+    for (let i = 1; i < cleanPoints.length; i++) {
+      computedLen += Math.hypot(
+        cleanPoints[i].x - cleanPoints[i - 1].x,
+        cleanPoints[i].y - cleanPoints[i - 1].y,
+        cleanPoints[i].z - cleanPoints[i - 1].z,
+      );
+    }
+    const numericRunLen = Number(run.length);
+    const runLen = (Number.isFinite(numericRunLen) && numericRunLen > 0 ? numericRunLen : computedLen).toFixed(3);
+
+    // Factor run's 64-bit world origin into IfcLocalPlacement and keep polyline vertices local
+    // near (0,0,0) so 32-bit GPU/tessellator buffers retain sub-millimetre pipe precision even
+    // at 8,000+ km UTM coordinates while Revizto/BIM viewers apply full f64 placement.
+    const origin = cleanPoints[0];
+    const pointIds = [];
+    for (const pt of cleanPoints) {
+      const lx = pt.x - origin.x;
+      const ly = pt.y - origin.y;
+      const lz = pt.z - origin.z;
+      const pid = nextId();
+      add(`#${pid}=IFCCARTESIANPOINT((${lx.toFixed(4)},${ly.toFixed(4)},${lz.toFixed(4)}));`);
+      pointIds.push(`#${pid}`);
+    }
+
+    // 1. Directrix Polyline (local to run origin)
+    const polylineId = nextId();
+    add(`#${polylineId}=IFCPOLYLINE((${pointIds.join(',')}));`);
+
+    // 2. Solid 3D Geometry: IfcSweptDiskSolid
+    const sweptSolidId = nextId();
+    add(`#${sweptSolidId}=IFCSWEPTDISKSOLID(#${polylineId},${radiusM.toFixed(4)},$,$,$);`);
+
+    const shapeRepBodyId = nextId();
+    add(`#${shapeRepBodyId}=IFCSHAPEREPRESENTATION(#${geomContextId},'Body','SweptSolid',(#${sweptSolidId}));`);
+
+    const prodShapeFlowId = nextId();
+    add(`#${prodShapeFlowId}=IFCPRODUCTDEFINITIONSHAPE($,$,(#${shapeRepBodyId}));`);
+
+    // 3. Physical Placement at exact 64-bit UTM/world anchor
+    const runOriginPtId = nextId();
+    add(`#${runOriginPtId}=IFCCARTESIANPOINT((${origin.x.toFixed(4)},${origin.y.toFixed(4)},${origin.z.toFixed(4)}));`);
+    const runAxisPlacementId = nextId();
+    add(`#${runAxisPlacementId}=IFCAXIS2PLACEMENT3D(#${runOriginPtId},#${axisZId},#${axisXId});`);
+    const elemPlacementId = nextId();
+    add(`#${elemPlacementId}=IFCLOCALPLACEMENT(#${storeyPlacementId},#${runAxisPlacementId});`);
+
+    // 4. Physical 3D MEP Element: IFCFLOWSEGMENT
+    const flowGuid = makeGuid(runIdx++);
+    const flowSegmentId = nextId();
+    if (schemaUpper === 'IFC4') {
+      add(`#${flowSegmentId}=IFCFLOWSEGMENT('${flowGuid}',#${ownerHistId},'${runName}','Conduit ${runSize}','${runSize}',#${elemPlacementId},#${prodShapeFlowId},.CONDUITSEGMENT.);`);
+    } else {
+      add(`#${flowSegmentId}=IFCFLOWSEGMENT('${flowGuid}',#${ownerHistId},'${runName}','Conduit ${runSize}','${runSize}',#${elemPlacementId},#${prodShapeFlowId},$);`);
+    }
+    containedElementIds.push(`#${flowSegmentId}`);
+
+    // 5. 2D/Axis Curve Annotation (for 2D wireframe drafting overlay & vector test compatibility)
+    const curveSetId = nextId();
+    add(`#${curveSetId}=IFCGEOMETRICCURVESET((#${polylineId}));`);
+
+    const shapeRepCurveId = nextId();
+    add(`#${shapeRepCurveId}=IFCSHAPEREPRESENTATION(#${geomContextId},'Body','GeometricCurveSet',(#${curveSetId}));`);
+
+    const prodShapeAnnotId = nextId();
+    add(`#${prodShapeAnnotId}=IFCPRODUCTDEFINITIONSHAPE($,$,(#${shapeRepCurveId}));`);
+
+    const annotGuid = makeGuid(runIdx++);
+    const annotationId = nextId();
+    add(`#${annotationId}=IFCANNOTATION('${annotGuid}',#${ownerHistId},'${runName}','Conduit Polyline','${runSize}',#${elemPlacementId},#${prodShapeAnnotId});`);
+    containedElementIds.push(`#${annotationId}`);
+
+    // 6. Surface Color / Material (trade diameter color)
+    const colorHex = colorMap?.[runSize] || '#f59e0b';
+    const rgb = hexToRgb(colorHex);
+    const colorId = nextId();
+    add(`#${colorId}=IFCCOLOURRGB($,${rgb.r.toFixed(3)},${rgb.g.toFixed(3)},${rgb.b.toFixed(3)});`);
+
+    const renderingId = nextId();
+    add(`#${renderingId}=IFCSURFACESTYLERENDERING(#${colorId},0.,$,$,$,$,$,$,.NOTDEFINED.);`);
+
+    const surfaceStyleId = nextId();
+    add(`#${surfaceStyleId}=IFCSURFACESTYLE('${runName} Style',.BOTH.,(#${renderingId}));`);
+
+    const presStyleAssignId = nextId();
+    add(`#${presStyleAssignId}=IFCPRESENTATIONSTYLEASSIGNMENT((#${surfaceStyleId}));`);
+
+    const styledItemId = nextId();
+    add(`#${styledItemId}=IFCSTYLEDITEM(#${sweptSolidId},(#${presStyleAssignId}),$);`);
+
+    // 7. Pset_ConduitRun properties (attached to both FlowSegment and Annotation)
     const pSizeId = nextId();
     add(`#${pSizeId}=IFCPROPERTYSINGLEVALUE('Size',$,IFCLABEL('${runSize}'),$);`);
 
@@ -153,17 +304,20 @@ export function exportOverlayIfc({
     const pLenId = nextId();
     add(`#${pLenId}=IFCPROPERTYSINGLEVALUE('Length',$,IFCLENGTHMEASURE(${runLen}),$);`);
 
+    const pDiameterId = nextId();
+    add(`#${pDiameterId}=IFCPROPERTYSINGLEVALUE('OuterDiameter',$,IFCLENGTHMEASURE(${(radiusM * 2).toFixed(4)}),$);`);
+
     const psetId = nextId();
-    add(`#${psetId}=IFCPROPERTYSET('${makeGuid(runIdx++)}',#${ownerHistId},'Pset_ConduitRun',$,(#${pSizeId},#${pSystemId},#${pLenId}));`);
+    add(`#${psetId}=IFCPROPERTYSET('${makeGuid(runIdx++)}',#${ownerHistId},'Pset_ConduitRun',$,(#${pSizeId},#${pSystemId},#${pLenId},#${pDiameterId}));`);
 
     const relDefId = nextId();
-    add(`#${relDefId}=IFCRELDEFINESBYPROPERTIES('${makeGuid(runIdx++)}',#${ownerHistId},$,$,(#${annotationId}),#${psetId});`);
+    add(`#${relDefId}=IFCRELDEFINESBYPROPERTIES('${makeGuid(runIdx++)}',#${ownerHistId},$,$,(#${flowSegmentId},#${annotationId}),#${psetId});`);
   }
 
-  // Relate runs to Site spatial structure
-  if (runEntityIds.length > 0) {
+  // Relate elements to BuildingStorey spatial structure
+  if (containedElementIds.length > 0) {
     const relContainedId = nextId();
-    add(`#${relContainedId}=IFCRELCONTAINEDINSPATIALSTRUCTURE('${makeGuid(99)}',#${ownerHistId},'Spatial Container',$,(${runEntityIds.join(',')}),#${siteId});`);
+    add(`#${relContainedId}=IFCRELCONTAINEDINSPATIALSTRUCTURE('${makeGuid(99)}',#${ownerHistId},'Spatial Container',$,(${containedElementIds.join(',')}),#${storeyId});`);
   }
 
   add('ENDSEC;');

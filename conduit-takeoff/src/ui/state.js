@@ -41,6 +41,8 @@ export function createConduitState(backend) {
     diameterRegistry: core.createDiameterRegistry(),
     markerStore: core.createMarkerStore(),
     selectedRunId: null,
+    // Set of run IDs checked for selective IFC export (Option B / C)
+    checkedRunIds: new Set(),
     // Coordinate display mode: 'project' (Local Project Base Point) vs 'shared' (IFC Survey Point)
     coordinateMode: 'project',
     // Compute surface: modules read `state.backend` for takeoff/snap/BOM.

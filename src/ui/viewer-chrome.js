@@ -15,7 +15,7 @@
 
 import * as OBC from '@thatopen/components';
 import * as THREE from 'three';
-import { createRibbon, createXyzTriad } from 'ribbon-chrome';
+import { createRibbon, createXyzTriad, createUnhidePill } from 'ribbon-chrome';
 import { createTrayRibbonDef } from './tray-adapter.js';
 
 /**
@@ -140,6 +140,14 @@ export function initViewerChrome(ctx, dom, api) {
         position: 'bottom-right',
       });
       api.xyzTriad = triad;
+    }
+
+    // Revizto-Style Unhide Floating Viewport Pill
+    if (dom.container && ctx.engine?.visibility) {
+      const unhidePill = createUnhidePill(dom.container, {
+        visibility: ctx.engine.visibility,
+      });
+      api.unhidePill = unhidePill;
     }
 
     if (dom.btnViewerSettings && dom.viewerSettingsPanel) {

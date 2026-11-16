@@ -38,6 +38,11 @@ export function createProjectIo({ state, els, engine, api }) {
   // false + .active removed + status text. Sticky prefs (workplane,
   // autoRiser, diameter, elevation) and sidebar tabs are never touched.
   function handleEscape(drawingTool) {
+    const exportDialog = document.getElementById('export-ifc-dialog');
+    if (exportDialog && !exportDialog.hidden) {
+      exportDialog.hidden = true;
+      return 'close-dialog';
+    }
     // (1) Typing guard.
     if (api.isHudTyping?.()) return 'typing';
     const active = document.activeElement;
@@ -98,6 +103,17 @@ export function createProjectIo({ state, els, engine, api }) {
         if (e.key === 'Escape') {
           e.preventDefault();
           handleEscape(drawingTool);
+        }
+        return;
+      }
+
+      // Revizto-style Hide (Ctrl + H) and Unhide (Ctrl + Shift + H)
+      if (e.ctrlKey && e.key.toLowerCase() === 'h') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          engine.visibility?.unhideAll?.();
+        } else {
+          engine.visibility?.hideSelection?.();
         }
         return;
       }
@@ -218,24 +234,204 @@ export function createProjectIo({ state, els, engine, api }) {
       els.statusText.textContent = `Exported takeoff CSV to ${filename}`;
     });
 
-    // Export Overlay IFC
-    els.btnExportIfc.addEventListener('click', () => {
-      const ifcContent = exportOverlayIfc({
-        runs: state.network.runs,
-        nodes: state.network.nodes,
-        schema: state.sourceModel.schema || 'IFC4',
-        projectName: `${state.sourceModel.name || 'Project'} Conduit Overlay`,
-        toOriginal: (pt) => {
-          if (typeof engine?.coordinates?.toOriginal === 'function') {
-            return engine.coordinates.toOriginal(pt);
-          }
-          return pt;
-        },
-      });
+    // Revit-Style Selective IFC Export Dialog (Option B & C)
+    const exportDialog = document.getElementById('export-ifc-dialog');
+    const exportCloseBtn = document.getElementById('export-dialog-close');
+    const exportCancelBtn = document.getElementById('export-dialog-cancel');
+    const exportConfirmBtn = document.getElementById('export-dialog-confirm');
+    const exportSelectAllBtn = document.getElementById('btn-export-select-all');
+    const exportDeselectAllBtn = document.getElementById('btn-export-deselect-all');
+    const exportTableCheckAll = document.getElementById('export-table-check-all');
+    const exportRunsTbody = document.getElementById('export-runs-tbody');
+    const exportSchemaSelect = document.getElementById('export-ifc-schema');
+    const exportFilenameInput = document.getElementById('export-ifc-filename');
+    const exportSelectedCount = document.getElementById('export-selected-count');
+    const exportAllCount = document.getElementById('export-all-count');
 
-      const filename = `${state.sourceModel.name || 'conduit'}_overlay.ifc`;
-      downloadFile(ifcContent, filename, 'application/x-step');
-      els.statusText.textContent = `Exported overlay IFC to ${filename}`;
+    function closeExportDialog() {
+      if (exportDialog) exportDialog.hidden = true;
+    }
+
+    function updateExportDialogCounts() {
+      const runs = Object.values(state.network.runs || {});
+      const checkedCount = runs.filter((r) => state.checkedRunIds?.has(r.id)).length;
+      if (exportSelectedCount) exportSelectedCount.textContent = checkedCount;
+      if (exportAllCount) exportAllCount.textContent = runs.length;
+      if (exportTableCheckAll) exportTableCheckAll.checked = runs.length > 0 && checkedCount === runs.length;
+
+      // Update suggested filename dynamically if user hasn't heavily customized it
+      if (exportFilenameInput) {
+        const baseName = state.sourceModel.name || 'conduit';
+        if (checkedCount === 1) {
+          const singleId = Array.from(state.checkedRunIds || [])[0];
+          exportFilenameInput.value = `${baseName}_run_${singleId}_overlay.ifc`;
+        } else if (checkedCount === runs.length) {
+          exportFilenameInput.value = `${baseName}_overlay.ifc`;
+        } else {
+          exportFilenameInput.value = `${baseName}_selected_traces.ifc`;
+        }
+      }
+    }
+    api.updateExportDialogCounts = updateExportDialogCounts;
+
+    function renderExportTable() {
+      if (!exportRunsTbody) return;
+      exportRunsTbody.innerHTML = '';
+      const runs = Object.values(state.network.runs || {});
+      const backend = state.backend;
+
+      for (const run of runs) {
+        const takeoff = backend?.computeRunTakeoff?.(state.network, run.id);
+        const color = state.diameterRegistry?.getColor?.(run.size) || '#f59e0b';
+        const isChecked = state.checkedRunIds?.has(run.id);
+
+        const runNodes = (run.nodeIds || []).map((nid) => backend?.nodeById?.(state.network, nid)).filter(Boolean);
+        const bendAnalysis = backend?.analyzeRunBends?.(runNodes) || { totalDegrees: 0, exceedsNec360: false };
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td style="text-align: center;">
+            <input type="checkbox" class="export-row-checkbox" data-run-id="${run.id}" ${isChecked ? 'checked' : ''} />
+          </td>
+          <td>
+            <span class="diameter-color-swatch" style="background: ${color}; display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px;"></span>
+            <strong>${run.name || `Run ${run.id}`}</strong>
+          </td>
+          <td>${run.size}</td>
+          <td>${takeoff ? takeoff.length.toFixed(2) : '0'} m (${takeoff ? (takeoff.length / 0.3048).toFixed(1) : '0'} ft)</td>
+          <td>
+            <span class="nec-bend-badge ${bendAnalysis.exceedsNec360 ? 'nec-warning' : 'nec-ok'}">
+              ${bendAnalysis.totalDegrees}°
+            </span>
+          </td>
+          <td>${takeoff ? takeoff.sticks : 0}</td>
+        `;
+
+        const rowCheckbox = tr.querySelector('.export-row-checkbox');
+        rowCheckbox.addEventListener('change', () => {
+          if (rowCheckbox.checked) {
+            state.checkedRunIds?.add(run.id);
+          } else {
+            state.checkedRunIds?.delete(run.id);
+          }
+          updateExportDialogCounts();
+          api.renderRunsList?.(drawingTool);
+        });
+
+        exportRunsTbody.appendChild(tr);
+      }
+      updateExportDialogCounts();
+    }
+
+    function openExportIfcDialog() {
+      const runs = Object.values(state.network.runs || {});
+      if (runs.length === 0) {
+        els.statusText.textContent = 'No conduit runs drawn yet to export.';
+        return;
+      }
+      if (!state.checkedRunIds) state.checkedRunIds = new Set();
+      if (state.checkedRunIds.size === 0) {
+        for (const run of runs) state.checkedRunIds.add(run.id);
+      }
+      renderExportTable();
+      if (exportDialog) exportDialog.hidden = false;
+    }
+    api.openExportIfcDialog = openExportIfcDialog;
+
+    if (exportCloseBtn) exportCloseBtn.addEventListener('click', closeExportDialog);
+    if (exportCancelBtn) exportCancelBtn.addEventListener('click', closeExportDialog);
+
+    if (exportSelectAllBtn) {
+      exportSelectAllBtn.addEventListener('click', () => {
+        const runs = Object.values(state.network.runs || {});
+        for (const run of runs) state.checkedRunIds?.add(run.id);
+        renderExportTable();
+        api.renderRunsList?.(drawingTool);
+      });
+    }
+
+    if (exportDeselectAllBtn) {
+      exportDeselectAllBtn.addEventListener('click', () => {
+        state.checkedRunIds?.clear();
+        renderExportTable();
+        api.renderRunsList?.(drawingTool);
+      });
+    }
+
+    if (exportTableCheckAll) {
+      exportTableCheckAll.addEventListener('change', () => {
+        const runs = Object.values(state.network.runs || {});
+        if (exportTableCheckAll.checked) {
+          for (const run of runs) state.checkedRunIds?.add(run.id);
+        } else {
+          state.checkedRunIds?.clear();
+        }
+        renderExportTable();
+        api.renderRunsList?.(drawingTool);
+      });
+    }
+
+    if (exportConfirmBtn) {
+      exportConfirmBtn.addEventListener('click', () => {
+        const allRuns = Object.values(state.network.runs || {});
+        const scopeMode = document.querySelector('input[name="export-scope-mode"]:checked')?.value || 'selected';
+        let runsToExport = allRuns;
+
+        if (scopeMode === 'selected') {
+          runsToExport = allRuns.filter((r) => state.checkedRunIds?.has(r.id));
+        }
+
+        if (runsToExport.length === 0) {
+          alert('Please select at least one conduit run to export.');
+          return;
+        }
+
+        const selectedSchema = exportSchemaSelect?.value || state.sourceModel.schema || 'IFC4';
+        const customFilename = exportFilenameInput?.value.trim() || `${state.sourceModel.name || 'conduit'}_overlay.ifc`;
+        const coordMode = document.getElementById('export-ifc-coords')?.value || 'original';
+
+        const colorMap = {};
+        for (const r of runsToExport) {
+          if (r.size && !colorMap[r.size]) {
+            colorMap[r.size] = state.diameterRegistry?.getColor?.(r.size) || '#f59e0b';
+          }
+        }
+
+        const toOriginalFn = coordMode === 'local'
+          ? (pt) => ({ x: pt.x, y: -pt.z, z: pt.y })
+          : (pt) => {
+              if (typeof engine?.coordinates?.toOriginal === 'function') {
+                return engine.coordinates.toOriginal(pt);
+              }
+              return { x: pt.x, y: -pt.z, z: pt.y };
+            };
+
+        const enrichedRuns = runsToExport.map((r) => {
+          const takeoff = backend.computeRunTakeoff(state.network, r.id);
+          return {
+            ...r,
+            length: takeoff?.length ?? r.length ?? 0,
+          };
+        });
+
+        const ifcContent = exportOverlayIfc({
+          runs: enrichedRuns,
+          nodes: state.network.nodes,
+          schema: selectedSchema,
+          projectName: `${state.sourceModel.name || 'Project'} Conduit Overlay`,
+          colorMap,
+          toOriginal: toOriginalFn,
+        });
+
+        downloadFile(ifcContent, customFilename, 'application/x-step');
+        closeExportDialog();
+        els.statusText.textContent = `Exported ${runsToExport.length} conduit trace${runsToExport.length === 1 ? '' : 's'} to ${customFilename}`;
+      });
+    }
+
+    // Export Overlay IFC button opens dialog
+    els.btnExportIfc.addEventListener('click', () => {
+      openExportIfcDialog();
     });
   }
 

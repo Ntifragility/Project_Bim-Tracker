@@ -36,7 +36,7 @@ import {
   generateSpoolSheetCsv,
 } from '@conduit-core';
 
-export function createDrawingTool({ engine, commandStack, diameterRegistry, onStateChange, viewport, surfacePicker }) {
+export function createDrawingTool({ engine, commandStack, diameterRegistry, onStateChange, onSelectRun, viewport, surfacePicker }) {
   const scene = engine.world.scene.three;
   const overlayGroup = new THREE.Group();
   overlayGroup.name = 'ConduitTakeoffOverlay';
@@ -370,13 +370,14 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
   }
 
   function conduitMaterial(colorHex, selected) {
-    const color = new THREE.Color(colorHex);
+    const baseColor = selected ? '#38bdf8' : colorHex;
+    const color = new THREE.Color(baseColor);
     const material = new THREE.MeshPhongMaterial({
       color,
-      shininess: 80,
+      shininess: selected ? 100 : 80,
       specular: new THREE.Color('#ffffff'),
-      emissive: color,
-      emissiveIntensity: selected ? 0.45 : 0.08,
+      emissive: selected ? new THREE.Color('#0284c7') : color,
+      emissiveIntensity: selected ? 0.6 : 0.08,
     });
     material.polygonOffset = true;
     material.polygonOffsetFactor = -2;
@@ -810,6 +811,7 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
 
       const runGroup = new THREE.Group();
       runGroup.name = `Run_${run.id}`;
+      runGroup.userData = { runId: run.id };
 
       const colorHex = diameterRegistry.getColor(run.size) || '#f59e0b';
       const isSelected = run.id === selectedRunId;
@@ -819,11 +821,19 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
       // Build continuous centerline polyline (straight segments + circular SLERP elbow arcs)
       const centerline = extractRunCenterline(points, minRadiusM);
       const pipeMesh = createContinuousConduitMesh(centerline, pipeRadius, colorHex, isSelected);
-      if (pipeMesh) runGroup.add(pipeMesh);
+      if (pipeMesh) {
+        pipeMesh.userData = { runId: run.id };
+        runGroup.add(pipeMesh);
+      }
 
       // Terminal joints only at the two extremities of the run
-      runGroup.add(createJoint(points[0], pipeRadius, colorHex, isSelected));
-      runGroup.add(createJoint(points[points.length - 1], pipeRadius, colorHex, isSelected));
+      const j1 = createJoint(points[0], pipeRadius, colorHex, isSelected);
+      j1.userData = { runId: run.id };
+      runGroup.add(j1);
+
+      const j2 = createJoint(points[points.length - 1], pipeRadius, colorHex, isSelected);
+      j2.userData = { runId: run.id };
+      runGroup.add(j2);
 
       completedRunsGroup.add(runGroup);
     }
@@ -1098,6 +1108,43 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
     }
   }
 
+  // Raycast against completed conduit traces in 3D scene to select/deselect
+  function raycastSelectRun(ndc) {
+    if (!completedRunsGroup || completedRunsGroup.children.length === 0) return false;
+    const camera = engine.world?.camera?.three;
+    if (!camera) return false;
+
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(ndc, camera);
+    const intersects = raycaster.intersectObjects(completedRunsGroup.children, true);
+    if (intersects.length > 0) {
+      let hitObj = intersects[0].object;
+      let hitRunId = hitObj.userData?.runId;
+      while (!hitRunId && hitObj.parent && hitObj.parent !== completedRunsGroup) {
+        hitObj = hitObj.parent;
+        hitRunId = hitObj.userData?.runId;
+      }
+      if (hitRunId) {
+        // Toggle selection: if clicked already selected run, deselect it
+        if (selectedRunId === hitRunId) {
+          selectedRunId = null;
+          onSelectRun?.(null);
+        } else {
+          selectedRunId = hitRunId;
+          onSelectRun?.(selectedRunId);
+        }
+        try { engine.highlighter?.clear('select'); } catch { /* noop */ }
+        return true;
+      }
+    }
+    // Clicking empty space deselects active conduit
+    if (selectedRunId !== null) {
+      selectedRunId = null;
+      onSelectRun?.(null);
+    }
+    return false;
+  }
+
   // Pointer up: only a Rust-classified left click places or samples.
   // Orbit, pan, and empty clicks leave the rubberband where it is.
   async function handlePointerUp(event) {
@@ -1108,6 +1155,11 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
     }
     if (decision.action === 'place' || decision.action === 'sample') {
       await placePointAtNdc(getCanvasNdc(event));
+    } else if (!isDrawingMode && !isPickElevationActive) {
+      // Only raycast to select conduit when it was a click (not a camera drag/orbit)
+      if (decision.action === 'select' || (event.button === 0 && !decision.azimuthDelta && !decision.polarDelta && !decision.truckX && !decision.truckY)) {
+        raycastSelectRun(getCanvasNdc(event));
+      }
     }
   }
 
