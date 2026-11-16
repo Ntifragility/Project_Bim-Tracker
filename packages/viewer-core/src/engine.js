@@ -268,6 +268,119 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
     },
   };
 
+  // Revizto-style Hide/Unhide visibility controller
+  const hiddenElements = new Map(); // modelId -> Set<number>
+  const visibilityListeners = new Set();
+
+  function notifyVisibilityChange() {
+    let count = 0;
+    for (const set of hiddenElements.values()) count += set.size;
+    for (const listener of visibilityListeners) {
+      try {
+        listener(count);
+      } catch (err) {
+        console.error('[visibility] listener error:', err);
+      }
+    }
+  }
+
+  const visibility = {
+    /**
+     * Hide the currently highlighted/selected IFC elements (or a provided modelIdMap).
+     * Clears selection highlight and hides elements via OBC.Hider.
+     * @param {object} [targetMap] Optional FragmentIdMap to hide. If omitted, uses highlighter.selection.select.
+     * @returns {Promise<number>} Count of elements newly hidden
+     */
+    async hideSelection(targetMap = null) {
+      const selection = targetMap || highlighter?.selection?.select;
+      if (!selection || Object.keys(selection).length === 0) return 0;
+
+      appearanceHistory.push('hide');
+
+      let newlyHiddenCount = 0;
+      for (const [modelId, ids] of Object.entries(selection)) {
+        if (!hiddenElements.has(modelId)) {
+          hiddenElements.set(modelId, new Set());
+        }
+        const set = hiddenElements.get(modelId);
+        const idArray = Array.isArray(ids) ? ids : (ids instanceof Set ? Array.from(ids) : [ids]);
+        for (const id of idArray) {
+          const numId = Number(id);
+          if (!Number.isNaN(numId) && !set.has(numId)) {
+            set.add(numId);
+            newlyHiddenCount++;
+          }
+        }
+      }
+
+      if (hider && typeof hider.set === 'function') {
+        try {
+          await hider.set(false, selection);
+        } catch (err) {
+          console.warn('[visibility] hider.set(false) failed:', err);
+        }
+      }
+
+      if (highlighter && typeof highlighter.clear === 'function') {
+        try {
+          await highlighter.clear('select');
+        } catch { /* noop */ }
+      }
+
+      notifyVisibilityChange();
+      return newlyHiddenCount;
+    },
+
+    /**
+     * Unhide all currently hidden IFC elements (Revizto reset).
+     */
+    async unhideAll() {
+      if (this.getHiddenCount() === 0 && (!hider || !hider.excluded || hider.excluded.size === 0)) return;
+
+      appearanceHistory.push('unhideAll');
+      hiddenElements.clear();
+
+      if (hider && typeof hider.set === 'function') {
+        try {
+          await hider.set(true);
+        } catch (err) {
+          console.warn('[visibility] hider.set(true) failed:', err);
+        }
+      }
+
+      notifyVisibilityChange();
+    },
+
+    /**
+     * Returns total count of currently hidden elements.
+     */
+    getHiddenCount() {
+      let count = 0;
+      for (const set of hiddenElements.values()) count += set.size;
+      return count;
+    },
+
+    /**
+     * Returns copy of hidden elements map.
+     */
+    getHiddenElements() {
+      const copy = {};
+      for (const [mId, set] of hiddenElements) {
+        copy[mId] = Array.from(set);
+      }
+      return copy;
+    },
+
+    /**
+     * Subscribe to hidden count changes: cb(count)
+     */
+    onVisibilityChange(callback) {
+      visibilityListeners.add(callback);
+      try { callback(this.getHiddenCount()); } catch {}
+      return () => visibilityListeners.delete(callback);
+    },
+  };
+
   // High-resolution PNG View Export
   const exportPng = {
     async capturePng({ width, height } = {}) {
@@ -507,6 +620,7 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
     hider,
     clipper,
     isolation,
+    visibility: visibility,
     exportPng,
     raycaster,
     coordinates,

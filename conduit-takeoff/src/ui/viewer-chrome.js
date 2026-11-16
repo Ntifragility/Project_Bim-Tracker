@@ -7,7 +7,7 @@
 // Bootstraps universal Revit-style ribbon via ribbon-chrome and conduit-adapter.
 
 import { createCovillafEngine } from 'viewer-core';
-import { createRibbon } from 'ribbon-chrome';
+import { createRibbon, createUnhidePill } from 'ribbon-chrome';
 import { createConduitRibbonDef } from './conduit-adapter.js';
 import { createLateralDock } from './lateral-dock.js';
 import { createDrawingTool } from '../drawing-tool.js';
@@ -337,6 +337,14 @@ export function createViewerChrome({ state, els, api }) {
 
     window.__drawingTool = drawingTool;
     drawingTool.attach(els.viewerContainer);
+
+    // Revizto-Style Unhide Floating Viewport Pill
+    if (els.viewerContainer && engine?.visibility) {
+      const unhidePill = createUnhidePill(els.viewerContainer, {
+        visibility: engine.visibility,
+      });
+      api.unhidePill = unhidePill;
+    }
 
     // Initial render of lateral dock components
     api.updatePropertiesPalette?.();

@@ -102,6 +102,17 @@ export function createProjectIo({ state, els, engine, api }) {
         return;
       }
 
+      // Revizto-style Hide (Ctrl + H) and Unhide (Ctrl + Shift + H)
+      if (e.ctrlKey && e.key.toLowerCase() === 'h') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          engine.visibility?.unhideAll?.();
+        } else {
+          engine.visibility?.hideSelection?.();
+        }
+        return;
+      }
+
       if ((e.key.toLowerCase() === 'v' || e.key.toLowerCase() === 'z') && !e.ctrlKey) {
         drawingTool.isPerpendicularActive = !drawingTool.isPerpendicularActive;
         els.btnPerp.classList.toggle('active', drawingTool.isPerpendicularActive);

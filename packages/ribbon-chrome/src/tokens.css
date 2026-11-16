@@ -1190,3 +1190,61 @@
 .rc-tree-children {
   display: block;
 }
+
+/* Revizto-style Unhide Floating Viewport Pill */
+[data-rc-host] .rc-unhide-pill,
+.rc-unhide-pill {
+  position: absolute;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: #0ea5e9;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 20px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(14, 165, 233, 0.45);
+  z-index: 90;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+
+[data-rc-host] .rc-unhide-pill:hover,
+.rc-unhide-pill:hover {
+  background: #0284c7;
+  box-shadow: 0 6px 20px rgba(14, 165, 233, 0.65);
+  transform: translateX(-50%) translateY(-1px);
+}
+
+[data-rc-host] .rc-unhide-pill:active,
+.rc-unhide-pill:active {
+  transform: translateX(-50%) translateY(1px);
+}
+
+[data-rc-host] .rc-unhide-pill.hidden,
+.rc-unhide-pill.hidden,
+[data-rc-host] .rc-unhide-pill[hidden],
+.rc-unhide-pill[hidden] {
+  display: none !important;
+}
+
+[data-rc-host] .rc-unhide-badge,
+.rc-unhide-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+  min-width: 18px;
+}

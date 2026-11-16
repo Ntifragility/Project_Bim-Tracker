@@ -140,5 +140,10 @@ test('engine exposes Phase-B APIs (selection, perf, appearanceHistory)', async (
   for (const token of ['loadFrag(buffer', 'exportFrag(modelOrId', 'targetModel.getBuffer(false)']) {
     assert.ok(src.includes(token), `engine.js contains ${token}`);
   }
+
+  // Revizto-style Hide/Unhide visibility controller contract
+  for (const token of ['visibility:', 'hideSelection(targetMap', 'unhideAll()', 'getHiddenCount()', 'onVisibilityChange(callback)']) {
+    assert.ok(src.includes(token), `engine.js contains ${token}`);
+  }
 });
 
