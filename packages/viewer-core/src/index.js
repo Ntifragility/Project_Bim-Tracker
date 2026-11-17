@@ -6,7 +6,14 @@ export {
   computeSurfaceZoomStep,
 } from "./camera-navigation.js";
 export { createVisibilityController } from "./visibility-controller.js";
-export { createSectionController, computeBoxPlaneSpecs, isPointClippedByPlanes } from "./section-controller.js";
+export {
+  createSectionController,
+  computeBoxPlaneSpecs,
+  computeObbPlaneSpecs,
+  computeObbCorners,
+  isPointClippedByPlanes,
+  SECTION_BOX_MODES,
+} from "./section-controller.js";
 export {
   createRulerController,
   computeIfcDelta,

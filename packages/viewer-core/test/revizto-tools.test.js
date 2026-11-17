@@ -7,12 +7,14 @@ import {
   createSectionController,
   createRulerController,
   computeBoxPlaneSpecs,
+  computeObbPlaneSpecs,
   isPointClippedByPlanes,
   computeIfcDelta,
   computeAngleDegrees,
   formatMeasurementLength,
   computeMinDistance,
   collectWorldTrianglesFromObject,
+  SECTION_BOX_MODES,
 } from "../src/index.js";
 import { computeToolbarPresentationState } from "ribbon-chrome";
 
@@ -355,5 +357,60 @@ describe("Revizto Section & Ruler Mutual Exclusion & 3-Zone UI Architecture", ()
     assert.equal(hiddenAndIsolated.bottomBar.unhideLabel, "Unhide (4)");
     assert.equal(hiddenAndIsolated.bottomBar.unisolateVisible, true);
     assert.equal(hiddenAndIsolated.bottomBar.showAllVisible, true);
+  });
+
+  it("computes rotated OBB clipping planes and switches between all 4 Revizto Section Box modes", async () => {
+    const quat45 = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 4);
+    const specs = computeObbPlaneSpecs({
+      center: new THREE.Vector3(0, 0, 0),
+      halfExtents: new THREE.Vector3(2, 2, 1),
+      quaternion: quat45,
+    });
+    assert.equal(specs.length, 6);
+    const planes = specs.map((s) => new THREE.Plane().setFromNormalAndCoplanarPoint(s.normal, s.point));
+
+    // Point (1.5, 0, -1.5) is along the rotated X axis (distance ~2.12 > 2? No, rotated X is (0.707, 0, -0.707):
+    // dot with X = 2.12 > 2 -> clipped; dot at (1.0, 0, -1.0) is 1.414 < 2 and Z=0 < 1 -> inside!)
+    assert.equal(isPointClippedByPlanes(new THREE.Vector3(1.0, 0, -1.0), planes), false);
+    assert.equal(isPointClippedByPlanes(new THREE.Vector3(2.0, 0, -2.0), planes), true);
+
+    assert.deepEqual(SECTION_BOX_MODES, ["move-face", "scale-box", "move-box", "rotate-box"]);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
+    const planeList = new Map();
+    let idx = 1;
+    const rawClipper = {
+      enabled: false,
+      visible: false,
+      list: planeList,
+      createFromNormalAndCoplanarPoint(_w, n, p) {
+        const id = `pl-${idx++}`;
+        planeList.set(id, {
+          normal: n.clone(),
+          origin: p.clone(),
+          three: new THREE.Plane().setFromNormalAndCoplanarPoint(n, p),
+          setFromNormalAndCoplanarPoint(nn, pp) {
+            this.normal.copy(nn);
+            this.origin.copy(pp);
+            this.three.setFromNormalAndCoplanarPoint(nn, pp);
+          },
+        });
+        return id;
+      },
+      delete(_w, id) { planeList.delete(id); },
+      deleteAll() { planeList.clear(); },
+    };
+
+    const section = createSectionController({ world: { scene: { three: scene }, camera: { three: camera } }, rawClipper });
+    await section.setMode("box");
+    assert.equal(section.getState().boxMode, "move-face");
+    section.setBoxMode("rotate-box");
+    assert.equal(section.getState().boxMode, "rotate-box");
+    section.setBoxMode("scale-box");
+    assert.equal(section.getState().boxMode, "scale-box");
+    section.setBoxMode("move-box");
+    assert.equal(section.getState().boxMode, "move-box");
+    section.dispose();
   });
 });

@@ -1,11 +1,15 @@
 // Revizto 5-style Section Cut controller for viewer-core.
 //
-// Supports BOTH:
-//   - Section Plane: framed translucent cross-section plane quad + central
-//     bidirectional push/pull normal arrow + orthogonal tilt handles +
-//     suction-cup surface-normal placement preview on "New".
-//   - Section Box: 12-edge bounding box wireframe + face-hover translucent
-//     highlighting + 3D bidirectional normal push/pull arrow gizmos on each face.
+// Features:
+//   - Section Plane: framed translucent cross-section quad + "suction-cup"
+//     circular base pad (drag base across model to align cut plane parallel to
+//     ANY hovered face in real time) + central bidirectional push/pull normal
+//     arrow + orthogonal tilt rings.
+//   - Section Box (Oriented Bounding Box / OBB):
+//       1. Move face  — clean wireframe; single push/pull arrow + highlight on hovered face only
+//       2. Scale box  — centered XYZ + uniform scale gizmo
+//       3. Move box   — centered XYZ translation triad
+//       4. Rotate box — centered XYZ orthogonal rotation rings
 //
 // Strictly separates Active Tool Mode (`open === true`, gizmos visible & interactive)
 // from Passive Scene Cut State (`hasCuts === true`, clipping planes remain active
@@ -14,12 +18,12 @@
 import * as THREE from "three";
 import * as OBC from "@thatopen/components";
 
-const MIN_BOX_EXTENT = 0.08;
+const MIN_HALF_EXTENT = 0.04;
+export const SECTION_BOX_MODES = ["move-face", "scale-box", "move-box", "rotate-box"];
 
 /**
  * Pure helper: builds the 6 inward-facing clipping plane definitions for a THREE.Box3.
  * Three.js discards points where `plane.distanceToPoint(p) < 0`.
- * With inward normals, all points strictly inside `box` satisfy `distanceToPoint >= 0`.
  */
 export function computeBoxPlaneSpecs(box) {
   const min = box.min;
@@ -32,6 +36,66 @@ export function computeBoxPlaneSpecs(box) {
     { key: "minZ", axis: "z", bound: "min", normal: new THREE.Vector3(0, 0, 1), point: new THREE.Vector3((min.x + max.x) * 0.5, (min.y + max.y) * 0.5, min.z) },
     { key: "maxZ", axis: "z", bound: "max", normal: new THREE.Vector3(0, 0, -1), point: new THREE.Vector3((min.x + max.x) * 0.5, (min.y + max.y) * 0.5, max.z) },
   ];
+}
+
+/**
+ * Pure helper: computes the 6 inward-facing clipping planes for an Oriented Bounding Box (OBB).
+ */
+export function computeObbPlaneSpecs({ center, halfExtents, quaternion }) {
+  const ux = new THREE.Vector3(1, 0, 0).applyQuaternion(quaternion).normalize();
+  const uy = new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion).normalize();
+  const uz = new THREE.Vector3(0, 0, 1).applyQuaternion(quaternion).normalize();
+
+  const axes = [
+    { axis: "x", dir: ux, h: halfExtents.x, minKey: "minX", maxKey: "maxX" },
+    { axis: "y", dir: uy, h: halfExtents.y, minKey: "minY", maxKey: "maxY" },
+    { axis: "z", dir: uz, h: halfExtents.z, minKey: "minZ", maxKey: "maxZ" },
+  ];
+
+  const specs = [];
+  for (const a of axes) {
+    specs.push({
+      key: a.minKey,
+      axis: a.axis,
+      sign: -1,
+      dir: a.dir,
+      normal: a.dir.clone(), // inward points +dir
+      point: center.clone().addScaledVector(a.dir, -a.h),
+    });
+    specs.push({
+      key: a.maxKey,
+      axis: a.axis,
+      sign: 1,
+      dir: a.dir,
+      normal: a.dir.clone().negate(), // inward points -dir
+      point: center.clone().addScaledVector(a.dir, a.h),
+    });
+  }
+  return specs;
+}
+
+/**
+ * Pure helper: computes the 8 world-space corners of an OBB in standard box order.
+ */
+export function computeObbCorners({ center, halfExtents, quaternion }) {
+  const ux = new THREE.Vector3(1, 0, 0).applyQuaternion(quaternion).normalize();
+  const uy = new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion).normalize();
+  const uz = new THREE.Vector3(0, 0, 1).applyQuaternion(quaternion).normalize();
+  const hx = halfExtents.x;
+  const hy = halfExtents.y;
+  const hz = halfExtents.z;
+
+  const signs = [
+    [-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1],
+    [-1, -1,  1], [1, -1,  1], [1, 1,  1], [-1, 1,  1],
+  ];
+  return signs.map(([sx, sy, sz]) =>
+    center
+      .clone()
+      .addScaledVector(ux, sx * hx)
+      .addScaledVector(uy, sy * hy)
+      .addScaledVector(uz, sz * hz),
+  );
 }
 
 /**
@@ -57,63 +121,91 @@ const PRESET_NORMALS = {
 };
 
 /**
- * Builds a reusable Revizto-style 3D bidirectional push/pull arrow along local +Z / -Z.
- * Local Z axis is aligned with the face/plane normal.
+ * Builds a clean Revizto-style bidirectional push/pull arrow along local +Z / -Z.
  */
 function createBidirectionalArrowMesh(tagData = {}) {
   const group = new THREE.Group();
-
   const mat = new THREE.MeshBasicMaterial({
     color: 0x38bdf8,
     depthTest: false,
     transparent: true,
-    opacity: 0.94,
+    opacity: 0.95,
   });
 
-  // Central disc grip on the plane/face surface (XY plane)
-  const discGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.06, 24);
-  discGeo.rotateX(Math.PI / 2);
-  const discMesh = new THREE.Mesh(discGeo, mat);
-  discMesh.userData = { ...tagData };
-  discMesh.renderOrder = 66;
-  group.add(discMesh);
-
-  // Shaft along Z (-1.25 to +1.25)
-  const shaftGeo = new THREE.CylinderGeometry(0.08, 0.08, 2.4, 14);
+  const shaftGeo = new THREE.CylinderGeometry(0.065, 0.065, 2.0, 12);
   shaftGeo.rotateX(Math.PI / 2);
   const shaftMesh = new THREE.Mesh(shaftGeo, mat);
   shaftMesh.userData = { ...tagData };
   shaftMesh.renderOrder = 66;
   group.add(shaftMesh);
 
-  // Forward cone (+Z)
-  const conePosGeo = new THREE.ConeGeometry(0.28, 0.68, 18);
+  const conePosGeo = new THREE.ConeGeometry(0.24, 0.62, 16);
   conePosGeo.rotateX(Math.PI / 2);
-  conePosGeo.translate(0, 0, 1.45);
+  conePosGeo.translate(0, 0, 1.25);
   const conePosMesh = new THREE.Mesh(conePosGeo, mat);
   conePosMesh.userData = { ...tagData };
   conePosMesh.renderOrder = 67;
   group.add(conePosMesh);
 
-  // Backward cone (-Z)
-  const coneNegGeo = new THREE.ConeGeometry(0.28, 0.68, 18);
+  const coneNegGeo = new THREE.ConeGeometry(0.24, 0.62, 16);
   coneNegGeo.rotateX(-Math.PI / 2);
-  coneNegGeo.translate(0, 0, -1.45);
+  coneNegGeo.translate(0, 0, -1.25);
   const coneNegMesh = new THREE.Mesh(coneNegGeo, mat);
   coneNegMesh.userData = { ...tagData };
   coneNegMesh.renderOrder = 67;
   group.add(coneNegMesh);
 
-  const pickMeshes = [discMesh, shaftMesh, conePosMesh, coneNegMesh];
+  const pickMeshes = [shaftMesh, conePosMesh, coneNegMesh];
   return {
     group,
     mat,
     pickMeshes,
     dispose() {
-      discGeo.dispose();
       shaftGeo.dispose();
       conePosGeo.dispose();
       coneNegGeo.dispose();
+      mat.dispose();
+    },
+  };
+}
+
+/**
+ * Builds a single-axis colored arrow/handle along local +Z for Move Box / Scale Box gizmos.
+ */
+function createAxisGizmoHandle(axisKey, hexColor, tipShape = "cone", tagPrefix = "move") {
+  const mat = new THREE.MeshBasicMaterial({
+    color: hexColor,
+    depthTest: false,
+    transparent: true,
+    opacity: 0.94,
+  });
+  const group = new THREE.Group();
+  const shaftGeo = new THREE.CylinderGeometry(0.055, 0.055, 1.8, 12);
+  shaftGeo.rotateX(Math.PI / 2);
+  shaftGeo.translate(0, 0, 0.9);
+  const shaft = new THREE.Mesh(shaftGeo, mat);
+  shaft.userData = { sectionBoxGizmo: `${tagPrefix}-${axisKey}`, axis: axisKey };
+  shaft.renderOrder = 70;
+  group.add(shaft);
+
+  const tipGeo =
+    tipShape === "cube"
+      ? new THREE.BoxGeometry(0.32, 0.32, 0.32)
+      : new THREE.ConeGeometry(0.2, 0.55, 16);
+  if (tipShape !== "cube") tipGeo.rotateX(Math.PI / 2);
+  tipGeo.translate(0, 0, 1.95);
+  const tip = new THREE.Mesh(tipGeo, mat);
+  tip.userData = { sectionBoxGizmo: `${tagPrefix}-${axisKey}`, axis: axisKey };
+  tip.renderOrder = 71;
+  group.add(tip);
+
+  return {
+    group,
+    mat,
+    pickMeshes: [shaft, tip],
+    dispose() {
+      shaftGeo.dispose();
+      tipGeo.dispose();
       mat.dispose();
     },
   };
@@ -139,28 +231,32 @@ export function createSectionController({
     rawClipper.localClippingPlanes = true;
   }
 
-  let open = false; // True ONLY while the Section sub-bar / tool is active
-  let mode = "plane"; // 'plane' | 'box' (Revizto defaults to Plane)
+  let open = false;
+  let mode = "plane"; // 'plane' | 'box'
+  let boxMode = "move-face"; // 'move-face' | 'scale-box' | 'move-box' | 'rotate-box'
   let gizmoVisible = true;
   let lastPlaneId = null;
   let surfacePickPending = false;
   let externalOpenCallback = typeof onToolOpen === "function" ? onToolOpen : null;
 
-  const boxPlaneIds = new Map(); // spec.key -> planeId
-  const customPlaneIds = []; // ordered list of Plane-mode planeIds
-  const activeBox = new THREE.Box3(new THREE.Vector3(-5, -1, -5), new THREE.Vector3(5, 5, 5));
+  const boxPlaneIds = new Map();
+  const customPlaneIds = [];
+  const obb = {
+    center: new THREE.Vector3(0, 2, 0),
+    halfExtents: new THREE.Vector3(5, 3, 5),
+    quaternion: new THREE.Quaternion(),
+  };
   const modelRefBounds = new THREE.Box3(new THREE.Vector3(-5, -1, -5), new THREE.Vector3(5, 5, 5));
   const externalClippedObjects = new Set();
   const externalBoundsProviders = new Map();
   const stateListeners = new Set();
   const dragListeners = new Set();
 
-  // Track active Plane-mode normal & point explicitly so our Revizto Plane Gizmo drives it smoothly
   const activePlaneNormal = new THREE.Vector3(0, -1, 0);
   const activePlaneOrigin = new THREE.Vector3(0, 2, 0);
 
   // =========================================================================
-  // 1. Revizto 5 Section Box 3D Gizmo (Wireframe + Face Highlight + Normal Arrow)
+  // 1. Clean Revizto 5 Section Box (OBB) 3D Gizmo + 4 Modes
   // =========================================================================
   const boxGroup = new THREE.Group();
   boxGroup.name = "ReviztoSectionBoxGizmo";
@@ -168,19 +264,18 @@ export function createSectionController({
   boxGroup.renderOrder = 60;
 
   const wireGeo = new THREE.BufferGeometry();
-  const wirePositions = new Float32Array(24 * 3); // 12 edges * 2 vertices
+  const wirePositions = new Float32Array(24 * 3);
   wireGeo.setAttribute("position", new THREE.BufferAttribute(wirePositions, 3));
   const wireMat = new THREE.LineBasicMaterial({
-    color: 0xd4d4d8,
+    color: 0x4ade80, // clean Revizto green wireframe
     depthTest: true,
     transparent: true,
-    opacity: 0.88,
+    opacity: 0.78,
   });
   const wireLines = new THREE.LineSegments(wireGeo, wireMat);
   wireLines.frustumCulled = false;
   boxGroup.add(wireLines);
 
-  // Highlighted face outline (4 edges of the hovered/dragged face)
   const activeFaceEdgeGeo = new THREE.BufferGeometry();
   const activeFaceEdgePos = new Float32Array(8 * 3);
   activeFaceEdgeGeo.setAttribute("position", new THREE.BufferAttribute(activeFaceEdgePos, 3));
@@ -198,11 +293,25 @@ export function createSectionController({
 
   const handleFaces = ["minX", "maxX", "minY", "maxY", "minZ", "maxZ"];
   const faceHandles = new Map();
-  const boxPickMeshes = [];
+  const facePickMeshes = [];
   const quadGeo = new THREE.PlaneGeometry(1, 1);
+  const dotGeo = new THREE.SphereGeometry(1, 12, 10);
+
+  // Single reusable push/pull arrow that appears ONLY on the hovered/dragged face
+  const hoverFaceArrow = createBidirectionalArrowMesh({ isHoverFaceArrow: true });
+  hoverFaceArrow.group.visible = false;
+  boxGroup.add(hoverFaceArrow.group);
 
   for (const key of handleFaces) {
-    const arrow = createBidirectionalArrowMesh({ sectionFaceKey: key, isArrow: true });
+    const dotMat = new THREE.MeshBasicMaterial({
+      color: 0x4ade80,
+      depthTest: false,
+      transparent: true,
+      opacity: 0.65,
+    });
+    const dotMesh = new THREE.Mesh(dotGeo, dotMat);
+    dotMesh.userData = { sectionFaceKey: key, isFaceDot: true };
+    dotMesh.renderOrder = 65;
 
     const quadMat = new THREE.MeshBasicMaterial({
       color: 0x38bdf8,
@@ -215,14 +324,79 @@ export function createSectionController({
     quadMesh.userData = { sectionFaceKey: key, isFaceQuad: true };
     quadMesh.renderOrder = 58;
 
-    boxGroup.add(arrow.group);
+    boxGroup.add(dotMesh);
     boxGroup.add(quadMesh);
-    faceHandles.set(key, { arrow, quadMesh, quadMat });
-    boxPickMeshes.push(...arrow.pickMeshes, quadMesh);
+    faceHandles.set(key, { dotMesh, dotMat, quadMesh, quadMat });
+    facePickMeshes.push(dotMesh, quadMesh);
   }
 
+  // Centered XYZ Move Box Gizmo
+  const moveBoxGroup = new THREE.Group();
+  moveBoxGroup.visible = false;
+  const moveX = createAxisGizmoHandle("x", 0xef4444, "cone", "move");
+  moveX.group.rotation.y = Math.PI / 2;
+  const moveY = createAxisGizmoHandle("y", 0x22c55e, "cone", "move");
+  moveY.group.rotation.x = -Math.PI / 2;
+  const moveZ = createAxisGizmoHandle("z", 0x3b82f6, "cone", "move");
+  moveBoxGroup.add(moveX.group, moveY.group, moveZ.group);
+  boxGroup.add(moveBoxGroup);
+  const movePickMeshes = [...moveX.pickMeshes, ...moveY.pickMeshes, ...moveZ.pickMeshes];
+
+  // Centered XYZ + Uniform Scale Box Gizmo
+  const scaleBoxGroup = new THREE.Group();
+  scaleBoxGroup.visible = false;
+  const scaleX = createAxisGizmoHandle("x", 0xef4444, "cube", "scale");
+  scaleX.group.rotation.y = Math.PI / 2;
+  const scaleY = createAxisGizmoHandle("y", 0x22c55e, "cube", "scale");
+  scaleY.group.rotation.x = -Math.PI / 2;
+  const scaleZ = createAxisGizmoHandle("z", 0x3b82f6, "cube", "scale");
+  const scaleUniformGeo = new THREE.BoxGeometry(0.45, 0.45, 0.45);
+  const scaleUniformMat = new THREE.MeshBasicMaterial({
+    color: 0xfacc15,
+    depthTest: false,
+    transparent: true,
+    opacity: 0.92,
+  });
+  const scaleUniformMesh = new THREE.Mesh(scaleUniformGeo, scaleUniformMat);
+  scaleUniformMesh.userData = { sectionBoxGizmo: "scale-uniform", axis: "all" };
+  scaleUniformMesh.renderOrder = 72;
+  scaleBoxGroup.add(scaleX.group, scaleY.group, scaleZ.group, scaleUniformMesh);
+  boxGroup.add(scaleBoxGroup);
+  const scalePickMeshes = [
+    ...scaleX.pickMeshes,
+    ...scaleY.pickMeshes,
+    ...scaleZ.pickMeshes,
+    scaleUniformMesh,
+  ];
+
+  // Centered XYZ Rotate Box Gizmo (3 orthogonal full rings)
+  const rotateBoxGroup = new THREE.Group();
+  rotateBoxGroup.visible = false;
+  const rotRingGeo = new THREE.TorusGeometry(2.0, 0.065, 12, 48);
+  const rotMatX = new THREE.MeshBasicMaterial({ color: 0xef4444, depthTest: false, transparent: true, opacity: 0.9 });
+  const rotMatY = new THREE.MeshBasicMaterial({ color: 0x22c55e, depthTest: false, transparent: true, opacity: 0.9 });
+  const rotMatZ = new THREE.MeshBasicMaterial({ color: 0x3b82f6, depthTest: false, transparent: true, opacity: 0.9 });
+
+  const rotRingX = new THREE.Mesh(rotRingGeo, rotMatX);
+  rotRingX.rotation.y = Math.PI / 2;
+  rotRingX.userData = { sectionBoxGizmo: "rotate-x", axis: "x" };
+  rotRingX.renderOrder = 70;
+
+  const rotRingY = new THREE.Mesh(rotRingGeo, rotMatY);
+  rotRingY.rotation.x = Math.PI / 2;
+  rotRingY.userData = { sectionBoxGizmo: "rotate-y", axis: "y" };
+  rotRingY.renderOrder = 70;
+
+  const rotRingZ = new THREE.Mesh(rotRingGeo, rotMatZ);
+  rotRingZ.userData = { sectionBoxGizmo: "rotate-z", axis: "z" };
+  rotRingZ.renderOrder = 70;
+
+  rotateBoxGroup.add(rotRingX, rotRingY, rotRingZ);
+  boxGroup.add(rotateBoxGroup);
+  const rotatePickMeshes = [rotRingX, rotRingY, rotRingZ];
+
   // =========================================================================
-  // 2. Revizto 5 Section Plane 3D Gizmo (Framed Quad + Normal Arrow + Tilt Rings)
+  // 2. Revizto 5 Section Plane 3D Gizmo ("Suction-Cup" Base + Normal Arrow)
   // =========================================================================
   const planeGizmoGroup = new THREE.Group();
   planeGizmoGroup.name = "ReviztoSectionPlaneGizmo";
@@ -233,7 +407,7 @@ export function createSectionController({
   const planeQuadMat = new THREE.MeshBasicMaterial({
     color: 0x38bdf8,
     transparent: true,
-    opacity: 0.07,
+    opacity: 0.04,
     side: THREE.DoubleSide,
     depthWrite: false,
   });
@@ -242,14 +416,11 @@ export function createSectionController({
   planeQuadMesh.renderOrder = 59;
   planeGizmoGroup.add(planeQuadMesh);
 
-  // Framed border + center crosshairs on the section plane quad (unit square -0.5..0.5)
   const planeBorderVerts = new Float32Array([
     -0.5, -0.5, 0,  0.5, -0.5, 0,
      0.5, -0.5, 0,  0.5,  0.5, 0,
      0.5,  0.5, 0, -0.5,  0.5, 0,
     -0.5,  0.5, 0, -0.5, -0.5, 0,
-    -0.5,  0.0, 0,  0.5,  0.0, 0,
-     0.0, -0.5, 0,  0.0,  0.5, 0,
   ]);
   const planeBorderGeo = new THREE.BufferGeometry();
   planeBorderGeo.setAttribute("position", new THREE.BufferAttribute(planeBorderVerts, 3));
@@ -257,60 +428,81 @@ export function createSectionController({
     color: 0x38bdf8,
     depthTest: false,
     transparent: true,
-    opacity: 0.85,
+    opacity: 0.72,
   });
   const planeBorderLines = new THREE.LineSegments(planeBorderGeo, planeBorderMat);
   planeBorderLines.frustumCulled = false;
   planeBorderLines.renderOrder = 63;
   planeQuadMesh.add(planeBorderLines);
 
-  // Central bidirectional normal arrow on the Section Plane
-  const planeArrow = createBidirectionalArrowMesh({ sectionPlaneAction: "slide" });
-  planeGizmoGroup.add(planeArrow.group);
+  // Handle assembly anchored at `activePlaneOrigin`
+  const planeHandleRoot = new THREE.Group();
+  planeGizmoGroup.add(planeHandleRoot);
 
-  // 2 orthogonal rotation / tilt rings on the Section Plane (tiltU around X, tiltV around Y)
-  const tiltRingGeo = new THREE.TorusGeometry(2.1, 0.08, 12, 36, Math.PI * 0.65);
-  const tiltMatU = new THREE.MeshBasicMaterial({
-    color: 0xa3e635,
+  // Circular "Suction-Cup" Base Pad on the plane (drag across any model face to align parallel!)
+  const baseDiscGeo = new THREE.CylinderGeometry(0.95, 1.05, 0.08, 28);
+  baseDiscGeo.rotateX(Math.PI / 2);
+  const baseDiscMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
     depthTest: false,
     transparent: true,
     opacity: 0.85,
   });
+  const baseDiscMesh = new THREE.Mesh(baseDiscGeo, baseDiscMat);
+  baseDiscMesh.userData = { sectionPlaneAction: "align-base" };
+  baseDiscMesh.renderOrder = 68;
+  planeHandleRoot.add(baseDiscMesh);
+
+  const baseRingGeo = new THREE.RingGeometry(1.08, 1.28, 32);
+  const baseRingMat = new THREE.MeshBasicMaterial({
+    color: 0x38bdf8,
+    side: THREE.DoubleSide,
+    depthTest: false,
+    transparent: true,
+    opacity: 0.95,
+  });
+  const baseRingMesh = new THREE.Mesh(baseRingGeo, baseRingMat);
+  baseRingMesh.position.z = 0.01;
+  baseRingMesh.userData = { sectionPlaneAction: "align-base" };
+  baseRingMesh.renderOrder = 69;
+  planeHandleRoot.add(baseRingMesh);
+
+  // Bidirectional Normal Arrow stem above/through the suction cup
+  const planeArrow = createBidirectionalArrowMesh({ sectionPlaneAction: "slide" });
+  planeHandleRoot.add(planeArrow.group);
+
+  // 2 subtle orthogonal tilt rings
+  const tiltRingGeo = new THREE.TorusGeometry(2.1, 0.06, 10, 32, Math.PI * 0.55);
+  const tiltMatU = new THREE.MeshBasicMaterial({ color: 0xa3e635, depthTest: false, transparent: true, opacity: 0.75 });
   const tiltMeshU = new THREE.Mesh(tiltRingGeo, tiltMatU);
   tiltMeshU.rotation.y = Math.PI / 2;
-  tiltMeshU.rotation.z = -Math.PI * 0.325;
+  tiltMeshU.rotation.z = -Math.PI * 0.275;
   tiltMeshU.userData = { sectionPlaneAction: "tiltU" };
   tiltMeshU.renderOrder = 66;
-  planeArrow.group.add(tiltMeshU);
+  planeHandleRoot.add(tiltMeshU);
 
-  const tiltMatV = new THREE.MeshBasicMaterial({
-    color: 0xfbbf24,
-    depthTest: false,
-    transparent: true,
-    opacity: 0.85,
-  });
+  const tiltMatV = new THREE.MeshBasicMaterial({ color: 0xfbbf24, depthTest: false, transparent: true, opacity: 0.75 });
   const tiltMeshV = new THREE.Mesh(tiltRingGeo, tiltMatV);
   tiltMeshV.rotation.x = Math.PI / 2;
-  tiltMeshV.rotation.z = -Math.PI * 0.325;
+  tiltMeshV.rotation.z = -Math.PI * 0.275;
   tiltMeshV.userData = { sectionPlaneAction: "tiltV" };
   tiltMeshV.renderOrder = 66;
-  planeArrow.group.add(tiltMeshV);
+  planeHandleRoot.add(tiltMeshV);
 
   const planePickMeshes = [
+    baseDiscMesh,
+    baseRingMesh,
     ...planeArrow.pickMeshes,
     tiltMeshU,
     tiltMeshV,
     planeQuadMesh,
   ];
 
-  // =========================================================================
-  // 3. Revizto 5 Suction-Cup Surface Placement Preview (`New` Plane Pick)
-  // =========================================================================
+  // Suction-Cup Surface Placement Preview (when `New` is clicked)
   const suctionPreviewGroup = new THREE.Group();
   suctionPreviewGroup.name = "ReviztoSuctionPreview";
   suctionPreviewGroup.visible = false;
   suctionPreviewGroup.renderOrder = 70;
-
   const suctionDiscGeo = new THREE.CircleGeometry(1.0, 32);
   const suctionDiscMat = new THREE.MeshBasicMaterial({
     color: 0x38bdf8,
@@ -321,18 +513,16 @@ export function createSectionController({
   });
   const suctionDiscMesh = new THREE.Mesh(suctionDiscGeo, suctionDiscMat);
   suctionPreviewGroup.add(suctionDiscMesh);
-
-  const suctionRingGeo = new THREE.RingGeometry(0.92, 1.04, 32);
+  const suctionRingGeo = new THREE.RingGeometry(0.92, 1.06, 32);
   const suctionRingMat = new THREE.MeshBasicMaterial({
     color: 0xffffff,
     transparent: true,
-    opacity: 0.92,
+    opacity: 0.94,
     side: THREE.DoubleSide,
     depthTest: false,
   });
   const suctionRingMesh = new THREE.Mesh(suctionRingGeo, suctionRingMat);
   suctionPreviewGroup.add(suctionRingMesh);
-
   const suctionNormArrow = createBidirectionalArrowMesh({});
   suctionPreviewGroup.add(suctionNormArrow.group);
 
@@ -343,21 +533,23 @@ export function createSectionController({
   }
 
   let hoveredFaceKey = null;
-  let hoveredPlaneAction = null; // 'slide' | 'tiltU' | 'tiltV' | null
+  let hoveredGizmoPart = null; // e.g. 'move-x', 'scale-uniform', 'rotate-y'
+  let hoveredPlaneAction = null; // 'align-base' | 'slide' | 'tiltU' | 'tiltV' | null
   let draggingState = null;
   let suctionHitValid = false;
   let suctionPickToken = 0;
+  let baseDragToken = 0;
 
   function syncGizmoVisibility() {
-    // CRITICAL REVIZTO RULE: 3D Section gizmos are ONLY visible while the Section
-    // tool (`open`) is active. Closing Section or switching to Ruler hides the
-    // 3D gizmos immediately while keeping the clipping planes active on the model.
     const showAny = open && gizmoVisible;
     boxGroup.visible = showAny && mode === "box" && boxPlaneIds.size > 0;
     planeGizmoGroup.visible = showAny && mode === "plane" && customPlaneIds.length > 0 && !surfacePickPending;
     suctionPreviewGroup.visible = open && surfacePickPending && suctionHitValid;
 
-    // Always keep OBC's internal SimplePlane meshes hidden so only our Revizto gizmo renders
+    moveBoxGroup.visible = boxGroup.visible && boxMode === "move-box";
+    scaleBoxGroup.visible = boxGroup.visible && boxMode === "scale-box";
+    rotateBoxGroup.visible = boxGroup.visible && boxMode === "rotate-box";
+
     if (rawClipper) {
       rawClipper.visible = false;
       if (rawClipper.list) {
@@ -377,7 +569,6 @@ export function createSectionController({
       activePlaneOrigin.copy(simplePlane.origin);
     }
 
-    // Project model center onto the active plane so the framed quad wraps the model nicely
     const modelCenter = modelRefBounds.getCenter(new THREE.Vector3());
     const modelSize = modelRefBounds.getSize(new THREE.Vector3());
     const maxSpan = Math.max(modelSize.x, modelSize.y, modelSize.z, 4) * 1.15;
@@ -395,38 +586,27 @@ export function createSectionController({
     planeQuadMesh.quaternion.copy(quat);
     planeQuadMesh.scale.set(maxSpan, maxSpan, 1);
 
-    planeArrow.group.position.copy(quadCenter);
-    planeArrow.group.quaternion.copy(quat);
-    const camDist = camera?.position ? camera.position.distanceTo(quadCenter) : 14;
-    const arrowScale = Math.max(0.18, Math.min(1.4, camDist * 0.045));
-    planeArrow.group.scale.setScalar(arrowScale);
+    // Anchor the suction-cup handle directly at activePlaneOrigin (or quadCenter if unmoved)
+    planeHandleRoot.position.copy(activePlaneOrigin);
+    planeHandleRoot.quaternion.copy(quat);
+    const camDist = camera?.position ? camera.position.distanceTo(activePlaneOrigin) : 14;
+    const arrowScale = Math.max(0.16, Math.min(1.25, camDist * 0.04));
+    planeHandleRoot.scale.setScalar(arrowScale);
 
-    const isSlideActive = draggingState?.type === "plane-slide" || hoveredPlaneAction === "slide";
-    const isTiltUActive = draggingState?.type === "plane-tiltU" || hoveredPlaneAction === "tiltU";
-    const isTiltVActive = draggingState?.type === "plane-tiltV" || hoveredPlaneAction === "tiltV";
-
+    const activeAction = draggingState?.type?.replace("plane-", "") || hoveredPlaneAction;
+    baseDiscMat.color.setHex(activeAction === "align-base" ? 0xfacc15 : 0xffffff);
+    baseRingMat.color.setHex(activeAction === "align-base" ? 0xfacc15 : 0x38bdf8);
     planeArrow.mat.color.setHex(
-      draggingState?.type === "plane-slide" ? 0xfacc15 : isSlideActive ? 0x38bdf8 : 0xe4e4e7,
+      activeAction === "slide" ? 0xfacc15 : hoveredPlaneAction === "slide" ? 0x38bdf8 : 0xe4e4e7,
     );
-    tiltMatU.color.setHex(isTiltUActive ? 0xfacc15 : 0xa3e635);
-    tiltMatV.color.setHex(isTiltVActive ? 0xfacc15 : 0xfbbf24);
-    planeBorderMat.color.setHex(isSlideActive || isTiltUActive || isTiltVActive ? 0x38bdf8 : 0xd4d4d8);
-    planeQuadMat.opacity = draggingState?.type?.startsWith("plane")
-      ? 0.18
-      : hoveredPlaneAction
-        ? 0.12
-        : 0.05;
+    tiltMatU.color.setHex(activeAction === "tiltU" ? 0xfacc15 : 0xa3e635);
+    tiltMatV.color.setHex(activeAction === "tiltV" ? 0xfacc15 : 0xfbbf24);
+    planeBorderMat.color.setHex(activeAction ? 0x38bdf8 : 0x7dd3fc);
+    planeQuadMat.opacity = draggingState?.type?.startsWith("plane") ? 0.14 : hoveredPlaneAction ? 0.08 : 0.035;
   }
 
   function updateBoxVisuals() {
-    const min = activeBox.min;
-    const max = activeBox.max;
-    const corners = [
-      [min.x, min.y, min.z], [max.x, min.y, min.z],
-      [max.x, max.y, min.z], [min.x, max.y, min.z],
-      [min.x, min.y, max.z], [max.x, min.y, max.z],
-      [max.x, max.y, max.z], [min.x, max.y, max.z],
-    ];
+    const corners = computeObbCorners(obb);
     const edges = [
       [0, 1], [1, 2], [2, 3], [3, 0],
       [4, 5], [5, 6], [6, 7], [7, 4],
@@ -435,73 +615,111 @@ export function createSectionController({
     const pos = wireGeo.attributes.position.array;
     let idx = 0;
     for (const [a, b] of edges) {
-      pos[idx++] = corners[a][0]; pos[idx++] = corners[a][1]; pos[idx++] = corners[a][2];
-      pos[idx++] = corners[b][0]; pos[idx++] = corners[b][1]; pos[idx++] = corners[b][2];
+      pos[idx++] = corners[a].x; pos[idx++] = corners[a].y; pos[idx++] = corners[a].z;
+      pos[idx++] = corners[b].x; pos[idx++] = corners[b].y; pos[idx++] = corners[b].z;
     }
     wireGeo.attributes.position.needsUpdate = true;
     wireGeo.computeBoundingSphere();
 
-    const cx = (min.x + max.x) * 0.5;
-    const cy = (min.y + max.y) * 0.5;
-    const cz = (min.z + max.z) * 0.5;
-    const sx = Math.max(max.x - min.x, 0.01);
-    const sy = Math.max(max.y - min.y, 0.01);
-    const sz = Math.max(max.z - min.z, 0.01);
+    const ux = new THREE.Vector3(1, 0, 0).applyQuaternion(obb.quaternion).normalize();
+    const uy = new THREE.Vector3(0, 1, 0).applyQuaternion(obb.quaternion).normalize();
+    const uz = new THREE.Vector3(0, 0, 1).applyQuaternion(obb.quaternion).normalize();
+
+    const sx = Math.max(obb.halfExtents.x * 2, 0.02);
+    const sy = Math.max(obb.halfExtents.y * 2, 0.02);
+    const sz = Math.max(obb.halfExtents.z * 2, 0.02);
+
+    const rotXNeg = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2);
+    const rotXPos = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+    const rotYNeg = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+    const rotYPos = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
+    const rotZNeg = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+    const rotZPos = new THREE.Quaternion();
 
     const faceConfig = {
-      minX: { pos: [min.x, cy, cz], rot: [0, -Math.PI / 2, 0], scale: [sz, sy, 1], corners: [0, 3, 7, 4] },
-      maxX: { pos: [max.x, cy, cz], rot: [0, Math.PI / 2, 0], scale: [sz, sy, 1], corners: [1, 2, 6, 5] },
-      minY: { pos: [cx, min.y, cz], rot: [Math.PI / 2, 0, 0], scale: [sx, sz, 1], corners: [0, 1, 5, 4] },
-      maxY: { pos: [cx, max.y, cz], rot: [-Math.PI / 2, 0, 0], scale: [sx, sz, 1], corners: [3, 2, 6, 7] },
-      minZ: { pos: [cx, cy, min.z], rot: [0, Math.PI, 0], scale: [sx, sy, 1], corners: [0, 1, 2, 3] },
-      maxZ: { pos: [cx, cy, max.z], rot: [0, 0, 0], scale: [sx, sy, 1], corners: [4, 5, 6, 7] },
+      minX: { pos: obb.center.clone().addScaledVector(ux, -obb.halfExtents.x), localQuat: rotXNeg, scale: [sz, sy, 1], corners: [0, 3, 7, 4] },
+      maxX: { pos: obb.center.clone().addScaledVector(ux,  obb.halfExtents.x), localQuat: rotXPos, scale: [sz, sy, 1], corners: [1, 2, 6, 5] },
+      minY: { pos: obb.center.clone().addScaledVector(uy, -obb.halfExtents.y), localQuat: rotYNeg, scale: [sx, sz, 1], corners: [0, 1, 5, 4] },
+      maxY: { pos: obb.center.clone().addScaledVector(uy,  obb.halfExtents.y), localQuat: rotYPos, scale: [sx, sz, 1], corners: [3, 2, 6, 7] },
+      minZ: { pos: obb.center.clone().addScaledVector(uz, -obb.halfExtents.z), localQuat: rotZNeg, scale: [sx, sy, 1], corners: [0, 1, 2, 3] },
+      maxZ: { pos: obb.center.clone().addScaledVector(uz,  obb.halfExtents.z), localQuat: rotZPos, scale: [sx, sy, 1], corners: [4, 5, 6, 7] },
     };
 
-    const activeKey = draggingState?.faceKey || hoveredFaceKey;
+    const isMoveFaceMode = boxMode === "move-face";
+    const activeKey = isMoveFaceMode ? (draggingState?.faceKey || hoveredFaceKey) : null;
     const camPos = camera?.position;
 
     for (const key of handleFaces) {
       const entry = faceHandles.get(key);
       const cfg = faceConfig[key];
+      const worldQuat = obb.quaternion.clone().multiply(cfg.localQuat);
       const isActive = activeKey === key;
 
-      entry.arrow.group.position.set(cfg.pos[0], cfg.pos[1], cfg.pos[2]);
-      entry.arrow.group.rotation.set(cfg.rot[0], cfg.rot[1], cfg.rot[2]);
-      const dist = camPos ? camPos.distanceTo(entry.arrow.group.position) : 12;
-      const baseScale = Math.max(0.14, Math.min(1.1, dist * 0.036));
-      entry.arrow.group.scale.setScalar(isActive ? baseScale * 1.25 : baseScale * 0.82);
-
-      entry.arrow.mat.color.setHex(
-        draggingState?.faceKey === key ? 0xfacc15 : isActive ? 0x38bdf8 : 0xd4d4d8,
-      );
-      entry.arrow.mat.opacity = isActive ? 0.98 : 0.55;
-
-      entry.quadMesh.position.set(cfg.pos[0], cfg.pos[1], cfg.pos[2]);
-      entry.quadMesh.rotation.set(cfg.rot[0], cfg.rot[1], cfg.rot[2]);
+      entry.quadMesh.visible = isMoveFaceMode;
+      entry.quadMesh.position.copy(cfg.pos);
+      entry.quadMesh.quaternion.copy(worldQuat);
       entry.quadMesh.scale.set(cfg.scale[0], cfg.scale[1], cfg.scale[2]);
-      entry.quadMat.opacity = draggingState?.faceKey === key ? 0.22 : isActive ? 0.14 : 0.0;
+      entry.quadMat.opacity = draggingState?.faceKey === key ? 0.18 : isActive ? 0.11 : 0.0;
+
+      // Clean subtle dot on unhovered faces in Move Face mode
+      entry.dotMesh.visible = isMoveFaceMode && !isActive;
+      entry.dotMesh.position.copy(cfg.pos);
+      const dotDist = camPos ? camPos.distanceTo(cfg.pos) : 12;
+      const dotRadius = Math.max(0.035, Math.min(0.18, dotDist * 0.007));
+      entry.dotMesh.scale.setScalar(dotRadius);
     }
 
-    if (activeKey && faceConfig[activeKey]) {
-      const cIdx = faceConfig[activeKey].corners;
+    // Show the clean single push/pull arrow ONLY on the hovered/dragged face
+    if (isMoveFaceMode && activeKey && faceConfig[activeKey]) {
+      const cfg = faceConfig[activeKey];
+      const worldQuat = obb.quaternion.clone().multiply(cfg.localQuat);
+      hoverFaceArrow.group.visible = true;
+      hoverFaceArrow.group.position.copy(cfg.pos);
+      hoverFaceArrow.group.quaternion.copy(worldQuat);
+      const dist = camPos ? camPos.distanceTo(cfg.pos) : 12;
+      const arrowScale = Math.max(0.14, Math.min(1.1, dist * 0.036));
+      hoverFaceArrow.group.scale.setScalar(arrowScale);
+      hoverFaceArrow.mat.color.setHex(draggingState?.faceKey === activeKey ? 0xfacc15 : 0x38bdf8);
+
+      const cIdx = cfg.corners;
       const fEdges = [
-        [cIdx[0], cIdx[1]],
-        [cIdx[1], cIdx[2]],
-        [cIdx[2], cIdx[3]],
-        [cIdx[3], cIdx[0]],
+        [cIdx[0], cIdx[1]], [cIdx[1], cIdx[2]], [cIdx[2], cIdx[3]], [cIdx[3], cIdx[0]],
       ];
       const fPos = activeFaceEdgeGeo.attributes.position.array;
       let fPtr = 0;
       for (const [a, b] of fEdges) {
-        fPos[fPtr++] = corners[a][0]; fPos[fPtr++] = corners[a][1]; fPos[fPtr++] = corners[a][2];
-        fPos[fPtr++] = corners[b][0]; fPos[fPtr++] = corners[b][1]; fPos[fPtr++] = corners[b][2];
+        fPos[fPtr++] = corners[a].x; fPos[fPtr++] = corners[a].y; fPos[fPtr++] = corners[a].z;
+        fPos[fPtr++] = corners[b].x; fPos[fPtr++] = corners[b].y; fPos[fPtr++] = corners[b].z;
       }
       activeFaceEdgeGeo.attributes.position.needsUpdate = true;
       activeFaceEdgeMat.color.setHex(draggingState?.faceKey ? 0xfacc15 : 0x38bdf8);
       activeFaceEdgeLines.visible = true;
     } else {
+      hoverFaceArrow.group.visible = false;
       activeFaceEdgeLines.visible = false;
     }
+
+    // Position & scale centered Move / Scale / Rotate Box gizmos
+    const centerDist = camPos ? camPos.distanceTo(obb.center) : 12;
+    const centerScale = Math.max(0.16, Math.min(1.4, centerDist * 0.045));
+    for (const g of [moveBoxGroup, scaleBoxGroup, rotateBoxGroup]) {
+      g.position.copy(obb.center);
+      g.quaternion.copy(obb.quaternion);
+      g.scale.setScalar(centerScale);
+    }
+
+    // Highlight hovered center gizmo axis
+    const activeGizmo = draggingState?.gizmoPart || hoveredGizmoPart;
+    moveX.mat.color.setHex(activeGizmo === "move-x" ? 0xfacc15 : 0xef4444);
+    moveY.mat.color.setHex(activeGizmo === "move-y" ? 0xfacc15 : 0x22c55e);
+    moveZ.mat.color.setHex(activeGizmo === "move-z" ? 0xfacc15 : 0x3b82f6);
+    scaleX.mat.color.setHex(activeGizmo === "scale-x" ? 0xfacc15 : 0xef4444);
+    scaleY.mat.color.setHex(activeGizmo === "scale-y" ? 0xfacc15 : 0x22c55e);
+    scaleZ.mat.color.setHex(activeGizmo === "scale-z" ? 0xfacc15 : 0x3b82f6);
+    scaleUniformMat.color.setHex(activeGizmo === "scale-uniform" ? 0xffffff : 0xfacc15);
+    rotMatX.color.setHex(activeGizmo === "rotate-x" ? 0xfacc15 : 0xef4444);
+    rotMatY.color.setHex(activeGizmo === "rotate-y" ? 0xfacc15 : 0x22c55e);
+    rotMatZ.color.setHex(activeGizmo === "rotate-z" ? 0xfacc15 : 0x3b82f6);
   }
 
   function getActivePlanes() {
@@ -540,28 +758,40 @@ export function createSectionController({
 
   function getState() {
     const cuts = hasActiveCut();
+    let hintText = "";
+    if (open) {
+      if (surfacePickPending) {
+        hintText = "Section Plane: click any model surface to align cut plane (Esc to cancel)";
+      } else if (mode === "plane" && customPlaneIds.length > 0) {
+        hintText = "Section Plane: drag the white base pad over any face to align parallel, or drag the arrow to slide";
+      } else if (mode === "box" && boxPlaneIds.size > 0) {
+        if (boxMode === "move-face") hintText = "Move Face: hover any box face and drag to push/pull";
+        else if (boxMode === "scale-box") hintText = "Scale Box: drag an axis cube (or center cube) to resize symmetrically";
+        else if (boxMode === "move-box") hintText = "Move Box: drag an axis arrow to translate the cropping box";
+        else if (boxMode === "rotate-box") hintText = "Rotate Box: drag a ring to rotate the box to angled geometry";
+      }
+    }
+
+    const minArr = obb.center.clone().sub(obb.halfExtents).toArray();
+    const maxArr = obb.center.clone().add(obb.halfExtents).toArray();
+
     return {
       open,
       active: open || cuts,
       mode,
+      boxMode,
       gizmoVisible,
       handlesVisible: gizmoVisible,
       surfacePickPending,
       hasCuts: cuts,
       planeCount: customPlaneIds.length,
       boxActive: boxPlaneIds.size > 0,
-      hintText: !open
-        ? ""
-        : surfacePickPending
-          ? "Section Plane: hover any surface and click to align cut plane (Esc to cancel)"
-          : mode === "box" && boxPlaneIds.size > 0
-            ? "Section Box: hover any face or arrow and drag to push/pull the cropping volume"
-            : mode === "plane" && customPlaneIds.length > 0
-              ? "Section Plane: drag the central arrow to slide cut, or drag the rings to tilt"
-              : "",
-      bounds: {
-        min: activeBox.min.toArray(),
-        max: activeBox.max.toArray(),
+      hintText,
+      bounds: { min: minArr, max: maxArr },
+      obb: {
+        center: obb.center.toArray(),
+        halfExtents: obb.halfExtents.toArray(),
+        quaternion: obb.quaternion.toArray(),
       },
     };
   }
@@ -590,6 +820,7 @@ export function createSectionController({
       surfacePickPending = false;
       suctionHitValid = false;
       hoveredFaceKey = null;
+      hoveredGizmoPart = null;
       hoveredPlaneAction = null;
       if (draggingState) {
         draggingState = null;
@@ -611,11 +842,8 @@ export function createSectionController({
       try {
         const boxer = components.get(OBC.BoundingBoxer);
         boxer.list.clear();
-        if (hasSel) {
-          await boxer.addFromModelIdMap(sel);
-        } else {
-          boxer.addFromModels();
-        }
+        if (hasSel) await boxer.addFromModelIdMap(sel);
+        else boxer.addFromModels();
         const b = boxer.get();
         if (b && !b.isEmpty() && Number.isFinite(b.min.x)) {
           merged.union(b);
@@ -657,10 +885,21 @@ export function createSectionController({
     return merged;
   }
 
+  function applyObbFromBox3(box) {
+    box.getCenter(obb.center);
+    const size = box.getSize(new THREE.Vector3());
+    obb.halfExtents.set(
+      Math.max(MIN_HALF_EXTENT, size.x * 0.5),
+      Math.max(MIN_HALF_EXTENT, size.y * 0.5),
+      Math.max(MIN_HALF_EXTENT, size.z * 0.5),
+    );
+    obb.quaternion.identity();
+  }
+
   function applyBoxPlanesToClipper() {
     if (!rawClipper || !world) return;
     rawClipper.enabled = true;
-    const specs = computeBoxPlaneSpecs(activeBox);
+    const specs = computeObbPlaneSpecs(obb);
     for (const spec of specs) {
       const existingId = boxPlaneIds.get(spec.key);
       const existing = existingId ? rawClipper.list.get(existingId) : null;
@@ -712,6 +951,7 @@ export function createSectionController({
     }
     draggingState = null;
     hoveredFaceKey = null;
+    hoveredGizmoPart = null;
     hoveredPlaneAction = null;
     suctionHitValid = false;
     if (rawClipper) rawClipper.enabled = false;
@@ -735,7 +975,6 @@ export function createSectionController({
       );
     }
 
-    // In Revizto Plane mode, replace previous standalone plane so the single active Section Plane gizmo is unambiguous
     while (customPlaneIds.length > 0) {
       const oldId = customPlaneIds.pop();
       try { rawClipper.delete(world, oldId); } catch { /* noop */ }
@@ -769,7 +1008,7 @@ export function createSectionController({
     mode = "box";
     setOpenInternal(true);
     const bounds = await computeTargetBounds(targetMap, 0.35);
-    activeBox.copy(bounds);
+    applyObbFromBox3(bounds);
     applyBoxPlanesToClipper();
     notify();
   }
@@ -790,7 +1029,6 @@ export function createSectionController({
     }
   }
 
-  // Keep gizmo handles scaled cleanly when camera orbits/zooms
   const onControlsUpdate = () => {
     if (boxGroup.visible) updateBoxVisuals();
     if (planeGizmoGroup.visible) updatePlaneGizmoVisuals();
@@ -800,19 +1038,36 @@ export function createSectionController({
   } catch { /* headless */ }
 
   // =========================================================================
-  // 4. Interactive Raycasting & Dragging (Plane Gizmo, Box Gizmo, Suction Pick)
+  // 3. Interactive Raycasting & Dragging
   // =========================================================================
   const dragRaycaster = new THREE.Raycaster();
 
-  function pickBoxFaceOrArrow(ndc) {
-    if (!boxGroup.visible || !camera || !ndc) return null;
+  function pickBoxFace(ndc) {
+    if (!boxGroup.visible || boxMode !== "move-face" || !camera || !ndc) return null;
     dragRaycaster.setFromCamera(ndc, camera);
-    const hits = dragRaycaster.intersectObjects(boxPickMeshes, false);
+    const arrowHits = hoverFaceArrow.group.visible
+      ? dragRaycaster.intersectObjects(hoverFaceArrow.pickMeshes, false)
+      : [];
+    if (arrowHits.length > 0 && hoveredFaceKey) return hoveredFaceKey;
+    const hits = dragRaycaster.intersectObjects(facePickMeshes, false);
     if (hits.length === 0) return null;
-    // Prefer arrow hits over face quads when both intersect
-    const arrowHit = hits.find((h) => h.object.userData?.isArrow);
-    const best = arrowHit || hits[0];
+    const dotHit = hits.find((h) => h.object.userData?.isFaceDot);
+    const best = dotHit || hits[0];
     return best.object.userData?.sectionFaceKey || null;
+  }
+
+  function pickCenterBoxGizmo(ndc) {
+    if (!boxGroup.visible || boxMode === "move-face" || !camera || !ndc) return null;
+    dragRaycaster.setFromCamera(ndc, camera);
+    const list =
+      boxMode === "move-box"
+        ? movePickMeshes
+        : boxMode === "scale-box"
+          ? scalePickMeshes
+          : rotatePickMeshes;
+    const hits = dragRaycaster.intersectObjects(list, false);
+    if (hits.length === 0) return null;
+    return hits[0].object.userData?.sectionBoxGizmo || null;
   }
 
   function pickPlaneGizmoAction(ndc) {
@@ -820,9 +1075,18 @@ export function createSectionController({
     dragRaycaster.setFromCamera(ndc, camera);
     const hits = dragRaycaster.intersectObjects(planePickMeshes, false);
     if (hits.length === 0) return null;
-    // Prefer tilt rings or central arrow before the large plane quad
     const priorityHit = hits.find((h) => h.object !== planeQuadMesh) || hits[0];
     return priorityHit.object.userData?.sectionPlaneAction || null;
+  }
+
+  function buildAxisDragPlane(axisDir, anchorPos) {
+    const camDir = new THREE.Vector3();
+    camera.getWorldDirection(camDir);
+    const tangent = new THREE.Vector3().crossVectors(camDir, axisDir);
+    let planeNormal = new THREE.Vector3().crossVectors(axisDir, tangent);
+    if (planeNormal.lengthSq() < 1e-6) planeNormal.copy(camDir);
+    planeNormal.normalize();
+    return new THREE.Plane().setFromNormalAndCoplanarPoint(planeNormal, anchorPos);
   }
 
   function updateSuctionPreview(ndc) {
@@ -850,10 +1114,31 @@ export function createSectionController({
         const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
         suctionPreviewGroup.quaternion.copy(quat);
         const dist = camera?.position ? camera.position.distanceTo(hit.point) : 10;
-        const s = Math.max(0.15, Math.min(1.2, dist * 0.04));
-        suctionPreviewGroup.scale.setScalar(s);
+        suctionPreviewGroup.scale.setScalar(Math.max(0.15, Math.min(1.2, dist * 0.04)));
         suctionHitValid = true;
         syncGizmoVisibility();
+      })
+      .catch(() => {});
+  }
+
+  function alignPlaneBaseToNdc(ndc) {
+    if (!pick || !ndc) return;
+    const token = ++baseDragToken;
+    Promise.resolve(pick(ndc, { snap: false }))
+      .then((hit) => {
+        if (token !== baseDragToken || !draggingState || draggingState.type !== "plane-align-base") return;
+        if (!hit?.point) return;
+        let normal = hit.normal ? hit.normal.clone() : activePlaneNormal.clone();
+        if (camera) {
+          const toCam = camera.position.clone().sub(hit.point);
+          // Point normal away from camera into the surface so front stays visible
+          if (normal.dot(toCam) > 0) normal.negate();
+        }
+        normal.normalize();
+        activePlaneNormal.copy(normal);
+        activePlaneOrigin.copy(hit.point);
+        applyActivePlaneToClipper();
+        notify();
       })
       .catch(() => {});
   }
@@ -867,23 +1152,82 @@ export function createSectionController({
     }
 
     if (draggingState) {
+      // Suction-cup base drag: continuously raycast geometry under cursor and align parallel!
+      if (draggingState.type === "plane-align-base") {
+        alignPlaneBaseToNdc(ndc);
+        return true;
+      }
+
+      if (draggingState.type === "plane-tiltU" || draggingState.type === "plane-tiltV") {
+        const deltaNdc = (ndc.x - draggingState.startNdc.x) + (ndc.y - draggingState.startNdc.y);
+        const angleRad = deltaNdc * Math.PI * 0.65;
+        const rotQuat = new THREE.Quaternion().setFromAxisAngle(draggingState.rotAxis, angleRad);
+        activePlaneNormal.copy(draggingState.startNormal).applyQuaternion(rotQuat).normalize();
+        applyActivePlaneToClipper();
+        notify();
+        return true;
+      }
+
+      if (draggingState.type === "obb-rotate") {
+        const deltaNdc = (ndc.x - draggingState.startNdc.x) + (ndc.y - draggingState.startNdc.y);
+        const angleRad = deltaNdc * Math.PI * 0.85;
+        const rotQuat = new THREE.Quaternion().setFromAxisAngle(draggingState.rotAxis, angleRad);
+        obb.quaternion.copy(rotQuat).multiply(draggingState.startQuat).normalize();
+        applyBoxPlanesToClipper();
+        notify();
+        return true;
+      }
+
+      if (draggingState.type === "obb-scale-uniform") {
+        const deltaNdc = (ndc.x - draggingState.startNdc.x) + (ndc.y - draggingState.startNdc.y);
+        const factor = Math.max(0.15, 1 + deltaNdc * 1.4);
+        obb.halfExtents.set(
+          Math.max(MIN_HALF_EXTENT, draggingState.startHalfExtents.x * factor),
+          Math.max(MIN_HALF_EXTENT, draggingState.startHalfExtents.y * factor),
+          Math.max(MIN_HALF_EXTENT, draggingState.startHalfExtents.z * factor),
+        );
+        applyBoxPlanesToClipper();
+        notify();
+        return true;
+      }
+
       dragRaycaster.setFromCamera(ndc, camera);
       const hitPoint = new THREE.Vector3();
       if (!dragRaycaster.ray.intersectPlane(draggingState.dragPlane, hitPoint)) {
         return true;
       }
 
-      if (draggingState.type === "box-face") {
-        const coordVal = hitPoint[draggingState.axis];
-        const delta = coordVal - draggingState.startCoord;
-        let nextVal = draggingState.startAxisVal + delta;
-        if (draggingState.bound === "min") {
-          nextVal = Math.min(nextVal, activeBox.max[draggingState.axis] - MIN_BOX_EXTENT);
-          activeBox.min[draggingState.axis] = nextVal;
-        } else {
-          nextVal = Math.max(nextVal, activeBox.min[draggingState.axis] + MIN_BOX_EXTENT);
-          activeBox.max[draggingState.axis] = nextVal;
-        }
+      if (draggingState.type === "obb-face") {
+        const deltaVec = hitPoint.clone().sub(draggingState.startHit);
+        const signedDelta = deltaVec.dot(draggingState.axisDir);
+        const rawNewHalf = draggingState.startHalf + draggingState.sign * signedDelta * 0.5;
+        const nextHalf = Math.max(MIN_HALF_EXTENT, rawNewHalf);
+        const actualDeltaHalf = nextHalf - draggingState.startHalf;
+        obb.halfExtents[draggingState.axis] = nextHalf;
+        obb.center
+          .copy(draggingState.startCenter)
+          .addScaledVector(draggingState.axisDir, draggingState.sign * actualDeltaHalf);
+        applyBoxPlanesToClipper();
+        notify();
+        return true;
+      }
+
+      if (draggingState.type === "obb-move") {
+        const deltaVec = hitPoint.clone().sub(draggingState.startHit);
+        const signedDelta = deltaVec.dot(draggingState.axisDir);
+        obb.center.copy(draggingState.startCenter).addScaledVector(draggingState.axisDir, signedDelta);
+        applyBoxPlanesToClipper();
+        notify();
+        return true;
+      }
+
+      if (draggingState.type === "obb-scale-axis") {
+        const deltaVec = hitPoint.clone().sub(draggingState.startHit);
+        const signedDelta = deltaVec.dot(draggingState.axisDir);
+        obb.halfExtents[draggingState.axis] = Math.max(
+          MIN_HALF_EXTENT,
+          draggingState.startHalf + signedDelta,
+        );
         applyBoxPlanesToClipper();
         notify();
         return true;
@@ -899,25 +1243,24 @@ export function createSectionController({
         notify();
         return true;
       }
-
-      if (draggingState.type === "plane-tiltU" || draggingState.type === "plane-tiltV") {
-        const deltaNdc = (ndc.x - draggingState.startNdc.x) + (ndc.y - draggingState.startNdc.y);
-        const angleRad = deltaNdc * Math.PI * 0.65;
-        const rotQuat = new THREE.Quaternion().setFromAxisAngle(draggingState.rotAxis, angleRad);
-        activePlaneNormal.copy(draggingState.startNormal).applyQuaternion(rotQuat).normalize();
-        applyActivePlaneToClipper();
-        notify();
-        return true;
-      }
     }
 
     if (mode === "box" && boxGroup.visible) {
-      const nextHover = pickBoxFaceOrArrow(ndc);
-      if (nextHover !== hoveredFaceKey) {
-        hoveredFaceKey = nextHover;
-        updateBoxVisuals();
+      if (boxMode === "move-face") {
+        const nextHover = pickBoxFace(ndc);
+        if (nextHover !== hoveredFaceKey) {
+          hoveredFaceKey = nextHover;
+          updateBoxVisuals();
+        }
+        return Boolean(hoveredFaceKey);
+      } else {
+        const nextPart = pickCenterBoxGizmo(ndc);
+        if (nextPart !== hoveredGizmoPart) {
+          hoveredGizmoPart = nextPart;
+          updateBoxVisuals();
+        }
+        return Boolean(hoveredGizmoPart);
       }
-      return Boolean(hoveredFaceKey);
     }
 
     if (mode === "plane" && planeGizmoGroup.visible) {
@@ -934,62 +1277,103 @@ export function createSectionController({
 
   function handlePointerDown(ndc, button = 0) {
     if (button !== 0 || !open || !camera || !ndc) return false;
-    if (surfacePickPending) return false; // Handled on click
+    if (surfacePickPending) return false;
 
-    // 1. Box mode face/arrow drag
     if (mode === "box" && boxGroup.visible) {
-      const faceKey = pickBoxFaceOrArrow(ndc);
-      if (!faceKey) return false;
+      if (boxMode === "move-face") {
+        const faceKey = pickBoxFace(ndc);
+        if (!faceKey) return false;
+        const axis = faceKey.slice(-1).toLowerCase(); // x | y | z
+        const sign = faceKey.startsWith("min") ? -1 : 1;
+        const unit = new THREE.Vector3(axis === "x" ? 1 : 0, axis === "y" ? 1 : 0, axis === "z" ? 1 : 0);
+        const axisDir = unit.applyQuaternion(obb.quaternion).normalize();
+        const anchor = obb.center.clone().addScaledVector(axisDir, sign * obb.halfExtents[axis]);
+        const dragPlane = buildAxisDragPlane(axisDir, anchor);
+        dragRaycaster.setFromCamera(ndc, camera);
+        const startHit = new THREE.Vector3();
+        if (!dragRaycaster.ray.intersectPlane(dragPlane, startHit)) return false;
 
-      const entry = faceHandles.get(faceKey);
-      const axis = faceKey.slice(-1).toLowerCase(); // x | y | z
-      const bound = faceKey.slice(0, 3); // min | max
-      const handlePos = entry.arrow.group.position.clone();
+        draggingState = {
+          type: "obb-face",
+          faceKey,
+          axis,
+          sign,
+          axisDir,
+          dragPlane,
+          startHit,
+          startHalf: obb.halfExtents[axis],
+          startCenter: obb.center.clone(),
+        };
+        if (controls) controls.enabled = false;
+        notifyDragging(true);
+        updateBoxVisuals();
+        return true;
+      }
 
-      const camDir = new THREE.Vector3();
-      camera.getWorldDirection(camDir);
-      const axisDir = new THREE.Vector3(axis === "x" ? 1 : 0, axis === "y" ? 1 : 0, axis === "z" ? 1 : 0);
-      const tangent = new THREE.Vector3().crossVectors(camDir, axisDir);
-      let planeNormal = new THREE.Vector3().crossVectors(axisDir, tangent);
-      if (planeNormal.lengthSq() < 1e-6) planeNormal.copy(camDir);
-      planeNormal.normalize();
+      const gizmoPart = pickCenterBoxGizmo(ndc);
+      if (!gizmoPart) return false;
 
-      const dragPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(planeNormal, handlePos);
-      dragRaycaster.setFromCamera(ndc, camera);
-      const hitPoint = new THREE.Vector3();
-      if (!dragRaycaster.ray.intersectPlane(dragPlane, hitPoint)) return false;
+      if (gizmoPart === "scale-uniform") {
+        draggingState = {
+          type: "obb-scale-uniform",
+          gizmoPart,
+          startNdc: { x: ndc.x, y: ndc.y },
+          startHalfExtents: obb.halfExtents.clone(),
+        };
+      } else if (gizmoPart.startsWith("rotate-")) {
+        const axis = gizmoPart.split("-")[1];
+        const unit = new THREE.Vector3(axis === "x" ? 1 : 0, axis === "y" ? 1 : 0, axis === "z" ? 1 : 0);
+        const rotAxis = unit.applyQuaternion(obb.quaternion).normalize();
+        draggingState = {
+          type: "obb-rotate",
+          gizmoPart,
+          rotAxis,
+          startNdc: { x: ndc.x, y: ndc.y },
+          startQuat: obb.quaternion.clone(),
+        };
+      } else if (gizmoPart.startsWith("move-") || gizmoPart.startsWith("scale-")) {
+        const [op, axis] = gizmoPart.split("-");
+        const unit = new THREE.Vector3(axis === "x" ? 1 : 0, axis === "y" ? 1 : 0, axis === "z" ? 1 : 0);
+        const axisDir = unit.applyQuaternion(obb.quaternion).normalize();
+        const dragPlane = buildAxisDragPlane(axisDir, obb.center);
+        dragRaycaster.setFromCamera(ndc, camera);
+        const startHit = new THREE.Vector3();
+        if (!dragRaycaster.ray.intersectPlane(dragPlane, startHit)) return false;
 
-      draggingState = {
-        type: "box-face",
-        faceKey,
-        axis,
-        bound,
-        dragPlane,
-        startAxisVal: activeBox[bound][axis],
-        startCoord: hitPoint[axis],
-      };
-      if (controls) controls.enabled = false;
-      notifyDragging(true);
-      updateBoxVisuals();
-      return true;
+        draggingState = {
+          type: op === "move" ? "obb-move" : "obb-scale-axis",
+          gizmoPart,
+          axis,
+          axisDir,
+          dragPlane,
+          startHit,
+          startCenter: obb.center.clone(),
+          startHalf: obb.halfExtents[axis],
+        };
+      }
+
+      if (draggingState) {
+        if (controls) controls.enabled = false;
+        notifyDragging(true);
+        updateBoxVisuals();
+        return true;
+      }
     }
 
-    // 2. Plane mode normal arrow / quad slide or tilt drag
     if (mode === "plane" && planeGizmoGroup.visible) {
       const action = pickPlaneGizmoAction(ndc);
       if (!action) return false;
 
-      const gizmoCenter = planeArrow.group.position.clone();
-      const camDir = new THREE.Vector3();
-      camera.getWorldDirection(camDir);
+      if (action === "align-base") {
+        draggingState = { type: "plane-align-base" };
+        if (controls) controls.enabled = false;
+        notifyDragging(true);
+        updatePlaneGizmoVisuals();
+        return true;
+      }
 
       if (action === "slide") {
-        const tangent = new THREE.Vector3().crossVectors(camDir, activePlaneNormal);
-        let dragNormal = new THREE.Vector3().crossVectors(activePlaneNormal, tangent);
-        if (dragNormal.lengthSq() < 1e-6) dragNormal.copy(camDir);
-        dragNormal.normalize();
-
-        const dragPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(dragNormal, gizmoCenter);
+        const dragPlane = buildAxisDragPlane(activePlaneNormal, activePlaneOrigin);
         dragRaycaster.setFromCamera(ndc, camera);
         const startHit = new THREE.Vector3();
         if (!dragRaycaster.ray.intersectPlane(dragPlane, startHit)) return false;
@@ -1002,15 +1386,12 @@ export function createSectionController({
           startNormal: activePlaneNormal.clone(),
         };
       } else {
-        const quat = planeArrow.group.quaternion.clone();
+        const quat = planeHandleRoot.quaternion.clone();
         const rotAxis = action === "tiltU"
           ? new THREE.Vector3(1, 0, 0).applyQuaternion(quat).normalize()
           : new THREE.Vector3(0, 1, 0).applyQuaternion(quat).normalize();
-        const dragPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(camDir, gizmoCenter);
-
         draggingState = {
           type: `plane-${action}`,
-          dragPlane,
           rotAxis,
           startNdc: { x: ndc.x, y: ndc.y },
           startNormal: activePlaneNormal.clone(),
@@ -1037,13 +1418,9 @@ export function createSectionController({
   }
 
   return {
-    get active() {
-      return open;
-    },
-
-    get mode() {
-      return mode;
-    },
+    get active() { return open; },
+    get mode() { return mode; },
+    get boxMode() { return boxMode; },
 
     getState,
     getActivePlanes,
@@ -1072,6 +1449,16 @@ export function createSectionController({
 
     async toggle() {
       return this.setActive(!open);
+    },
+
+    setBoxMode(nextBoxMode) {
+      if (!SECTION_BOX_MODES.includes(nextBoxMode)) return getState();
+      boxMode = nextBoxMode;
+      hoveredFaceKey = null;
+      hoveredGizmoPart = null;
+      if (boxGroup.visible) updateBoxVisuals();
+      notify();
+      return getState();
     },
 
     startSurfaceCut() {
@@ -1112,7 +1499,7 @@ export function createSectionController({
     },
 
     isHoveringHandle() {
-      return Boolean(hoveredFaceKey || hoveredPlaneAction || surfacePickPending);
+      return Boolean(hoveredFaceKey || hoveredGizmoPart || hoveredPlaneAction || surfacePickPending);
     },
 
     async setMode(nextMode) {
@@ -1132,29 +1519,21 @@ export function createSectionController({
     },
 
     async toggleCut(preferredMode = null) {
-      if (hasActiveCut() || open) {
-        this.uncut();
-      } else {
-        await this.activate(preferredMode || mode);
-      }
+      if (hasActiveCut() || open) this.uncut();
+      else await this.activate(preferredMode || mode);
       return getState();
     },
 
     async newCut(targetMap = null) {
       setOpenInternal(true);
       if (mode === "box") {
-        // In Revizto, clicking "New" in Box mode wraps current selection (if any) or resets to model bounds
         await activateBox(targetMap);
+      } else if (pick && world?.renderer?.three) {
+        this.startSurfaceCut();
       } else {
-        // In Revizto, clicking "New" in Plane mode arms the surface-normal suction-cup picker
-        // (and if called in headless tests without pick, creates/cycles an orthogonal cut plane)
-        if (pick && world?.renderer?.three) {
-          this.startSurfaceCut();
-        } else {
-          const bounds = await computeTargetBounds(targetMap, 0);
-          const center = bounds.getCenter(new THREE.Vector3());
-          await addPlane(new THREE.Vector3(0, -1, 0), center);
-        }
+        const bounds = await computeTargetBounds(targetMap, 0);
+        const center = bounds.getCenter(new THREE.Vector3());
+        await addPlane(new THREE.Vector3(0, -1, 0), center);
       }
       return getState();
     },
@@ -1164,9 +1543,7 @@ export function createSectionController({
       const normal = PRESET_NORMALS[dir] || PRESET_NORMALS.top;
       const bounds = await computeTargetBounds(null, 0);
       const center = bounds.getCenter(new THREE.Vector3());
-      if (mode === "box") {
-        await activatePlane();
-      }
+      if (mode === "box") await activatePlane();
       await addPlane(normal, center);
       return getState();
     },
@@ -1191,8 +1568,9 @@ export function createSectionController({
       }
       mode = "box";
       setOpenInternal(true);
-      activeBox.copy(box).expandByScalar(0.15);
-      modelRefBounds.copy(activeBox);
+      const padded = box.clone().expandByScalar(0.15);
+      modelRefBounds.copy(padded);
+      applyObbFromBox3(padded);
       applyBoxPlanesToClipper();
       notify();
       return getState();
@@ -1205,13 +1583,11 @@ export function createSectionController({
       let normal = hit.normal ? hit.normal.clone() : new THREE.Vector3(0, -1, 0);
       if (camera) {
         const toCam = camera.position.clone().sub(hit.point);
-        // Cut away the camera-facing side into the surface
         if (normal.dot(toCam) > 0) normal.negate();
       }
       mode = "plane";
       setOpenInternal(true);
-      const id = await addPlane(normal, hit.point);
-      return id;
+      return await addPlane(normal, hit.point);
     },
 
     flipActivePlane() {
@@ -1303,22 +1679,24 @@ export function createSectionController({
       activeFaceEdgeGeo.dispose();
       activeFaceEdgeMat.dispose();
       quadGeo.dispose();
+      dotGeo.dispose();
+      hoverFaceArrow.dispose();
       for (const e of faceHandles.values()) {
-        e.arrow.dispose();
+        e.dotMat.dispose();
         e.quadMat.dispose();
       }
-      planeQuadGeo.dispose();
-      planeQuadMat.dispose();
-      planeBorderGeo.dispose();
-      planeBorderMat.dispose();
+      moveX.dispose(); moveY.dispose(); moveZ.dispose();
+      scaleX.dispose(); scaleY.dispose(); scaleZ.dispose();
+      scaleUniformGeo.dispose(); scaleUniformMat.dispose();
+      rotRingGeo.dispose(); rotMatX.dispose(); rotMatY.dispose(); rotMatZ.dispose();
+      planeQuadGeo.dispose(); planeQuadMat.dispose();
+      planeBorderGeo.dispose(); planeBorderMat.dispose();
+      baseDiscGeo.dispose(); baseDiscMat.dispose();
+      baseRingGeo.dispose(); baseRingMat.dispose();
       planeArrow.dispose();
-      tiltRingGeo.dispose();
-      tiltMatU.dispose();
-      tiltMatV.dispose();
-      suctionDiscGeo.dispose();
-      suctionDiscMat.dispose();
-      suctionRingGeo.dispose();
-      suctionRingMat.dispose();
+      tiltRingGeo.dispose(); tiltMatU.dispose(); tiltMatV.dispose();
+      suctionDiscGeo.dispose(); suctionDiscMat.dispose();
+      suctionRingGeo.dispose(); suctionRingMat.dispose();
       suctionNormArrow.dispose();
       stateListeners.clear();
       dragListeners.clear();

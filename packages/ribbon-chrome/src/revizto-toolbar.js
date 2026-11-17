@@ -348,6 +348,30 @@ export function createReviztoToolbar(
       });
       flipBtn.addEventListener("click", () => section?.flipActivePlane?.());
       bar.appendChild(flipBtn);
+    } else if (secState.mode === "box") {
+      bar.appendChild(el("span", "rc-subbar-divider"));
+      const boxModeSeg = el("div", "rc-seg-pill rc-box-mode-seg");
+      const activeBoxMode = secState.boxMode || "move-face";
+      for (const [id, label, tip] of [
+        ["move-face", "Move face", "Hover any face and drag to push/pull"],
+        ["scale-box", "Scale box", "Resize box symmetrically along XYZ or uniformly"],
+        ["move-box", "Move box", "Translate entire box in 3D"],
+        ["rotate-box", "Rotate box", "Rotate box to align with angled geometry"],
+      ]) {
+        const mBtn = el(
+          "button",
+          `rc-seg-btn${activeBoxMode === id ? " is-active" : ""}`,
+          {
+            type: "button",
+            text: label,
+            title: tip,
+            "data-box-mode": id,
+          },
+        );
+        mBtn.addEventListener("click", () => section?.setBoxMode?.(id));
+        boxModeSeg.appendChild(mBtn);
+      }
+      bar.appendChild(boxModeSeg);
     }
 
     bar.appendChild(el("span", "rc-subbar-spacer"));
