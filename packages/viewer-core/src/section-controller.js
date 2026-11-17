@@ -396,23 +396,24 @@ export function createSectionController({
   const rotatePickMeshes = [rotRingX, rotRingY, rotRingZ];
 
   // =========================================================================
-  // 2. Revizto 5 Section Plane 3D Gizmo ("Suction-Cup" Base + Normal Arrow)
+  // 2. Revizto 5 Section Plane 3D Gizmo (Compact Suction Cup + Stem + Push/Pull)
   // =========================================================================
   const planeGizmoGroup = new THREE.Group();
   planeGizmoGroup.name = "ReviztoSectionPlaneGizmo";
   planeGizmoGroup.visible = false;
   planeGizmoGroup.renderOrder = 61;
 
+  // Large translucent blue cut plane (hidden when idle; visible ONLY while using the Section cup)
   const planeQuadGeo = new THREE.PlaneGeometry(1, 1);
   const planeQuadMat = new THREE.MeshBasicMaterial({
-    color: 0x38bdf8,
+    color: 0x3b82f6,
     transparent: true,
-    opacity: 0.04,
+    opacity: 0.16,
     side: THREE.DoubleSide,
     depthWrite: false,
   });
   const planeQuadMesh = new THREE.Mesh(planeQuadGeo, planeQuadMat);
-  planeQuadMesh.userData = { sectionPlaneAction: "slide" };
+  planeQuadMesh.visible = false;
   planeQuadMesh.renderOrder = 59;
   planeGizmoGroup.add(planeQuadMesh);
 
@@ -425,10 +426,10 @@ export function createSectionController({
   const planeBorderGeo = new THREE.BufferGeometry();
   planeBorderGeo.setAttribute("position", new THREE.BufferAttribute(planeBorderVerts, 3));
   const planeBorderMat = new THREE.LineBasicMaterial({
-    color: 0x38bdf8,
+    color: 0x2563eb,
     depthTest: false,
     transparent: true,
-    opacity: 0.72,
+    opacity: 0.85,
   });
   const planeBorderLines = new THREE.LineSegments(planeBorderGeo, planeBorderMat);
   planeBorderLines.frustumCulled = false;
@@ -439,63 +440,61 @@ export function createSectionController({
   const planeHandleRoot = new THREE.Group();
   planeGizmoGroup.add(planeHandleRoot);
 
-  // Circular "Suction-Cup" Base Pad on the plane (drag across any model face to align parallel!)
-  const baseDiscGeo = new THREE.CylinderGeometry(0.95, 1.05, 0.08, 28);
-  baseDiscGeo.rotateX(Math.PI / 2);
-  const baseDiscMat = new THREE.MeshBasicMaterial({
-    color: 0xffffff,
+  const plungerMat = new THREE.MeshBasicMaterial({
+    color: 0x22c55e, // Revizto green when idle, blue (#3b82f6) when hovered/dragging
     depthTest: false,
     transparent: true,
-    opacity: 0.85,
+    opacity: 0.96,
   });
-  const baseDiscMesh = new THREE.Mesh(baseDiscGeo, baseDiscMat);
-  baseDiscMesh.userData = { sectionPlaneAction: "align-base" };
-  baseDiscMesh.renderOrder = 68;
-  planeHandleRoot.add(baseDiscMesh);
 
-  const baseRingGeo = new THREE.RingGeometry(1.08, 1.28, 32);
-  const baseRingMat = new THREE.MeshBasicMaterial({
-    color: 0x38bdf8,
-    side: THREE.DoubleSide,
-    depthTest: false,
-    transparent: true,
-    opacity: 0.95,
-  });
-  const baseRingMesh = new THREE.Mesh(baseRingGeo, baseRingMat);
-  baseRingMesh.position.z = 0.01;
-  baseRingMesh.userData = { sectionPlaneAction: "align-base" };
-  baseRingMesh.renderOrder = 69;
-  planeHandleRoot.add(baseRingMesh);
+  // 1. Compact Suction-Cup Base Cone resting flat on the plane (drag across any face to align parallel)
+  const baseCupGeo = new THREE.ConeGeometry(0.36, 0.34, 24);
+  baseCupGeo.rotateX(Math.PI / 2);
+  baseCupGeo.translate(0, 0, 0.17);
+  const baseCupMesh = new THREE.Mesh(baseCupGeo, plungerMat);
+  baseCupMesh.userData = { sectionPlaneAction: "align-base" };
+  baseCupMesh.renderOrder = 68;
+  planeHandleRoot.add(baseCupMesh);
 
-  // Bidirectional Normal Arrow stem above/through the suction cup
-  const planeArrow = createBidirectionalArrowMesh({ sectionPlaneAction: "slide" });
-  planeHandleRoot.add(planeArrow.group);
+  // 2. Long thin stem rising perpendicular from the suction cup
+  const stemGeo = new THREE.CylinderGeometry(0.032, 0.032, 2.9, 12);
+  stemGeo.rotateX(Math.PI / 2);
+  stemGeo.translate(0, 0, 1.72);
+  const stemMesh = new THREE.Mesh(stemGeo, plungerMat);
+  stemMesh.userData = { sectionPlaneAction: "slide" };
+  stemMesh.renderOrder = 67;
+  planeHandleRoot.add(stemMesh);
 
-  // 2 subtle orthogonal tilt rings
-  const tiltRingGeo = new THREE.TorusGeometry(2.1, 0.06, 10, 32, Math.PI * 0.55);
-  const tiltMatU = new THREE.MeshBasicMaterial({ color: 0xa3e635, depthTest: false, transparent: true, opacity: 0.75 });
-  const tiltMeshU = new THREE.Mesh(tiltRingGeo, tiltMatU);
-  tiltMeshU.rotation.y = Math.PI / 2;
-  tiltMeshU.rotation.z = -Math.PI * 0.275;
-  tiltMeshU.userData = { sectionPlaneAction: "tiltU" };
-  tiltMeshU.renderOrder = 66;
-  planeHandleRoot.add(tiltMeshU);
+  // 3. Top Push/Pull Cluster: [Inward Cone] - [Sphere] - [Outward Cone]
+  const coneInGeo = new THREE.ConeGeometry(0.22, 0.32, 20);
+  coneInGeo.rotateX(-Math.PI / 2);
+  coneInGeo.translate(0, 0, 3.06);
+  const coneInMesh = new THREE.Mesh(coneInGeo, plungerMat);
+  coneInMesh.userData = { sectionPlaneAction: "slide" };
+  coneInMesh.renderOrder = 68;
+  planeHandleRoot.add(coneInMesh);
 
-  const tiltMatV = new THREE.MeshBasicMaterial({ color: 0xfbbf24, depthTest: false, transparent: true, opacity: 0.75 });
-  const tiltMeshV = new THREE.Mesh(tiltRingGeo, tiltMatV);
-  tiltMeshV.rotation.x = Math.PI / 2;
-  tiltMeshV.rotation.z = -Math.PI * 0.275;
-  tiltMeshV.userData = { sectionPlaneAction: "tiltV" };
-  tiltMeshV.renderOrder = 66;
-  planeHandleRoot.add(tiltMeshV);
+  const sphereGripGeo = new THREE.SphereGeometry(0.15, 16, 12);
+  sphereGripGeo.translate(0, 0, 3.38);
+  const sphereGripMesh = new THREE.Mesh(sphereGripGeo, plungerMat);
+  sphereGripMesh.userData = { sectionPlaneAction: "slide" };
+  sphereGripMesh.renderOrder = 68;
+  planeHandleRoot.add(sphereGripMesh);
+
+  const coneOutGeo = new THREE.ConeGeometry(0.22, 0.32, 20);
+  coneOutGeo.rotateX(Math.PI / 2);
+  coneOutGeo.translate(0, 0, 3.70);
+  const coneOutMesh = new THREE.Mesh(coneOutGeo, plungerMat);
+  coneOutMesh.userData = { sectionPlaneAction: "slide" };
+  coneOutMesh.renderOrder = 68;
+  planeHandleRoot.add(coneOutMesh);
 
   const planePickMeshes = [
-    baseDiscMesh,
-    baseRingMesh,
-    ...planeArrow.pickMeshes,
-    tiltMeshU,
-    tiltMeshV,
-    planeQuadMesh,
+    baseCupMesh,
+    stemMesh,
+    coneInMesh,
+    sphereGripMesh,
+    coneOutMesh,
   ];
 
   // Suction-Cup Surface Placement Preview (when `New` is clicked)
@@ -571,7 +570,8 @@ export function createSectionController({
 
     const modelCenter = modelRefBounds.getCenter(new THREE.Vector3());
     const modelSize = modelRefBounds.getSize(new THREE.Vector3());
-    const maxSpan = Math.max(modelSize.x, modelSize.y, modelSize.z, 4) * 1.15;
+    // Generous cutting plane span extending cleanly beyond the full model bounds
+    const maxSpan = Math.max(modelSize.x, modelSize.y, modelSize.z, 12) * 3.0;
 
     const planeMath = new THREE.Plane().setFromNormalAndCoplanarPoint(activePlaneNormal, activePlaneOrigin);
     const quadCenter = new THREE.Vector3();
@@ -586,23 +586,21 @@ export function createSectionController({
     planeQuadMesh.quaternion.copy(quat);
     planeQuadMesh.scale.set(maxSpan, maxSpan, 1);
 
-    // Anchor the suction-cup handle directly at activePlaneOrigin (or quadCenter if unmoved)
+    // Anchor the compact suction-cup handle directly at activePlaneOrigin
     planeHandleRoot.position.copy(activePlaneOrigin);
     planeHandleRoot.quaternion.copy(quat);
     const camDist = camera?.position ? camera.position.distanceTo(activePlaneOrigin) : 14;
-    const arrowScale = Math.max(0.16, Math.min(1.25, camDist * 0.04));
+    const arrowScale = Math.max(0.14, Math.min(1.15, camDist * 0.038));
     planeHandleRoot.scale.setScalar(arrowScale);
 
-    const activeAction = draggingState?.type?.replace("plane-", "") || hoveredPlaneAction;
-    baseDiscMat.color.setHex(activeAction === "align-base" ? 0xfacc15 : 0xffffff);
-    baseRingMat.color.setHex(activeAction === "align-base" ? 0xfacc15 : 0x38bdf8);
-    planeArrow.mat.color.setHex(
-      activeAction === "slide" ? 0xfacc15 : hoveredPlaneAction === "slide" ? 0x38bdf8 : 0xe4e4e7,
+    // Revizto rule: cut plane quad is ONLY visible while hovering/dragging the Section cup!
+    // Green when idle (no plane shown), Blue when hovering/dragging (large translucent blue plane shown).
+    const isInteracting = Boolean(
+      hoveredPlaneAction || draggingState?.type?.startsWith("plane-"),
     );
-    tiltMatU.color.setHex(activeAction === "tiltU" ? 0xfacc15 : 0xa3e635);
-    tiltMatV.color.setHex(activeAction === "tiltV" ? 0xfacc15 : 0xfbbf24);
-    planeBorderMat.color.setHex(activeAction ? 0x38bdf8 : 0x7dd3fc);
-    planeQuadMat.opacity = draggingState?.type?.startsWith("plane") ? 0.14 : hoveredPlaneAction ? 0.08 : 0.035;
+    planeQuadMesh.visible = isInteracting;
+    plungerMat.color.setHex(isInteracting ? 0x3b82f6 : 0x22c55e);
+    planeQuadMat.opacity = draggingState?.type?.startsWith("plane-") ? 0.18 : 0.14;
   }
 
   function updateBoxVisuals() {
@@ -1691,10 +1689,12 @@ export function createSectionController({
       rotRingGeo.dispose(); rotMatX.dispose(); rotMatY.dispose(); rotMatZ.dispose();
       planeQuadGeo.dispose(); planeQuadMat.dispose();
       planeBorderGeo.dispose(); planeBorderMat.dispose();
-      baseDiscGeo.dispose(); baseDiscMat.dispose();
-      baseRingGeo.dispose(); baseRingMat.dispose();
-      planeArrow.dispose();
-      tiltRingGeo.dispose(); tiltMatU.dispose(); tiltMatV.dispose();
+      plungerMat.dispose();
+      baseCupGeo.dispose();
+      stemGeo.dispose();
+      coneInGeo.dispose();
+      sphereGripGeo.dispose();
+      coneOutGeo.dispose();
       suctionDiscGeo.dispose(); suctionDiscMat.dispose();
       suctionRingGeo.dispose(); suctionRingMat.dispose();
       suctionNormArrow.dispose();
