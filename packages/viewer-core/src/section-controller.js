@@ -537,7 +537,6 @@ export function createSectionController({
   let draggingState = null;
   let suctionHitValid = false;
   let suctionPickToken = 0;
-  let baseDragToken = 0;
 
   function syncGizmoVisibility() {
     const showAny = open && gizmoVisible;
@@ -822,6 +821,7 @@ export function createSectionController({
       hoveredPlaneAction = null;
       if (draggingState) {
         draggingState = null;
+        stopBaseSmoothing();
         if (controls) controls.enabled = true;
         notifyDragging(false);
       }
@@ -920,7 +920,7 @@ export function createSectionController({
     syncExternalClippedMaterials();
   }
 
-  function applyActivePlaneToClipper() {
+  function applyActivePlaneToClipper({ syncMaterials = true } = {}) {
     if (!rawClipper || customPlaneIds.length === 0) return;
     const targetId = lastPlaneId || customPlaneIds[customPlaneIds.length - 1];
     const simplePlane = rawClipper.list.get(targetId);
@@ -931,7 +931,9 @@ export function createSectionController({
     }
     updatePlaneGizmoVisuals();
     syncGizmoVisibility();
-    syncExternalClippedMaterials();
+    if (syncMaterials) {
+      syncExternalClippedMaterials();
+    }
   }
 
   function clearInternal() {
@@ -1119,26 +1121,80 @@ export function createSectionController({
       .catch(() => {});
   }
 
-  function alignPlaneBaseToNdc(ndc) {
-    if (!pick || !ndc) return;
-    const token = ++baseDragToken;
-    Promise.resolve(pick(ndc, { snap: false }))
-      .then((hit) => {
-        if (token !== baseDragToken || !draggingState || draggingState.type !== "plane-align-base") return;
-        if (!hit?.point) return;
-        let normal = hit.normal ? hit.normal.clone() : activePlaneNormal.clone();
+  let basePickInFlight = false;
+  let pendingBaseNdc = null;
+  let baseRafId = null;
+  let hasBaseTarget = false;
+  const targetBaseOrigin = new THREE.Vector3();
+  const targetBaseNormal = new THREE.Vector3(0, -1, 0);
+  const _unitZ = new THREE.Vector3(0, 0, 1);
+  const _qCur = new THREE.Quaternion();
+  const _qTarget = new THREE.Quaternion();
+
+  function stopBaseSmoothing() {
+    if (baseRafId !== null && typeof cancelAnimationFrame === "function") {
+      cancelAnimationFrame(baseRafId);
+    }
+    baseRafId = null;
+    pendingBaseNdc = null;
+  }
+
+  function stepBaseSmoothing() {
+    if (!draggingState || draggingState.type !== "plane-align-base") {
+      baseRafId = null;
+      return;
+    }
+    if (hasBaseTarget) {
+      activePlaneOrigin.lerp(targetBaseOrigin, 0.38);
+      _qCur.setFromUnitVectors(_unitZ, activePlaneNormal);
+      _qTarget.setFromUnitVectors(_unitZ, targetBaseNormal);
+      _qCur.slerp(_qTarget, 0.38);
+      activePlaneNormal.copy(_unitZ).applyQuaternion(_qCur).normalize();
+      applyActivePlaneToClipper({ syncMaterials: false });
+    }
+    if (typeof requestAnimationFrame === "function") {
+      baseRafId = requestAnimationFrame(stepBaseSmoothing);
+    }
+  }
+
+  async function drainBasePickQueue() {
+    if (basePickInFlight || !pick) return;
+    basePickInFlight = true;
+    try {
+      while (pendingBaseNdc && draggingState?.type === "plane-align-base") {
+        const nextNdc = pendingBaseNdc;
+        pendingBaseNdc = null;
+        const hit = await pick(nextNdc, { snap: false });
+        if (!draggingState || draggingState.type !== "plane-align-base") break;
+        if (!hit?.point) continue;
+
+        const nextNorm = hit.normal ? hit.normal.clone() : targetBaseNormal.clone();
         if (camera) {
           const toCam = camera.position.clone().sub(hit.point);
-          // Point normal away from camera into the surface so front stays visible
-          if (normal.dot(toCam) > 0) normal.negate();
+          if (nextNorm.dot(toCam) > 0) nextNorm.negate();
         }
-        normal.normalize();
-        activePlaneNormal.copy(normal);
-        activePlaneOrigin.copy(hit.point);
-        applyActivePlaneToClipper();
-        notify();
-      })
-      .catch(() => {});
+        nextNorm.normalize();
+        targetBaseOrigin.copy(hit.point);
+        targetBaseNormal.copy(nextNorm);
+        hasBaseTarget = true;
+      }
+    } catch {
+      /* noop */
+    } finally {
+      basePickInFlight = false;
+      if (pendingBaseNdc && draggingState?.type === "plane-align-base") {
+        void drainBasePickQueue();
+      }
+    }
+  }
+
+  function alignPlaneBaseToNdc(ndc) {
+    if (!pick || !ndc) return;
+    pendingBaseNdc = ndc.clone ? ndc.clone() : new THREE.Vector2(ndc.x, ndc.y);
+    if (baseRafId === null && typeof requestAnimationFrame === "function") {
+      baseRafId = requestAnimationFrame(stepBaseSmoothing);
+    }
+    void drainBasePickQueue();
   }
 
   function handlePointerMove(ndc) {
@@ -1364,6 +1420,9 @@ export function createSectionController({
 
       if (action === "align-base") {
         draggingState = { type: "plane-align-base" };
+        hasBaseTarget = false;
+        targetBaseOrigin.copy(activePlaneOrigin);
+        targetBaseNormal.copy(activePlaneNormal);
         if (controls) controls.enabled = false;
         notifyDragging(true);
         updatePlaneGizmoVisuals();
@@ -1407,7 +1466,18 @@ export function createSectionController({
 
   function handlePointerUp() {
     if (!draggingState) return false;
+    const wasBaseAlign = draggingState.type === "plane-align-base";
     draggingState = null;
+    stopBaseSmoothing();
+    if (wasBaseAlign && hasBaseTarget) {
+      activePlaneOrigin.copy(targetBaseOrigin);
+      activePlaneNormal.copy(targetBaseNormal);
+      hasBaseTarget = false;
+      applyActivePlaneToClipper({ syncMaterials: true });
+      notify();
+    } else if (wasBaseAlign) {
+      syncExternalClippedMaterials();
+    }
     if (controls) controls.enabled = true;
     notifyDragging(false);
     if (boxGroup.visible) updateBoxVisuals();
@@ -1667,6 +1737,7 @@ export function createSectionController({
     },
 
     dispose() {
+      stopBaseSmoothing();
       try { controls?.removeEventListener?.("update", onControlsUpdate); } catch { /* noop */ }
       clearInternal();
       boxGroup.removeFromParent();
