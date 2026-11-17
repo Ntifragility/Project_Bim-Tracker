@@ -177,12 +177,12 @@ function createAxisGizmoHandle(axisKey, hexColor, tipShape = "cone", tagPrefix =
     color: hexColor,
     depthTest: false,
     transparent: true,
-    opacity: 0.94,
+    opacity: 0.85,
   });
   const group = new THREE.Group();
-  const shaftGeo = new THREE.CylinderGeometry(0.055, 0.055, 1.8, 12);
+  const shaftGeo = new THREE.CylinderGeometry(0.032, 0.032, 1.4, 12);
   shaftGeo.rotateX(Math.PI / 2);
-  shaftGeo.translate(0, 0, 0.9);
+  shaftGeo.translate(0, 0, 0.7);
   const shaft = new THREE.Mesh(shaftGeo, mat);
   shaft.userData = { sectionBoxGizmo: `${tagPrefix}-${axisKey}`, axis: axisKey };
   shaft.renderOrder = 70;
@@ -190,10 +190,10 @@ function createAxisGizmoHandle(axisKey, hexColor, tipShape = "cone", tagPrefix =
 
   const tipGeo =
     tipShape === "cube"
-      ? new THREE.BoxGeometry(0.32, 0.32, 0.32)
-      : new THREE.ConeGeometry(0.2, 0.55, 16);
+      ? new THREE.BoxGeometry(0.22, 0.22, 0.22)
+      : new THREE.ConeGeometry(0.14, 0.40, 16);
   if (tipShape !== "cube") tipGeo.rotateX(Math.PI / 2);
-  tipGeo.translate(0, 0, 1.95);
+  tipGeo.translate(0, 0, 1.52);
   const tip = new THREE.Mesh(tipGeo, mat);
   tip.userData = { sectionBoxGizmo: `${tagPrefix}-${axisKey}`, axis: axisKey };
   tip.renderOrder = 71;
@@ -314,9 +314,9 @@ export function createSectionController({
     dotMesh.renderOrder = 65;
 
     const quadMat = new THREE.MeshBasicMaterial({
-      color: 0x38bdf8,
+      color: 0x22c55e,
       transparent: true,
-      opacity: 0.0,
+      opacity: 0.13,
       side: THREE.DoubleSide,
       depthWrite: false,
     });
@@ -369,13 +369,13 @@ export function createSectionController({
     scaleUniformMesh,
   ];
 
-  // Centered XYZ Rotate Box Gizmo (3 orthogonal full rings)
+  // Centered XYZ Rotate Box Gizmo (3 sleek thin orthogonal rings)
   const rotateBoxGroup = new THREE.Group();
   rotateBoxGroup.visible = false;
-  const rotRingGeo = new THREE.TorusGeometry(2.0, 0.065, 12, 48);
-  const rotMatX = new THREE.MeshBasicMaterial({ color: 0xef4444, depthTest: false, transparent: true, opacity: 0.9 });
-  const rotMatY = new THREE.MeshBasicMaterial({ color: 0x22c55e, depthTest: false, transparent: true, opacity: 0.9 });
-  const rotMatZ = new THREE.MeshBasicMaterial({ color: 0x3b82f6, depthTest: false, transparent: true, opacity: 0.9 });
+  const rotRingGeo = new THREE.TorusGeometry(1.45, 0.024, 10, 56);
+  const rotMatX = new THREE.MeshBasicMaterial({ color: 0xef4444, depthTest: false, transparent: true, opacity: 0.78 });
+  const rotMatY = new THREE.MeshBasicMaterial({ color: 0x22c55e, depthTest: false, transparent: true, opacity: 0.78 });
+  const rotMatZ = new THREE.MeshBasicMaterial({ color: 0x3b82f6, depthTest: false, transparent: true, opacity: 0.78 });
 
   const rotRingX = new THREE.Mesh(rotRingGeo, rotMatX);
   rotRingX.rotation.y = Math.PI / 2;
@@ -661,18 +661,16 @@ export function createSectionController({
       const worldQuat = obb.quaternion.clone().multiply(cfg.localQuat);
       const isActive = activeKey === key;
 
-      entry.quadMesh.visible = isMoveFaceMode;
+      // Render all 6 faces as sleek Revizto translucent green glass in every Box mode
+      entry.quadMesh.visible = true;
       entry.quadMesh.position.copy(cfg.pos);
       entry.quadMesh.quaternion.copy(worldQuat);
       entry.quadMesh.scale.set(cfg.scale[0], cfg.scale[1], cfg.scale[2]);
-      entry.quadMat.opacity = draggingState?.faceKey === key ? 0.18 : isActive ? 0.11 : 0.0;
+      entry.quadMat.color.setHex(isActive ? 0x38bdf8 : 0x22c55e);
+      entry.quadMat.opacity = draggingState?.faceKey === key ? 0.24 : isActive ? 0.20 : 0.12;
 
-      // Clean subtle dot on unhovered faces in Move Face mode
-      entry.dotMesh.visible = isMoveFaceMode && !isActive;
-      entry.dotMesh.position.copy(cfg.pos);
-      const dotDist = camPos ? camPos.distanceTo(cfg.pos) : 12;
-      const dotRadius = Math.max(0.035, Math.min(0.18, dotDist * 0.007));
-      entry.dotMesh.scale.setScalar(dotRadius);
+      // Keep faces completely clean (no floating dots) like Revizto
+      entry.dotMesh.visible = false;
     }
 
     // Show the clean single push/pull arrow ONLY on the hovered/dragged face
