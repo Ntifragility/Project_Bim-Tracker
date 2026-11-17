@@ -582,6 +582,13 @@ export function createSectionController({
       new THREE.Vector3(0, 0, 1),
       activePlaneNormal,
     );
+    // The Section-Cup stem points OUTWARD toward the clipped/camera side (-activePlaneNormal)
+    // so the plunger sticks frontwards into open air rather than backwards into the solid.
+    const stemDir = activePlaneNormal.clone().negate();
+    const handleQuat = new THREE.Quaternion().setFromUnitVectors(
+      new THREE.Vector3(0, 0, 1),
+      stemDir,
+    );
 
     planeQuadMesh.position.copy(quadCenter);
     planeQuadMesh.quaternion.copy(quat);
@@ -589,7 +596,7 @@ export function createSectionController({
 
     // Anchor the compact suction-cup handle directly at activePlaneOrigin
     planeHandleRoot.position.copy(activePlaneOrigin);
-    planeHandleRoot.quaternion.copy(quat);
+    planeHandleRoot.quaternion.copy(handleQuat);
     const camDist = camera?.position ? camera.position.distanceTo(activePlaneOrigin) : 14;
     const arrowScale = Math.max(0.14, Math.min(1.15, camDist * 0.038));
     planeHandleRoot.scale.setScalar(arrowScale);
@@ -1168,7 +1175,7 @@ export function createSectionController({
       while (pendingBaseNdc && draggingState?.type === "plane-align-base") {
         const nextNdc = pendingBaseNdc;
         pendingBaseNdc = null;
-        const hit = await pick(nextNdc, { snap: false });
+        const hit = await pick(nextNdc, { faceSnap: true });
         if (!draggingState || draggingState.type !== "plane-align-base") break;
         if (!hit?.point) continue;
 
@@ -1654,7 +1661,7 @@ export function createSectionController({
 
     async cutAtNdc(ndc) {
       if (!pick || (!open && !surfacePickPending)) return null;
-      const hit = await pick(ndc, { snap: false });
+      const hit = await pick(ndc, { faceSnap: true });
       if (!hit?.point) return null;
       let normal = hit.normal ? hit.normal.clone() : new THREE.Vector3(0, -1, 0);
       if (camera) {

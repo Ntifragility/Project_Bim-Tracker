@@ -529,8 +529,12 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
      * Model surface under a screen position (NDC, -1..1). Snapping to model
      * vertices and edges is optional. Returns the scene point or null.
      */
-    async pick(ndc, { snap = false } = {}) {
-      const snappingClasses = snap ? [FRAGS.SnappingClass.POINT, FRAGS.SnappingClass.LINE, FRAGS.SnappingClass.FACE] : undefined;
+    async pick(ndc, { snap = false, faceSnap = false } = {}) {
+      const snappingClasses = snap
+        ? [FRAGS.SnappingClass.POINT, FRAGS.SnappingClass.LINE, FRAGS.SnappingClass.FACE]
+        : faceSnap
+          ? [FRAGS.SnappingClass.FACE]
+          : undefined;
       const hit = await raycaster.castRay({ position: ndc, snappingClasses });
       if (!hit?.point) return null;
 
