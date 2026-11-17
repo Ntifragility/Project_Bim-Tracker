@@ -1185,7 +1185,9 @@ export function createSectionController({
           if (nextNorm.dot(toCam) > 0) nextNorm.negate();
         }
         nextNorm.normalize();
-        targetBaseOrigin.copy(hit.point);
+        // Offset 2 mm outward along -nextNorm (toward camera/stem) so the clicked
+        // outer face stays strictly on the kept side without coplanar Z-fighting.
+        targetBaseOrigin.copy(hit.point).addScaledVector(nextNorm, -0.002);
         targetBaseNormal.copy(nextNorm);
         hasBaseTarget = true;
       }
@@ -1668,9 +1670,11 @@ export function createSectionController({
         const toCam = camera.position.clone().sub(hit.point);
         if (normal.dot(toCam) > 0) normal.negate();
       }
+      normal.normalize();
       mode = "plane";
       setOpenInternal(true);
-      return await addPlane(normal, hit.point);
+      const biasedPoint = hit.point.clone().addScaledVector(normal, -0.002);
+      return await addPlane(normal, biasedPoint);
     },
 
     flipActivePlane() {
