@@ -560,11 +560,13 @@ export function createSectionController({
 
   function updatePlaneGizmoVisuals() {
     if (customPlaneIds.length === 0) return;
-    const targetId = lastPlaneId || customPlaneIds[customPlaneIds.length - 1];
-    const simplePlane = rawClipper?.list?.get(targetId);
-    if (simplePlane?.normal && simplePlane?.origin) {
-      activePlaneNormal.copy(simplePlane.normal).normalize();
-      activePlaneOrigin.copy(simplePlane.origin);
+    if (draggingState?.type !== "plane-align-base") {
+      const targetId = lastPlaneId || customPlaneIds[customPlaneIds.length - 1];
+      const simplePlane = rawClipper?.list?.get(targetId);
+      if (simplePlane?.normal && simplePlane?.origin) {
+        activePlaneNormal.copy(simplePlane.normal).normalize();
+        activePlaneOrigin.copy(simplePlane.origin);
+      }
     }
 
     const modelCenter = modelRefBounds.getCenter(new THREE.Vector3());
@@ -720,6 +722,7 @@ export function createSectionController({
   }
 
   function getActivePlanes() {
+    if (draggingState?.type === "plane-align-base") return [];
     const planes = [];
     if (rawClipper?.list) {
       for (const [, item] of rawClipper.list) {
@@ -1150,7 +1153,8 @@ export function createSectionController({
       _qTarget.setFromUnitVectors(_unitZ, targetBaseNormal);
       _qCur.slerp(_qTarget, 0.38);
       activePlaneNormal.copy(_unitZ).applyQuaternion(_qCur).normalize();
-      applyActivePlaneToClipper({ syncMaterials: false });
+      // Only move the 3D gizmo + preview plane while dragging; cutting activates on mouse release
+      updatePlaneGizmoVisuals();
     }
     if (typeof requestAnimationFrame === "function") {
       baseRafId = requestAnimationFrame(stepBaseSmoothing);
@@ -1423,6 +1427,9 @@ export function createSectionController({
         hasBaseTarget = false;
         targetBaseOrigin.copy(activePlaneOrigin);
         targetBaseNormal.copy(activePlaneNormal);
+        // Temporarily suspend clipping while aiming the Section-Cup so the full model is visible & raycastable
+        if (rawClipper) rawClipper.enabled = false;
+        syncExternalClippedMaterials();
         if (controls) controls.enabled = false;
         notifyDragging(true);
         updatePlaneGizmoVisuals();
@@ -1469,14 +1476,15 @@ export function createSectionController({
     const wasBaseAlign = draggingState.type === "plane-align-base";
     draggingState = null;
     stopBaseSmoothing();
-    if (wasBaseAlign && hasBaseTarget) {
-      activePlaneOrigin.copy(targetBaseOrigin);
-      activePlaneNormal.copy(targetBaseNormal);
-      hasBaseTarget = false;
+    if (wasBaseAlign) {
+      if (rawClipper) rawClipper.enabled = true;
+      if (hasBaseTarget) {
+        activePlaneOrigin.copy(targetBaseOrigin);
+        activePlaneNormal.copy(targetBaseNormal);
+        hasBaseTarget = false;
+      }
       applyActivePlaneToClipper({ syncMaterials: true });
       notify();
-    } else if (wasBaseAlign) {
-      syncExternalClippedMaterials();
     }
     if (controls) controls.enabled = true;
     notifyDragging(false);
