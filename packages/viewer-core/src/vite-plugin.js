@@ -99,34 +99,65 @@ export function covillafWebIfc(options = {}) {
 
         if (req.method === "POST" && subRoute === "init") {
           const rawName = path.basename(urlObj.searchParams.get("name") || "model.ifc");
+          const expectedSize = Number(urlObj.searchParams.get("size") || 0);
           const safeBase = rawName.replace(/\.ifc$/i, "").replace(/[^a-zA-Z0-9._-]/g, "_") || "model";
           const found = findProjectFile(path.join("scripts", "convert-ifc-to-frag.mjs"), projectRoot)
             || findProjectFile(path.join("scripts", "convert-ifc-to-frag.mjs"), process.cwd());
           if (!found) return jsonRes(500, { error: "convert-ifc-to-frag.mjs not found" });
 
           const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-          const tempIfc = path.join(os.tmpdir(), `${safeBase}-${id}.ifc`);
-          const tempFrag = path.join(os.tmpdir(), `${safeBase}-${id}.frag`);
           const cacheDir = path.join(found.rootDir, ".cache", "frag");
           const cachedFrag = path.join(cacheDir, `${safeBase}.frag`);
+          const metaPath = `${cachedFrag}.meta.json`;
+
+          // Instant cache hit if .cache/frag/<model>.frag already exists and size matches (or no conflicting meta)
+          if (fs.existsSync(cachedFrag)) {
+            let sizeMatch = true;
+            if (expectedSize > 0 && fs.existsSync(metaPath)) {
+              try {
+                const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
+                if (meta.inputSize && meta.inputSize !== expectedSize) sizeMatch = false;
+              } catch { /* ignore */ }
+            }
+            if (sizeMatch) {
+              jobs.set(id, {
+                id,
+                safeBase,
+                tempFrag: cachedFrag,
+                cachedFrag,
+                keepCache: true,
+                status: "done",
+                progress: 1,
+                detail: "Loaded from local .frag cache",
+                error: null,
+              });
+              return jsonRes(200, { id, cached: true });
+            }
+          }
+
+          const tempIfc = path.join(os.tmpdir(), `${safeBase}-${id}.ifc`);
+          const tempFrag = path.join(os.tmpdir(), `${safeBase}-${id}.frag`);
           fs.writeFileSync(tempIfc, Buffer.alloc(0));
 
           jobs.set(id, {
             id,
             safeBase,
+            expectedSize,
             converterScript: found.filePath,
             repoRoot: found.rootDir,
             tempIfc,
             tempFrag,
             cacheDir,
             cachedFrag,
+            metaPath,
+            keepCache: false,
             bytesReceived: 0,
             status: "uploading",
             progress: 0,
             detail: "Receiving IFC chunks...",
             error: null,
           });
-          return jsonRes(200, { id });
+          return jsonRes(200, { id, cached: false });
         }
 
         if (req.method === "POST" && subRoute === "chunk") {
@@ -181,6 +212,12 @@ export function covillafWebIfc(options = {}) {
             try {
               fs.mkdirSync(job.cacheDir, { recursive: true });
               fs.copyFileSync(job.tempFrag, job.cachedFrag);
+              if (job.metaPath) {
+                fs.writeFileSync(job.metaPath, JSON.stringify({
+                  inputSize: job.expectedSize || job.bytesReceived,
+                  outputBytes: fs.statSync(job.cachedFrag).size,
+                }));
+              }
             } catch { /* non-fatal */ }
             job.status = "done";
             job.progress = 1;
@@ -213,7 +250,9 @@ export function covillafWebIfc(options = {}) {
           res.setHeader("X-Frag-Cache-Path", job.cachedFrag);
           const rs = fs.createReadStream(job.tempFrag);
           const cleanup = () => {
-            try { if (fs.existsSync(job.tempFrag)) fs.unlinkSync(job.tempFrag); } catch { /* noop */ }
+            if (!job.keepCache) {
+              try { if (fs.existsSync(job.tempFrag)) fs.unlinkSync(job.tempFrag); } catch { /* noop */ }
+            }
             jobs.delete(id);
           };
           rs.on("close", cleanup);

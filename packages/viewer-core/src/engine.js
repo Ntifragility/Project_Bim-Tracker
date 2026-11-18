@@ -615,54 +615,57 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
       let errDetail = "";
 
       try {
-        onProgress?.(0.02, "Initializing 64-bit .frag converter...");
-        const initRes = await fetch(`/covillaf/convert-frag/init?name=${encodeURIComponent(name)}`, {
-          method: "POST",
-        });
+        onProgress?.(0.02, "Checking 64-bit .frag cache...");
+        const initRes = await fetch(
+          `/covillaf/convert-frag/init?name=${encodeURIComponent(name)}&size=${file.size || 0}`,
+          { method: "POST" },
+        );
         if (!initRes.ok) {
           throw new Error(await initRes.text());
         }
-        const { id } = await initRes.json();
+        const { id, cached } = await initRes.json();
 
-        // Stream 32 MB slices sequentially so Chrome never hits single-request body limits
-        const total = file.size;
-        for (let offset = 0; offset < total; offset += CHUNK_SIZE) {
-          const slice = file.slice(offset, Math.min(total, offset + CHUNK_SIZE));
-          const pct = Math.round(((offset + slice.size) / total) * 100);
-          onProgress?.(0.05 + ((offset + slice.size) / total) * 0.35, `Streaming IFC to 64-bit compiler (${pct}%)...`);
-          const chunkRes = await fetch(`/covillaf/convert-frag/chunk?id=${encodeURIComponent(id)}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/octet-stream" },
-            body: slice,
-          });
-          if (!chunkRes.ok) {
-            throw new Error(await chunkRes.text());
-          }
-        }
-
-        onProgress?.(0.42, "Compiling geometry in 64-bit Node worker...");
-        const startRes = await fetch(`/covillaf/convert-frag/start?id=${encodeURIComponent(id)}`, {
-          method: "POST",
-        });
-        if (!startRes.ok) {
-          throw new Error(await startRes.text());
-        }
-
-        // Poll conversion progress
         let cachePath = null;
-        while (true) {
-          await new Promise((r) => setTimeout(r, 800));
-          const stRes = await fetch(`/covillaf/convert-frag/status?id=${encodeURIComponent(id)}`);
-          if (!stRes.ok) throw new Error(await stRes.text());
-          const st = await stRes.json();
-          if (st.status === "error") {
-            throw new Error(st.error || "64-bit converter failed");
+        if (!cached) {
+          // Stream 32 MB slices sequentially so Chrome never hits single-request body limits
+          const total = file.size;
+          for (let offset = 0; offset < total; offset += CHUNK_SIZE) {
+            const slice = file.slice(offset, Math.min(total, offset + CHUNK_SIZE));
+            const pct = Math.round(((offset + slice.size) / total) * 100);
+            onProgress?.(0.05 + ((offset + slice.size) / total) * 0.35, `Streaming IFC to 64-bit compiler (${pct}%)...`);
+            const chunkRes = await fetch(`/covillaf/convert-frag/chunk?id=${encodeURIComponent(id)}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/octet-stream" },
+              body: slice,
+            });
+            if (!chunkRes.ok) {
+              throw new Error(await chunkRes.text());
+            }
           }
-          if (st.status === "done") {
-            cachePath = st.cachePath || null;
-            break;
+
+          onProgress?.(0.42, "Compiling geometry in 64-bit Node worker...");
+          const startRes = await fetch(`/covillaf/convert-frag/start?id=${encodeURIComponent(id)}`, {
+            method: "POST",
+          });
+          if (!startRes.ok) {
+            throw new Error(await startRes.text());
           }
-          onProgress?.(0.42 + (st.progress || 0) * 0.43, st.detail || "Compiling .frag cache...");
+
+          // Poll conversion progress
+          while (true) {
+            await new Promise((r) => setTimeout(r, 800));
+            const stRes = await fetch(`/covillaf/convert-frag/status?id=${encodeURIComponent(id)}`);
+            if (!stRes.ok) throw new Error(await stRes.text());
+            const st = await stRes.json();
+            if (st.status === "error") {
+              throw new Error(st.error || "64-bit converter failed");
+            }
+            if (st.status === "done") {
+              cachePath = st.cachePath || null;
+              break;
+            }
+            onProgress?.(0.42 + (st.progress || 0) * 0.43, st.detail || "Compiling .frag cache...");
+          }
         }
 
         onProgress?.(0.88, "Loading compiled .frag cache into WebGL...");

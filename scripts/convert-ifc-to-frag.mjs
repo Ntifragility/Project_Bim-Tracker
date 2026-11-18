@@ -261,6 +261,7 @@ async function runCli() {
   console.log(
     `[convert-frag] Done in ${(res.elapsedMs / 1000).toFixed(1)}s: ${inMb} MB IFC -> ${outMb} MB .frag (${res.leanMode ? "lean geometry" : "full attributes"}) -> ${res.outputPath}`,
   );
+  process.exit(0);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
