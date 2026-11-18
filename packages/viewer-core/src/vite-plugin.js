@@ -105,25 +105,24 @@ export function covillafWebIfc(options = {}) {
           if (!found) return jsonRes(500, { error: "convert-ifc-to-frag.mjs not found" });
 
           const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-          const tempIfc = path.join(os.tmpdir(), `${safeBase}-${id}.ifc`);
-          const tempFrag = path.join(os.tmpdir(), `${safeBase}-${id}.frag`);
           const cacheDir = path.join(found.rootDir, ".cache", "frag");
           const cachedFrag = path.join(cacheDir, `${safeBase}.frag`);
-          fs.writeFileSync(tempIfc, Buffer.alloc(0));
 
+          // Zero-disk-write job: holds incoming 32 MB chunks in 64-bit Node native
+          // Buffers instead of writing a 1.2+ GB temp file to C:\ (avoids ENOSPC).
           jobs.set(id, {
             id,
             safeBase,
             converterScript: found.filePath,
             repoRoot: found.rootDir,
-            tempIfc,
-            tempFrag,
+            chunks: [],
+            fragBytes: null,
             cacheDir,
             cachedFrag,
             bytesReceived: 0,
             status: "uploading",
             progress: 0,
-            detail: "Receiving IFC chunks...",
+            detail: "Receiving IFC chunks in 64-bit memory...",
             error: null,
           });
           return jsonRes(200, { id });
@@ -134,11 +133,16 @@ export function covillafWebIfc(options = {}) {
           const job = jobs.get(id);
           if (!job) return jsonRes(404, { error: "Unknown conversion job id" });
 
-          const ws = fs.createWriteStream(job.tempIfc, { flags: "a" });
-          req.on("data", (chunk) => { job.bytesReceived += chunk.length; });
-          req.pipe(ws);
-          ws.on("finish", () => jsonRes(200, { ok: true, bytesReceived: job.bytesReceived }));
-          ws.on("error", (err) => jsonRes(500, { error: `Chunk write failed: ${err.message}` }));
+          const parts = [];
+          req.on("data", (chunk) => {
+            parts.push(chunk);
+            job.bytesReceived += chunk.length;
+          });
+          req.on("end", () => {
+            job.chunks.push(Buffer.concat(parts));
+            jsonRes(200, { ok: true, bytesReceived: job.bytesReceived });
+          });
+          req.on("error", (err) => jsonRes(500, { error: `Chunk stream error: ${err.message}` }));
           return;
         }
 
@@ -149,39 +153,32 @@ export function covillafWebIfc(options = {}) {
 
           job.status = "converting";
           job.progress = 0.05;
-          job.detail = "Running 64-bit web-ifc -> .frag compiler...";
+          job.detail = "Running 64-bit in-memory web-ifc -> .frag compiler...";
 
-          const child = spawn(
-            process.execPath,
-            ["--max-old-space-size=12288", job.converterScript, job.tempIfc, job.tempFrag],
-            { cwd: job.repoRoot, stdio: ["ignore", "pipe", "pipe"] },
-          );
-          let stderr = "";
-          child.stdout.on("data", (chunk) => {
-            const text = String(chunk);
-            const m = text.match(/(\d+)%/);
-            if (m) {
-              const pct = Math.min(99, Math.max(5, Number(m[1])));
-              job.progress = pct / 100;
-              job.detail = `Compiling .frag geometry (${pct}%)...`;
-            }
-          });
-          child.stderr.on("data", (chunk) => { stderr += String(chunk); });
-          child.on("close", (code) => {
-            try { if (fs.existsSync(job.tempIfc)) fs.unlinkSync(job.tempIfc); } catch { /* noop */ }
-            if (code !== 0 || !fs.existsSync(job.tempFrag)) {
-              job.status = "error";
-              job.error = stderr.trim() || `Converter exited with code ${code}`;
-              return;
-            }
+          (async () => {
             try {
-              fs.mkdirSync(job.cacheDir, { recursive: true });
-              fs.copyFileSync(job.tempFrag, job.cachedFrag);
-            } catch { /* non-fatal */ }
-            job.status = "done";
-            job.progress = 1;
-            job.detail = "Compiled .frag ready";
-          });
+              const modUrl = new URL(`file:///${job.converterScript.replace(/\\/g, "/")}`).href;
+              const { convertIfcChunksToFrag } = await import(modUrl);
+              const res = await convertIfcChunksToFrag(job.chunks, job.bytesReceived, {
+                onProgress: (p) => {
+                  const pct = Math.min(99, Math.max(5, Math.round((p || 0) * 100)));
+                  job.progress = pct / 100;
+                  job.detail = `Compiling .frag geometry (${pct}%)...`;
+                },
+              });
+              // Immediately release the raw IFC chunks from RAM
+              job.chunks = [];
+              job.fragBytes = res.fragBytes;
+              job.status = "done";
+              job.progress = 1;
+              job.detail = "Compiled .frag ready";
+            } catch (err) {
+              job.chunks = [];
+              job.status = "error";
+              job.error = err?.message || String(err);
+            }
+          })();
+
           return jsonRes(200, { ok: true, id });
         }
 
@@ -201,20 +198,20 @@ export function covillafWebIfc(options = {}) {
         if (req.method === "GET" && subRoute === "result") {
           const id = urlObj.searchParams.get("id");
           const job = jobs.get(id);
-          if (!job || job.status !== "done" || !fs.existsSync(job.tempFrag)) {
+          if (!job || job.status !== "done" || !job.fragBytes) {
             return jsonRes(404, { error: "Compiled .frag not ready" });
           }
+          const outBuf = Buffer.from(
+            job.fragBytes.buffer,
+            job.fragBytes.byteOffset,
+            job.fragBytes.byteLength,
+          );
+          job.fragBytes = null;
+          jobs.delete(id);
           res.statusCode = 200;
           res.setHeader("Content-Type", "application/octet-stream");
-          res.setHeader("X-Frag-Cache-Path", job.cachedFrag);
-          const rs = fs.createReadStream(job.tempFrag);
-          const cleanup = () => {
-            try { if (fs.existsSync(job.tempFrag)) fs.unlinkSync(job.tempFrag); } catch { /* noop */ }
-            jobs.delete(id);
-          };
-          rs.on("close", cleanup);
-          rs.on("error", cleanup);
-          rs.pipe(res);
+          res.setHeader("Content-Length", String(outBuf.byteLength));
+          res.end(outBuf);
           return;
         }
 

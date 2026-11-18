@@ -9,7 +9,11 @@ import {
   extractProjectTagsFromIfc,
   extractTraySystemAssignmentsFromIfc,
 } from "../../../src/ifc/ifc-tag-exporter.js";
-import { convertIfcFileToFrag } from "../../../scripts/convert-ifc-to-frag.mjs";
+import {
+  convertIfcFileToFrag,
+  convertIfcChunksToFrag,
+  createChunkedReadCallback,
+} from "../../../scripts/convert-ifc-to-frag.mjs";
 
 const SAMPLE_IFC = `ISO-10303-21;
 HEADER;
@@ -69,5 +73,20 @@ describe("Large IFC -> .frag Streaming Pipeline", () => {
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
+  });
+
+  it("convertIfcChunksToFrag compiles non-contiguous RAM chunks with zero disk writes", async () => {
+    const fullBytes = Buffer.from(SAMPLE_IFC, "utf8");
+    const chunks = [];
+    for (let i = 0; i < fullBytes.length; i += 97) {
+      chunks.push(fullBytes.subarray(i, Math.min(fullBytes.length, i + 97)));
+    }
+    const readCb = createChunkedReadCallback(chunks, fullBytes.length);
+    const slice = readCb(50, 120);
+    assert.equal(Buffer.from(slice).toString("utf8"), fullBytes.subarray(50, 170).toString("utf8"));
+
+    const res = await convertIfcChunksToFrag(chunks, fullBytes.length, { lean: true });
+    assert.ok(res.fragBytes instanceof Uint8Array);
+    assert.ok(res.outputBytes > 0);
   });
 });
