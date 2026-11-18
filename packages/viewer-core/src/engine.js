@@ -676,7 +676,7 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
         const fragName = name.replace(/\.ifc$/i, ".frag");
         const model = await this.loadFrag(fragBytes, fragName);
         onProgress?.(1.0, "Ready");
-        return { model, fragBytes, cachePath };
+        return { model, fragBytes: null, cachePath };
       } catch (err) {
         errDetail = err?.message || String(err);
         console.error("[convertAndLoadLargeIfc] Error:", errDetail);
@@ -694,6 +694,9 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
 
     async loadFrag(buffer, name = "model.frag") {
       const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+      // Heavy .frag files (> 30 MB compressed) can OOM Chrome's WebGL/worker heap at full detail;
+      // switch to LOD culling mode (graphicsQuality = 0) before loading them.
+      fragments.core.settings.graphicsQuality = bytes.byteLength > 30 * 1024 * 1024 ? 0 : 1;
       const model = await fragments.core.load(bytes, {
         modelId: name,
         camera: world.camera.three,
