@@ -73,6 +73,8 @@ export function covillafWebIfc(options = {}) {
 
       server.middlewares.use("/covillaf/convert-frag", (req, res, next) => {
         if (req.method !== "POST") return next();
+        req.setTimeout(0);
+        res.setTimeout(0);
         const urlObj = new URL(req.url || "/", "http://localhost");
         const rawName = path.basename(urlObj.searchParams.get("name") || "model.ifc");
         const safeBase = rawName.replace(/\.ifc$/i, "").replace(/[^a-zA-Z0-9._-]/g, "_") || "model";

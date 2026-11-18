@@ -25,6 +25,8 @@ dist-ssr
 # Navisworks cache + IFC parser logs (local validation artifacts, never committed)
 *.nwc
 *.log.html
+*.frag
+.cache/
 
 # Shared-parameter exports may reference real project data (ARCH section 9 hygiene)
 *.sharedparameters.txt
