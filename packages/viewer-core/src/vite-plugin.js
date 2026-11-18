@@ -22,6 +22,18 @@ function findNodeModulesDir(subPath, startDir = process.cwd()) {
   return path.resolve(startDir, "node_modules", subPath);
 }
 
+function findProjectFile(relPath, startDir = process.cwd()) {
+  let curr = path.resolve(startDir);
+  while (true) {
+    const candidate = path.join(curr, relPath);
+    if (fs.existsSync(candidate)) return { filePath: candidate, rootDir: curr };
+    const parent = path.dirname(curr);
+    if (parent === curr) break;
+    curr = parent;
+  }
+  return null;
+}
+
 export function copyCovillafAssets(outDir, startDir = process.cwd()) {
   const webIfcDir = findNodeModulesDir("web-ifc", startDir);
   const fragmentsWorker = findNodeModulesDir("@thatopen/fragments/dist/Worker/worker.mjs", startDir);
@@ -78,17 +90,20 @@ export function covillafWebIfc(options = {}) {
         const urlObj = new URL(req.url || "/", "http://localhost");
         const rawName = path.basename(urlObj.searchParams.get("name") || "model.ifc");
         const safeBase = rawName.replace(/\.ifc$/i, "").replace(/[^a-zA-Z0-9._-]/g, "_") || "model";
-        const converterScript = path.resolve(projectRoot, "scripts", "convert-ifc-to-frag.mjs");
-        if (!fs.existsSync(converterScript)) {
+        const found = findProjectFile(path.join("scripts", "convert-ifc-to-frag.mjs"), projectRoot)
+          || findProjectFile(path.join("scripts", "convert-ifc-to-frag.mjs"), process.cwd());
+        if (!found) {
           res.statusCode = 500;
           res.end(JSON.stringify({ error: "convert-ifc-to-frag.mjs not found" }));
           return;
         }
+        const converterScript = found.filePath;
+        const repoRoot = found.rootDir;
 
         const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const tempIfc = path.join(os.tmpdir(), `${safeBase}-${stamp}.ifc`);
         const tempFrag = path.join(os.tmpdir(), `${safeBase}-${stamp}.frag`);
-        const cacheDir = path.join(projectRoot, ".cache", "frag");
+        const cacheDir = path.join(repoRoot, ".cache", "frag");
         const cachedFrag = path.join(cacheDir, `${safeBase}.frag`);
 
         const cleanup = () => {
@@ -107,7 +122,7 @@ export function covillafWebIfc(options = {}) {
           const child = spawn(
             process.execPath,
             ["--max-old-space-size=12288", converterScript, tempIfc, tempFrag],
-            { cwd: projectRoot, stdio: ["ignore", "pipe", "pipe"] },
+            { cwd: repoRoot, stdio: ["ignore", "pipe", "pipe"] },
           );
           let stderr = "";
           child.stderr.on("data", (chunk) => { stderr += String(chunk); });
