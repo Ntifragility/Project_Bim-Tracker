@@ -214,10 +214,16 @@ export function initModelLoader(ctx, dom, hooks, api = {}) {
     hooks.updateProjectBrowser?.() || ctx.api?.updateProjectBrowser?.();
   }
 
+  const LARGE_IFC_BYTES = 150 * 1024 * 1024;
+  const STREAM_TO_SERVER_BYTES = 200 * 1024 * 1024;
+
   // Loader function
   async function loadModel(buffer, name, sizeFormatted) {
     showLoader(dom, 'Loading Model', `Parsing '${name}'...`, 30);
-    const sourceIfcBytes = buffer.slice();
+    const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+    const isHeavy = bytes.byteLength > LARGE_IFC_BYTES;
+    // Never duplicate multi-hundred-MB buffers in JS heap; only retain source bytes for small/medium editable IFCs
+    const sourceIfcBytes = isHeavy ? null : bytes;
 
     // Check if the model with the same name is already loaded to avoid collisions
     if (ctx.loadedModels.some((m) => m.name === name)) {
@@ -268,7 +274,7 @@ export function initModelLoader(ctx, dom, hooks, api = {}) {
         size: sizeFormatted,
         model,
         sourceIfcBytes,
-        existingProjectTags: extractTraySystemAssignmentsFromIfc(sourceIfcBytes),
+        existingProjectTags: extractTraySystemAssignmentsFromIfc(bytes),
         visible: true,
       };
 
@@ -530,31 +536,58 @@ export function initModelLoader(ctx, dom, hooks, api = {}) {
         const file = files[i];
         const progressLabel = files.length > 1 ? ` (${i + 1}/${files.length})` : '';
 
-        showLoader(dom, `Uploading File${progressLabel}`, `Reading ${file.name}...`, 10);
-
-        await new Promise((resolve) => {
-          const reader = new FileReader();
-          reader.onload = async (e) => {
-            updateLoader(dom, `File ${file.name} loaded, parsing...`, 25);
-            const data = e.target.result;
-            const buffer = new Uint8Array(data);
-            try {
-              if (file.name.toLowerCase().endsWith('.frag')) {
-                await loadFrag(buffer, file.name, formatBytes(file.size));
-              } else {
-                await loadModel(buffer, file.name, formatBytes(file.size));
+        if (!file.name.toLowerCase().endsWith('.frag') && file.size > STREAM_TO_SERVER_BYTES && typeof ctx.engine.convertAndLoadLargeIfc === 'function') {
+          showLoader(dom, `Converting Large IFC${progressLabel}`, `Streaming ${file.name} (${formatBytes(file.size)}) to 64-bit .frag compiler...`, 15);
+          try {
+            const { model } = await ctx.engine.convertAndLoadLargeIfc(file, (p, detail) => {
+              updateLoader(dom, detail || `Compiling .frag cache... (${Math.round(p * 100)}%)`, 15 + p * 80);
+            });
+            if (model) {
+              ctx.activeModel = model;
+              const modelObject = model.object || model;
+              if (modelObject && !ctx.world.scene.three.children.includes(modelObject)) {
+                ctx.world.scene.three.add(modelObject);
               }
-            } catch (err) {
-              console.error(`Failed to load ${file.name}:`, err);
+              ctx.loadedModels.push({
+                uuid: model.uuid || Math.random().toString(36).substring(7),
+                name: file.name,
+                size: formatBytes(file.size),
+                model,
+                sourceIfcBytes: null,
+                existingProjectTags: new Map(),
+                visible: true,
+              });
+              hooks.renderExcelTable?.();
+              hooks.renderTraySystemManager?.();
+              hooks.refreshValidationReportIfOpen?.();
+              fitModelToView(model);
+              setWireframeForModel(model, ctx.isWireframe);
+              refreshLoadedModelsList();
+              hooks.clearElementProperties?.();
+              hideLoader(dom);
             }
-            resolve();
-          };
-          reader.onerror = () => {
-            console.error(`Failed to read file ${file.name}`);
-            resolve();
-          };
-          reader.readAsArrayBuffer(file);
-        });
+          } catch (err) {
+            console.error(`Failed to convert large IFC ${file.name}:`, err);
+            updateLoader(dom, `Error: ${err.message}`, 0);
+            setTimeout(() => hideLoader(dom), 5000);
+          }
+          continue;
+        }
+
+        showLoader(dom, `Uploading File${progressLabel}`, `Reading ${file.name}...`, 10);
+        try {
+          const data = await file.arrayBuffer();
+          const buffer = new Uint8Array(data);
+          if (file.name.toLowerCase().endsWith('.frag')) {
+            await loadFrag(buffer, file.name, formatBytes(file.size));
+          } else {
+            await loadModel(buffer, file.name, formatBytes(file.size));
+          }
+        } catch (err) {
+          console.error(`Failed to load ${file.name}:`, err);
+          updateLoader(dom, `Error loading ${file.name}: ${err.message}`, 0);
+          setTimeout(() => hideLoader(dom), 4000);
+        }
       }
     });
 

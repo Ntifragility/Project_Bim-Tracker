@@ -40,17 +40,40 @@ export function createModelLoad({ state, els, engine, api }) {
   const getModel = () => activeLoadedModel;
 
   async function loadIfcFile(file) {
-    api.showLoading('Reading IFC file…', 10, file.name);
-    const buffer = await file.arrayBuffer();
+    const STREAM_TO_SERVER_BYTES = 200 * 1024 * 1024;
+    const headerBuf = await file.slice(0, 4096).arrayBuffer();
+    const schema = detectIfcSchema(headerBuf);
 
-    api.showLoading('Calculating SHA-256 integrity hash…', 30);
-    const sha256 = await computeSha256(buffer);
-    const schema = detectIfcSchema(buffer);
+    let sha256 = '';
+    let model = null;
+    let retainedBuffer = null;
 
-    api.showLoading('Parsing IFC geometry in Web Worker…', 50);
-    const model = await engine.loadIfc(new Uint8Array(buffer), file.name, (progress) => {
-      api.showLoading('Loading fragments…', 50 + progress * 0.45);
-    });
+    if (file.size > STREAM_TO_SERVER_BYTES && typeof engine.convertAndLoadLargeIfc === 'function') {
+      api.showLoading(`Streaming large IFC (${formatFileSize(file.size)}) to 64-bit .frag compiler…`, 15, file.name);
+      const tailSlice = await file.slice(Math.max(0, file.size - 65536)).arrayBuffer();
+      const headSlice = await file.slice(0, Math.min(file.size, 65536)).arrayBuffer();
+      const fpBytes = new Uint8Array(headSlice.byteLength + tailSlice.byteLength + 8);
+      fpBytes.set(new Uint8Array(headSlice), 0);
+      fpBytes.set(new Uint8Array(tailSlice), headSlice.byteLength);
+      sha256 = await computeSha256(fpBytes.buffer);
+
+      const res = await engine.convertAndLoadLargeIfc(file, (p, detail) => {
+        api.showLoading(detail || 'Compiling .frag cache…', 15 + p * 80);
+      });
+      model = res.model;
+    } else {
+      api.showLoading('Reading IFC file…', 10, file.name);
+      const buffer = await file.arrayBuffer();
+
+      api.showLoading('Calculating SHA-256 integrity hash…', 30);
+      sha256 = await computeSha256(buffer);
+
+      api.showLoading('Parsing IFC geometry in Web Worker…', 50);
+      model = await engine.loadIfc(new Uint8Array(buffer), file.name, (progress) => {
+        api.showLoading('Loading fragments…', 50 + progress * 0.45);
+      });
+      retainedBuffer = file.size <= 150 * 1024 * 1024 ? buffer : null;
+    }
 
     if (!model) {
       throw new Error('Parsed IFC model is empty or invalid.');
@@ -70,7 +93,7 @@ export function createModelLoad({ state, els, engine, api }) {
     state.sourceModel.size = file.size;
     state.sourceModel.sha256 = sha256;
     state.sourceModel.schema = schema;
-    state.sourceModel.buffer = buffer;
+    state.sourceModel.buffer = retainedBuffer;
 
     // Populate UI
     els.modelInfo.hidden = false;

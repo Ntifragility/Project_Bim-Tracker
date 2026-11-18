@@ -17,6 +17,7 @@
     "dev:conduit": "vite conduit-takeoff --open",
     "build": "vite build",
     "build:conduit": "vite build conduit-takeoff",
+    "convert:frag": "node --max-old-space-size=12288 scripts/convert-ifc-to-frag.mjs",
     "preview": "vite preview",
     "test": "node --test --test-force-exit packages/routing-core/test/*.test.js packages/conduit-core/test/*.test.js crates/viewport-core/test/self-test.mjs packages/viewer-core/test/*.test.js packages/excel-io/test/*.test.js packages/ribbon-chrome/test/*.test.js"
   },

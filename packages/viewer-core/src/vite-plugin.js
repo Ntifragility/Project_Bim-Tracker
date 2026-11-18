@@ -1,5 +1,7 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { spawn } from "node:child_process";
 
 const WEB_IFC_FILES = [
   "web-ifc.wasm",
@@ -67,6 +69,67 @@ export function covillafWebIfc(options = {}) {
         if (!fs.existsSync(fragmentsWorker)) return next();
         res.setHeader("Content-Type", "text/javascript");
         fs.createReadStream(fragmentsWorker).pipe(res);
+      });
+
+      server.middlewares.use("/covillaf/convert-frag", (req, res, next) => {
+        if (req.method !== "POST") return next();
+        const urlObj = new URL(req.url || "/", "http://localhost");
+        const rawName = path.basename(urlObj.searchParams.get("name") || "model.ifc");
+        const safeBase = rawName.replace(/\.ifc$/i, "").replace(/[^a-zA-Z0-9._-]/g, "_") || "model";
+        const converterScript = path.resolve(projectRoot, "scripts", "convert-ifc-to-frag.mjs");
+        if (!fs.existsSync(converterScript)) {
+          res.statusCode = 500;
+          res.end(JSON.stringify({ error: "convert-ifc-to-frag.mjs not found" }));
+          return;
+        }
+
+        const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const tempIfc = path.join(os.tmpdir(), `${safeBase}-${stamp}.ifc`);
+        const tempFrag = path.join(os.tmpdir(), `${safeBase}-${stamp}.frag`);
+        const cacheDir = path.join(projectRoot, ".cache", "frag");
+        const cachedFrag = path.join(cacheDir, `${safeBase}.frag`);
+
+        const cleanup = () => {
+          try { if (fs.existsSync(tempIfc)) fs.unlinkSync(tempIfc); } catch { /* noop */ }
+          try { if (fs.existsSync(tempFrag)) fs.unlinkSync(tempFrag); } catch { /* noop */ }
+        };
+
+        const ws = fs.createWriteStream(tempIfc);
+        req.pipe(ws);
+        ws.on("error", (err) => {
+          cleanup();
+          res.statusCode = 500;
+          res.end(JSON.stringify({ error: `Stream write failed: ${err.message}` }));
+        });
+        ws.on("finish", () => {
+          const child = spawn(
+            process.execPath,
+            ["--max-old-space-size=12288", converterScript, tempIfc, tempFrag],
+            { cwd: projectRoot, stdio: ["ignore", "pipe", "pipe"] },
+          );
+          let stderr = "";
+          child.stderr.on("data", (chunk) => { stderr += String(chunk); });
+          child.on("close", (code) => {
+            if (code !== 0 || !fs.existsSync(tempFrag)) {
+              cleanup();
+              res.statusCode = 500;
+              res.end(JSON.stringify({ error: stderr || `Converter exited with code ${code}` }));
+              return;
+            }
+            try {
+              fs.mkdirSync(cacheDir, { recursive: true });
+              fs.copyFileSync(tempFrag, cachedFrag);
+            } catch { /* non-fatal cache copy */ }
+
+            res.statusCode = 200;
+            res.setHeader("Content-Type", "application/octet-stream");
+            res.setHeader("X-Frag-Cache-Path", cachedFrag);
+            const rs = fs.createReadStream(tempFrag);
+            rs.on("close", cleanup);
+            rs.on("error", cleanup);
+            rs.pipe(res);
+          });
+        });
       });
     },
     closeBundle() {

@@ -84,6 +84,8 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
   ifcLoader.settings.webIfc = {
     ...ifcLoader.settings.webIfc,
     COORDINATE_TO_ORIGIN: true,
+    MEMORY_LIMIT: 3670016000, // 3.5 GB wasm32 ceiling
+    TAPE_SIZE: 134217728, // 128 MB STEP token tape
   };
   await ifcLoader.setup();
 
@@ -570,23 +572,75 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
     },
 
     async loadIfc(buffer, name, onProgress) {
+      const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+      const isHeavy = bytes.byteLength > 150 * 1024 * 1024;
+      const readCallback = (offset, size) => {
+        const end = Math.min(bytes.byteLength, offset + size);
+        return offset >= bytes.byteLength ? new Uint8Array(0) : bytes.subarray(offset, end);
+      };
+
       let model;
       try {
-        model = await ifcLoader.load(buffer, true, name, {
+        model = await ifcLoader.load(bytes, true, name, {
           instanceCallback: (importer) => {
-            importer.addAllAttributes();
-            importer.addAllRelations();
+            if (!isHeavy) {
+              importer.addAllAttributes();
+              importer.addAllRelations();
+            }
           },
           processData: {
+            readFromCallback: true,
+            readCallback,
+            raw: bytes.byteLength > 100 * 1024 * 1024,
             progressCallback: (progress) => onProgress?.(progress),
           },
         });
       } catch (error) {
         console.warn("[COVILLAF] Loading with options failed, attempting a simple load:", error);
-        model = await ifcLoader.load(buffer, true, name);
+        model = await ifcLoader.load(bytes, true, name);
       }
       cameraNav.refreshModelBounds(model?.box || null);
       return model;
+    },
+
+    /**
+     * Streams a heavy IFC File/Blob (>200 MB, up to multi-GB) directly to the
+     * 64-bit Node .frag compiler (/covillaf/convert-frag) without buffering the
+     * full IFC into browser RAM, then loads the resulting .frag cache.
+     */
+    async convertAndLoadLargeIfc(file, onProgress) {
+      if (!file) throw new Error("No IFC file provided.");
+      const name = file.name || "model.ifc";
+      onProgress?.(0.05, "Streaming IFC to 64-bit .frag compiler...");
+      let response = null;
+      try {
+        response = await fetch(`/covillaf/convert-frag?name=${encodeURIComponent(name)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/octet-stream" },
+          body: file,
+        });
+      } catch {
+        response = null;
+      }
+
+      if (response && response.ok) {
+        onProgress?.(0.8, "Downloading compiled .frag cache...");
+        const fragBuf = await response.arrayBuffer();
+        const fragName = name.replace(/\.ifc$/i, ".frag");
+        const model = await this.loadFrag(new Uint8Array(fragBuf), fragName);
+        onProgress?.(1.0, "Ready");
+        return { model, fragBytes: new Uint8Array(fragBuf), cachePath: response.headers.get("X-Frag-Cache-Path") };
+      }
+
+      const errDetail = response ? await response.text().catch(() => "") : "";
+      if (file.size <= 450 * 1024 * 1024) {
+        const buf = new Uint8Array(await file.arrayBuffer());
+        const model = await this.loadIfc(buf, name, (p) => onProgress?.(p));
+        return { model, fragBytes: null, cachePath: null };
+      }
+      throw new Error(
+        `Large IFC (${(file.size / (1024 * 1024)).toFixed(0)} MB) requires the 64-bit converter (${errDetail || "run: npm run convert:frag -- <file.ifc>"}).`,
+      );
     },
 
     async loadFrag(buffer, name = "model.frag") {
