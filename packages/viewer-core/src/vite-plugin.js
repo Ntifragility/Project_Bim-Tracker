@@ -83,70 +83,142 @@ export function covillafWebIfc(options = {}) {
         fs.createReadStream(fragmentsWorker).pipe(res);
       });
 
+      const jobs = new Map();
+
       server.middlewares.use("/covillaf/convert-frag", (req, res, next) => {
-        if (req.method !== "POST") return next();
         req.setTimeout(0);
         res.setTimeout(0);
         const urlObj = new URL(req.url || "/", "http://localhost");
-        const rawName = path.basename(urlObj.searchParams.get("name") || "model.ifc");
-        const safeBase = rawName.replace(/\.ifc$/i, "").replace(/[^a-zA-Z0-9._-]/g, "_") || "model";
-        const found = findProjectFile(path.join("scripts", "convert-ifc-to-frag.mjs"), projectRoot)
-          || findProjectFile(path.join("scripts", "convert-ifc-to-frag.mjs"), process.cwd());
-        if (!found) {
-          res.statusCode = 500;
-          res.end(JSON.stringify({ error: "convert-ifc-to-frag.mjs not found" }));
-          return;
-        }
-        const converterScript = found.filePath;
-        const repoRoot = found.rootDir;
+        const subRoute = urlObj.pathname.replace(/^\/+/, "");
 
-        const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        const tempIfc = path.join(os.tmpdir(), `${safeBase}-${stamp}.ifc`);
-        const tempFrag = path.join(os.tmpdir(), `${safeBase}-${stamp}.frag`);
-        const cacheDir = path.join(repoRoot, ".cache", "frag");
-        const cachedFrag = path.join(cacheDir, `${safeBase}.frag`);
-
-        const cleanup = () => {
-          try { if (fs.existsSync(tempIfc)) fs.unlinkSync(tempIfc); } catch { /* noop */ }
-          try { if (fs.existsSync(tempFrag)) fs.unlinkSync(tempFrag); } catch { /* noop */ }
+        const jsonRes = (code, payload) => {
+          res.statusCode = code;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify(payload));
         };
 
-        const ws = fs.createWriteStream(tempIfc);
-        req.pipe(ws);
-        ws.on("error", (err) => {
-          cleanup();
-          res.statusCode = 500;
-          res.end(JSON.stringify({ error: `Stream write failed: ${err.message}` }));
-        });
-        ws.on("finish", () => {
+        if (req.method === "POST" && subRoute === "init") {
+          const rawName = path.basename(urlObj.searchParams.get("name") || "model.ifc");
+          const safeBase = rawName.replace(/\.ifc$/i, "").replace(/[^a-zA-Z0-9._-]/g, "_") || "model";
+          const found = findProjectFile(path.join("scripts", "convert-ifc-to-frag.mjs"), projectRoot)
+            || findProjectFile(path.join("scripts", "convert-ifc-to-frag.mjs"), process.cwd());
+          if (!found) return jsonRes(500, { error: "convert-ifc-to-frag.mjs not found" });
+
+          const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          const tempIfc = path.join(os.tmpdir(), `${safeBase}-${id}.ifc`);
+          const tempFrag = path.join(os.tmpdir(), `${safeBase}-${id}.frag`);
+          const cacheDir = path.join(found.rootDir, ".cache", "frag");
+          const cachedFrag = path.join(cacheDir, `${safeBase}.frag`);
+          fs.writeFileSync(tempIfc, Buffer.alloc(0));
+
+          jobs.set(id, {
+            id,
+            safeBase,
+            converterScript: found.filePath,
+            repoRoot: found.rootDir,
+            tempIfc,
+            tempFrag,
+            cacheDir,
+            cachedFrag,
+            bytesReceived: 0,
+            status: "uploading",
+            progress: 0,
+            detail: "Receiving IFC chunks...",
+            error: null,
+          });
+          return jsonRes(200, { id });
+        }
+
+        if (req.method === "POST" && subRoute === "chunk") {
+          const id = urlObj.searchParams.get("id");
+          const job = jobs.get(id);
+          if (!job) return jsonRes(404, { error: "Unknown conversion job id" });
+
+          const ws = fs.createWriteStream(job.tempIfc, { flags: "a" });
+          req.on("data", (chunk) => { job.bytesReceived += chunk.length; });
+          req.pipe(ws);
+          ws.on("finish", () => jsonRes(200, { ok: true, bytesReceived: job.bytesReceived }));
+          ws.on("error", (err) => jsonRes(500, { error: `Chunk write failed: ${err.message}` }));
+          return;
+        }
+
+        if (req.method === "POST" && subRoute === "start") {
+          const id = urlObj.searchParams.get("id");
+          const job = jobs.get(id);
+          if (!job) return jsonRes(404, { error: "Unknown conversion job id" });
+
+          job.status = "converting";
+          job.progress = 0.05;
+          job.detail = "Running 64-bit web-ifc -> .frag compiler...";
+
           const child = spawn(
             process.execPath,
-            ["--max-old-space-size=12288", converterScript, tempIfc, tempFrag],
-            { cwd: repoRoot, stdio: ["ignore", "pipe", "pipe"] },
+            ["--max-old-space-size=12288", job.converterScript, job.tempIfc, job.tempFrag],
+            { cwd: job.repoRoot, stdio: ["ignore", "pipe", "pipe"] },
           );
           let stderr = "";
+          child.stdout.on("data", (chunk) => {
+            const text = String(chunk);
+            const m = text.match(/(\d+)%/);
+            if (m) {
+              const pct = Math.min(99, Math.max(5, Number(m[1])));
+              job.progress = pct / 100;
+              job.detail = `Compiling .frag geometry (${pct}%)...`;
+            }
+          });
           child.stderr.on("data", (chunk) => { stderr += String(chunk); });
           child.on("close", (code) => {
-            if (code !== 0 || !fs.existsSync(tempFrag)) {
-              cleanup();
-              res.statusCode = 500;
-              res.end(JSON.stringify({ error: stderr || `Converter exited with code ${code}` }));
+            try { if (fs.existsSync(job.tempIfc)) fs.unlinkSync(job.tempIfc); } catch { /* noop */ }
+            if (code !== 0 || !fs.existsSync(job.tempFrag)) {
+              job.status = "error";
+              job.error = stderr.trim() || `Converter exited with code ${code}`;
               return;
             }
             try {
-              fs.mkdirSync(cacheDir, { recursive: true });
-              fs.copyFileSync(tempFrag, cachedFrag);
-            } catch { /* non-fatal cache copy */ }
-
-            res.statusCode = 200;
-            res.setHeader("Content-Type", "application/octet-stream");
-            res.setHeader("X-Frag-Cache-Path", cachedFrag);
-            const rs = fs.createReadStream(tempFrag);
-            rs.on("close", cleanup);
-            rs.on("error", cleanup);
-            rs.pipe(res);
+              fs.mkdirSync(job.cacheDir, { recursive: true });
+              fs.copyFileSync(job.tempFrag, job.cachedFrag);
+            } catch { /* non-fatal */ }
+            job.status = "done";
+            job.progress = 1;
+            job.detail = "Compiled .frag ready";
           });
-        });
+          return jsonRes(200, { ok: true, id });
+        }
+
+        if (req.method === "GET" && subRoute === "status") {
+          const id = urlObj.searchParams.get("id");
+          const job = jobs.get(id);
+          if (!job) return jsonRes(404, { error: "Unknown conversion job id" });
+          return jsonRes(200, {
+            status: job.status,
+            progress: job.progress,
+            detail: job.detail,
+            cachePath: job.cachedFrag,
+            error: job.error,
+          });
+        }
+
+        if (req.method === "GET" && subRoute === "result") {
+          const id = urlObj.searchParams.get("id");
+          const job = jobs.get(id);
+          if (!job || job.status !== "done" || !fs.existsSync(job.tempFrag)) {
+            return jsonRes(404, { error: "Compiled .frag not ready" });
+          }
+          res.statusCode = 200;
+          res.setHeader("Content-Type", "application/octet-stream");
+          res.setHeader("X-Frag-Cache-Path", job.cachedFrag);
+          const rs = fs.createReadStream(job.tempFrag);
+          const cleanup = () => {
+            try { if (fs.existsSync(job.tempFrag)) fs.unlinkSync(job.tempFrag); } catch { /* noop */ }
+            jobs.delete(id);
+          };
+          rs.on("close", cleanup);
+          rs.on("error", cleanup);
+          rs.pipe(res);
+          return;
+        }
+
+        return next();
       });
     },
     closeBundle() {

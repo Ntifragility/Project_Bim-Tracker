@@ -604,42 +604,88 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
     },
 
     /**
-     * Streams a heavy IFC File/Blob (>200 MB, up to multi-GB) directly to the
-     * 64-bit Node .frag compiler (/covillaf/convert-frag) without buffering the
-     * full IFC into browser RAM, then loads the resulting .frag cache.
+     * Streams a heavy IFC File/Blob (>200 MB, up to multi-GB) in 32 MB chunks
+     * to the 64-bit Node .frag compiler (/covillaf/convert-frag/*) without ever
+     * buffering the full IFC into browser RAM, then loads the resulting .frag.
      */
     async convertAndLoadLargeIfc(file, onProgress) {
       if (!file) throw new Error("No IFC file provided.");
       const name = file.name || "model.ifc";
-      onProgress?.(0.05, "Streaming IFC to 64-bit .frag compiler...");
-      let response = null;
+      const CHUNK_SIZE = 32 * 1024 * 1024;
+      let errDetail = "";
+
       try {
-        response = await fetch(`/covillaf/convert-frag?name=${encodeURIComponent(name)}`, {
+        onProgress?.(0.02, "Initializing 64-bit .frag converter...");
+        const initRes = await fetch(`/covillaf/convert-frag/init?name=${encodeURIComponent(name)}`, {
           method: "POST",
-          headers: { "Content-Type": "application/octet-stream" },
-          body: file,
         });
-      } catch {
-        response = null;
-      }
+        if (!initRes.ok) {
+          throw new Error(await initRes.text());
+        }
+        const { id } = await initRes.json();
 
-      if (response && response.ok) {
-        onProgress?.(0.8, "Downloading compiled .frag cache...");
-        const fragBuf = await response.arrayBuffer();
+        // Stream 32 MB slices sequentially so Chrome never hits single-request body limits
+        const total = file.size;
+        for (let offset = 0; offset < total; offset += CHUNK_SIZE) {
+          const slice = file.slice(offset, Math.min(total, offset + CHUNK_SIZE));
+          const pct = Math.round(((offset + slice.size) / total) * 100);
+          onProgress?.(0.05 + ((offset + slice.size) / total) * 0.35, `Streaming IFC to 64-bit compiler (${pct}%)...`);
+          const chunkRes = await fetch(`/covillaf/convert-frag/chunk?id=${encodeURIComponent(id)}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/octet-stream" },
+            body: slice,
+          });
+          if (!chunkRes.ok) {
+            throw new Error(await chunkRes.text());
+          }
+        }
+
+        onProgress?.(0.42, "Compiling geometry in 64-bit Node worker...");
+        const startRes = await fetch(`/covillaf/convert-frag/start?id=${encodeURIComponent(id)}`, {
+          method: "POST",
+        });
+        if (!startRes.ok) {
+          throw new Error(await startRes.text());
+        }
+
+        // Poll conversion progress
+        let cachePath = null;
+        while (true) {
+          await new Promise((r) => setTimeout(r, 800));
+          const stRes = await fetch(`/covillaf/convert-frag/status?id=${encodeURIComponent(id)}`);
+          if (!stRes.ok) throw new Error(await stRes.text());
+          const st = await stRes.json();
+          if (st.status === "error") {
+            throw new Error(st.error || "64-bit converter failed");
+          }
+          if (st.status === "done") {
+            cachePath = st.cachePath || null;
+            break;
+          }
+          onProgress?.(0.42 + (st.progress || 0) * 0.43, st.detail || "Compiling .frag cache...");
+        }
+
+        onProgress?.(0.88, "Loading compiled .frag cache into WebGL...");
+        const resultRes = await fetch(`/covillaf/convert-frag/result?id=${encodeURIComponent(id)}`);
+        if (!resultRes.ok) throw new Error(await resultRes.text());
+        const fragBuf = await resultRes.arrayBuffer();
+        const fragBytes = new Uint8Array(fragBuf);
         const fragName = name.replace(/\.ifc$/i, ".frag");
-        const model = await this.loadFrag(new Uint8Array(fragBuf), fragName);
+        const model = await this.loadFrag(fragBytes, fragName);
         onProgress?.(1.0, "Ready");
-        return { model, fragBytes: new Uint8Array(fragBuf), cachePath: response.headers.get("X-Frag-Cache-Path") };
+        return { model, fragBytes, cachePath };
+      } catch (err) {
+        errDetail = err?.message || String(err);
+        console.error("[convertAndLoadLargeIfc] Error:", errDetail);
       }
 
-      const errDetail = response ? await response.text().catch(() => "") : "";
       if (file.size <= 450 * 1024 * 1024) {
         const buf = new Uint8Array(await file.arrayBuffer());
         const model = await this.loadIfc(buf, name, (p) => onProgress?.(p));
         return { model, fragBytes: null, cachePath: null };
       }
       throw new Error(
-        `Large IFC (${(file.size / (1024 * 1024)).toFixed(0)} MB) requires the 64-bit converter (${errDetail || "run: npm run convert:frag -- <file.ifc>"}).`,
+        `Large IFC (${(file.size / (1024 * 1024)).toFixed(0)} MB) conversion failed: ${errDetail || "run npm run convert:frag -- <file.ifc>"}`,
       );
     },
 
