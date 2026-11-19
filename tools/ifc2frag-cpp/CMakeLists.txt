@@ -57,10 +57,15 @@ add_custom_command(
 add_custom_target(fragments_schema DEPENDS "${FRAG_GEN_HDR}")
 
 # 4. Core library (shared between CLI and parity tests)
-add_library(frag_core STATIC
+set(FRAG_CORE_SOURCES
   src/frag_io.cpp
   "${FRAG_GEN_HDR}"
 )
+if(IFC2FRAG_WITH_WEBIFC)
+  list(APPEND FRAG_CORE_SOURCES src/ifc_compiler.cpp)
+endif()
+
+add_library(frag_core STATIC ${FRAG_CORE_SOURCES})
 add_dependencies(frag_core fragments_schema)
 target_include_directories(frag_core PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -71,6 +76,7 @@ target_include_directories(frag_core PUBLIC
 target_link_libraries(frag_core PUBLIC flatbuffers zlibstatic)
 if(IFC2FRAG_WITH_WEBIFC)
   target_link_libraries(frag_core PUBLIC web-ifc-library)
+  target_compile_definitions(frag_core PUBLIC IFC2FRAG_HAS_WEBIFC=1)
 endif()
 
 # 5. CLI executable
@@ -78,6 +84,9 @@ add_executable(ifc2frag
   src/main.cpp
 )
 target_link_libraries(ifc2frag PRIVATE frag_core)
+if(MINGW)
+  target_link_options(ifc2frag PRIVATE -static -static-libgcc -static-libstdc++)
+endif()
 
 # 6. Phase 1 Schema Parity Test
 enable_testing()
@@ -85,6 +94,9 @@ add_executable(frag_schema_parity_test
   tests/parity_test.cpp
 )
 target_link_libraries(frag_schema_parity_test PRIVATE frag_core)
+if(MINGW)
+  target_link_options(frag_schema_parity_test PRIVATE -static -static-libgcc -static-libstdc++)
+endif()
 target_compile_definitions(frag_schema_parity_test PRIVATE
   PROJECT_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../.."
 )
