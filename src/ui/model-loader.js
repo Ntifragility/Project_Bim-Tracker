@@ -32,7 +32,7 @@ export function initModelLoader(ctx, dom, hooks, api = {}) {
     for (const model of targets) {
       // FragmentsModel.box contains the complete IFC bounds even when its
       // distant tiles have not yet been rendered by the current camera view.
-      const storedBox = model?.box;
+      const storedBox = model?.coreBox || model?.box;
       const box = storedBox && !storedBox.isEmpty()
         // FragmentsModel.box is already returned in world coordinates.
         ? storedBox
@@ -52,6 +52,10 @@ export function initModelLoader(ctx, dom, hooks, api = {}) {
     combinedBox.getBoundingSphere(sphere);
     if (!Number.isFinite(sphere.radius) || sphere.radius <= 0) sphere.radius = 1;
     world.camera.controls.fitToSphere(sphere, true);
+    try { ctx.fragments?.core?.update?.(true); } catch {}
+    setTimeout(() => {
+      try { ctx.fragments?.core?.update?.(true); } catch {}
+    }, 220);
   }
 
   // Helper: Fit camera to a single model

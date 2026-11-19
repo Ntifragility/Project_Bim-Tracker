@@ -17,19 +17,30 @@ function detectIfcSchema(buf) {
   return 'IFC4';
 }
 
-function fitCameraToModel(engine, model) {
-  if (!model || !engine.world?.camera?.controls) return;
+function getModelBoundingSphere(model) {
+  if (!model) return null;
   const modelObject = model.object || model;
-  const storedBox = model.box;
+  const storedBox = model.coreBox || model.box;
   const box = storedBox && !storedBox.isEmpty()
     ? storedBox
     : new THREE.Box3().setFromObject(modelObject);
+  if (!box || box.isEmpty()) return null;
+  const sphere = new THREE.Sphere();
+  box.getBoundingSphere(sphere);
+  if (!Number.isFinite(sphere.radius) || sphere.radius <= 0) sphere.radius = 10;
+  return sphere;
+}
 
-  if (box && !box.isEmpty()) {
-    const sphere = new THREE.Sphere();
-    box.getBoundingSphere(sphere);
-    if (!Number.isFinite(sphere.radius) || sphere.radius <= 0) sphere.radius = 1;
+function fitCameraToModel(engine, model) {
+  if (!model || !engine.world?.camera?.controls) return;
+  const sphere = getModelBoundingSphere(model);
+
+  if (sphere) {
     engine.world.camera.controls.fitToSphere(sphere, true);
+    try { engine.fragments?.core?.update?.(true); } catch {}
+    setTimeout(() => {
+      try { engine.fragments?.core?.update?.(true); } catch {}
+    }, 220);
   } else {
     engine.world.camera.controls.setLookAt(12, 12, 12, 0, 2, 0, true);
   }
@@ -249,15 +260,24 @@ export function createModelLoad({ state, els, engine, api }) {
     });
 
     els.btnViewTop.addEventListener('click', () => {
-      engine.world?.camera?.controls?.setLookAt(0, 30, 0, 0, 0, 0, true);
+      const s = getModelBoundingSphere(activeLoadedModel);
+      const c = s ? s.center : { x: 0, y: 0, z: 0 };
+      const d = s ? Math.max(30, s.radius * 2.2) : 30;
+      engine.world?.camera?.controls?.setLookAt(c.x, c.y + d, c.z + 0.01, c.x, c.y, c.z, true);
     });
 
     els.btnViewFront.addEventListener('click', () => {
-      engine.world?.camera?.controls?.setLookAt(0, 2, 30, 0, 2, 0, true);
+      const s = getModelBoundingSphere(activeLoadedModel);
+      const c = s ? s.center : { x: 0, y: 2, z: 0 };
+      const d = s ? Math.max(30, s.radius * 2.2) : 30;
+      engine.world?.camera?.controls?.setLookAt(c.x, c.y, c.z + d, c.x, c.y, c.z, true);
     });
 
     els.btnViewRight.addEventListener('click', () => {
-      engine.world?.camera?.controls?.setLookAt(30, 2, 0, 0, 2, 0, true);
+      const s = getModelBoundingSphere(activeLoadedModel);
+      const c = s ? s.center : { x: 0, y: 2, z: 0 };
+      const d = s ? Math.max(30, s.radius * 2.2) : 30;
+      engine.world?.camera?.controls?.setLookAt(c.x + d, c.y, c.z, c.x, c.y, c.z, true);
     });
   }
 

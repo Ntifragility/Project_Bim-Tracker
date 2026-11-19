@@ -5,6 +5,7 @@ import * as THREE from "three";
 import {
   computeAdaptiveFrustum,
   computeSurfaceZoomStep,
+  computeRobustCoreBoundingBox,
   createCameraNavigationController,
 } from "../src/index.js";
 
@@ -79,5 +80,34 @@ describe("Revizto Camera Navigation & Adaptive Frustum", () => {
     assert.equal(camera.near, 1);
 
     nav.dispose();
+  });
+
+  it("dynamically filters multi-kilometer stray outliers while preserving clean facility bounds", () => {
+    const positions = [];
+    // 200 plant elements clustered inside X:[-220, 10], Y:[-3, 5], Z:[-30, 150]
+    for (let i = 0; i < 200; i++) {
+      const t = i / 199;
+      positions.push({
+        x: -220 + t * 230,
+        y: -3 + (i % 8),
+        z: -30 + t * 180,
+      });
+    }
+    // 2 stray CAD survey markers ~5 km away
+    positions.push({ x: 640, y: 3870, z: 4838 });
+    positions.push({ x: 600, y: 3800, z: 4700 });
+
+    const rawBox = new THREE.Box3(
+      new THREE.Vector3(-252, -10, -103),
+      new THREE.Vector3(640, 3870, 4838),
+    );
+
+    const coreBox = computeRobustCoreBoundingBox(positions, rawBox);
+    assert.ok(!coreBox.isEmpty());
+    // Should exclude the 3870m / 4838m outliers and bound the ~230m x 180m plant
+    assert.ok(coreBox.max.y < 100, `expected max.y < 100m, got ${coreBox.max.y}`);
+    assert.ok(coreBox.max.z < 300, `expected max.z < 300m, got ${coreBox.max.z}`);
+    assert.ok(coreBox.min.x <= -220);
+    assert.ok(coreBox.max.x >= 10);
   });
 });

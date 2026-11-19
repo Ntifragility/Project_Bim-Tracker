@@ -85,6 +85,126 @@ export function computeSurfaceZoomStep({
   };
 }
 
+/**
+ * Pure helper: dynamically computes an outlier-resistant core bounding box from
+ * an array of 3D element positions ({x,y,z} or [x,y,z]).
+ *
+ * When a model has stray CAD artifacts/survey points kilometers away from the
+ * main facility (expanding the raw min/max box by >1.5x), this filters the
+ * extreme statistical outliers outside the [P02..P98] Tukey fence so camera
+ * fit, orbit pivot, ground grid, and adaptive frustum focus directly on the
+ * actual building/plant for any model size.
+ */
+export function computeRobustCoreBoundingBox(positions = [], fallbackBox = null) {
+  const validPts = [];
+  if (Array.isArray(positions)) {
+    for (let i = 0; i < positions.length; i++) {
+      const p = positions[i];
+      if (!p) continue;
+      const x = Array.isArray(p) ? p[0] : p.x;
+      const y = Array.isArray(p) ? p[1] : p.y;
+      const z = Array.isArray(p) ? p[2] : p.z;
+      if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) {
+        validPts.push([x, y, z]);
+      }
+    }
+  }
+
+  const rawFallback =
+    fallbackBox && typeof fallbackBox.isEmpty === "function" && !fallbackBox.isEmpty()
+      ? fallbackBox.clone()
+      : null;
+
+  if (validPts.length < 10) {
+    if (rawFallback) return rawFallback;
+    const simpleBox = new THREE.Box3();
+    for (const [x, y, z] of validPts) {
+      simpleBox.expandByPoint(new THREE.Vector3(x, y, z));
+    }
+    return simpleBox;
+  }
+
+  const n = validPts.length;
+  const xs = new Float64Array(n);
+  const ys = new Float64Array(n);
+  const zs = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    xs[i] = validPts[i][0];
+    ys[i] = validPts[i][1];
+    zs[i] = validPts[i][2];
+  }
+  xs.sort();
+  ys.sort();
+  zs.sort();
+
+  const quantile = (sorted, q) =>
+    sorted[Math.min(sorted.length - 1, Math.max(0, Math.floor(sorted.length * q)))];
+
+  const buildFence = (sorted) => {
+    const p02 = quantile(sorted, 0.02);
+    const p98 = quantile(sorted, 0.98);
+    const span = Math.max(p98 - p02, 2.0);
+    return { low: p02 - span * 0.75, high: p98 + span * 0.75 };
+  };
+
+  const fx = buildFence(xs);
+  const fy = buildFence(ys);
+  const fz = buildFence(zs);
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let minZ = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  let maxZ = -Infinity;
+  let inlierCount = 0;
+
+  for (let i = 0; i < n; i++) {
+    const [x, y, z] = validPts[i];
+    if (
+      x >= fx.low &&
+      x <= fx.high &&
+      y >= fy.low &&
+      y <= fy.high &&
+      z >= fz.low &&
+      z <= fz.high
+    ) {
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+      if (z < minZ) minZ = z;
+      if (z > maxZ) maxZ = z;
+      inlierCount++;
+    }
+  }
+
+  if (inlierCount === 0) {
+    return rawFallback || new THREE.Box3();
+  }
+
+  const coreBox = new THREE.Box3(
+    new THREE.Vector3(minX, minY, minZ),
+    new THREE.Vector3(maxX, maxY, maxZ),
+  );
+  const coreSize = new THREE.Vector3();
+  coreBox.getSize(coreSize);
+  const coreDiag = Math.max(coreSize.length(), 1.0);
+  const margin = Math.max(2.0, coreDiag * 0.03);
+  coreBox.expandByScalar(margin);
+
+  if (rawFallback) {
+    const rawSize = new THREE.Vector3();
+    rawFallback.getSize(rawSize);
+    const rawDiag = rawSize.length();
+    if (rawDiag <= coreDiag * 1.5) {
+      return rawFallback;
+    }
+  }
+
+  return coreBox;
+}
+
 export function createCameraNavigationController({
   world,
   fragments = null,
@@ -266,12 +386,33 @@ export function createCameraNavigationController({
     }
   };
 
+  let lastFragUpdateAt = 0;
+  const FRAG_UPDATE_THROTTLE_MS = 120;
+
+  const triggerFragmentsUpdate = (force = false) => {
+    if (disposed || !fragments?.core?.update) return;
+    const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+    if (!force && now - lastFragUpdateAt < FRAG_UPDATE_THROTTLE_MS) return;
+    lastFragUpdateAt = now;
+    try {
+      fragments.core.update(true);
+    } catch { /* headless */ }
+  };
+
   const onControlsUpdate = () => {
     enforceAdaptiveFrustum();
+    triggerFragmentsUpdate(false);
+  };
+
+  const onControlsRest = () => {
+    enforceAdaptiveFrustum();
+    triggerFragmentsUpdate(true);
   };
 
   try {
     controls?.addEventListener?.("update", onControlsUpdate);
+    controls?.addEventListener?.("rest", onControlsRest);
+    controls?.addEventListener?.("controlend", onControlsRest);
   } catch { /* headless */ }
 
   if (container && typeof container.addEventListener === "function") {
@@ -303,6 +444,8 @@ export function createCameraNavigationController({
       disposed = true;
       try {
         controls?.removeEventListener?.("update", onControlsUpdate);
+        controls?.removeEventListener?.("rest", onControlsRest);
+        controls?.removeEventListener?.("controlend", onControlsRest);
       } catch { /* noop */ }
       if (container && typeof container.removeEventListener === "function") {
         container.removeEventListener("pointermove", onPointerMove);

@@ -8,7 +8,10 @@ import { createCoordinateFrame } from "./coordinates.js";
 import { createVisibilityController } from "./visibility-controller.js";
 import { createSectionController, isPointClippedByPlanes } from "./section-controller.js";
 import { createRulerController } from "./ruler-controller.js";
-import { createCameraNavigationController } from "./camera-navigation.js";
+import {
+  createCameraNavigationController,
+  computeRobustCoreBoundingBox,
+} from "./camera-navigation.js";
 
 const WASM_PATH = "/covillaf/web-ifc/";
 
@@ -505,6 +508,65 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
     container,
   });
 
+  async function applyDynamicModelBounds(model) {
+    if (!model) {
+      cameraNav.refreshModelBounds(null);
+      return null;
+    }
+    try {
+      if (model.object && !world.scene.three.children.includes(model.object)) {
+        world.scene.three.add(model.object);
+      }
+      model.object?.updateMatrixWorld?.(true);
+    } catch { /* headless */ }
+
+    try {
+      model.useCamera?.(world.camera.three);
+    } catch { /* headless */ }
+
+    let coreBox = model.box || null;
+    try {
+      if (typeof model.getPositions === "function") {
+        const positions = await model.getPositions();
+        if (Array.isArray(positions) && positions.length > 0) {
+          coreBox = computeRobustCoreBoundingBox(positions, model.box || null);
+        }
+      }
+    } catch { /* fallback to model.box */ }
+
+    if (coreBox && typeof coreBox.isEmpty === "function" && !coreBox.isEmpty()) {
+      model.coreBox = coreBox.clone();
+      try {
+        if (model._bbox && typeof model._bbox.copy === "function") {
+          const localBox = coreBox.clone();
+          if (model.object?.matrixWorld) {
+            const inv = model.object.matrixWorld.clone().invert();
+            localBox.applyMatrix4(inv);
+          }
+          model._bbox.copy(localBox);
+        }
+      } catch { /* noop */ }
+
+      try {
+        const center = new THREE.Vector3();
+        coreBox.getCenter(center);
+        const floorY = Number.isFinite(coreBox.min.y) ? coreBox.min.y : 0;
+        if (grid?.three?.position) {
+          grid.three.position.set(center.x, floorY - 0.05, center.z);
+        }
+        if (axesHelper?.position) {
+          axesHelper.position.set(center.x, floorY, center.z);
+        }
+      } catch { /* headless */ }
+    }
+
+    cameraNav.refreshModelBounds(coreBox || model.box || null);
+    try {
+      fragments.core?.update?.(true);
+    } catch { /* headless */ }
+    return coreBox;
+  }
+
   const engine = {
     name: "COVILLAF",
     components,
@@ -609,7 +671,7 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
         console.warn("[COVILLAF] Loading with options failed, attempting a simple load:", error);
         model = await ifcLoader.load(bytes, true, name);
       }
-      cameraNav.refreshModelBounds(model?.box || null);
+      await applyDynamicModelBounds(model);
       return model;
     },
 
@@ -711,10 +773,7 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
         modelId: name,
         camera: world.camera.three,
       });
-      if (model?.object && !world.scene.three.children.includes(model.object)) {
-        world.scene.three.add(model.object);
-      }
-      cameraNav.refreshModelBounds(model?.box || null);
+      await applyDynamicModelBounds(model);
       return model;
     },
 

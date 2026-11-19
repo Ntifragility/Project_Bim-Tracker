@@ -4,6 +4,7 @@ export {
   createCameraNavigationController,
   computeAdaptiveFrustum,
   computeSurfaceZoomStep,
+  computeRobustCoreBoundingBox,
 } from "./camera-navigation.js";
 export { createVisibilityController } from "./visibility-controller.js";
 export {
