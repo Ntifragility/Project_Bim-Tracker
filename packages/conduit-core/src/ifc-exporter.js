@@ -18,6 +18,31 @@ function makeGuid(index) {
   return str;
 }
 
+function tradeRadiusFromLabel(sizeLabel) {
+  const s = String(sizeLabel || '').trim().toLowerCase();
+  const mmMatch = s.match(/(\d+(?:\.\d+)?)\s*mm/);
+  if (mmMatch) {
+    const r = (parseFloat(mmMatch[1]) / 1000) * 0.5;
+    if (Number.isFinite(r) && r > 0) return r;
+  }
+  const table = {
+    '1/2"': 0.0105,
+    '3/4"': 0.0135,
+    '1"': 0.0167,
+    '1-1/4"': 0.0211,
+    '1-1/2"': 0.0241,
+    '2"': 0.0302,
+    '2-1/2"': 0.0365,
+    '3"': 0.0445,
+    '3-1/2"': 0.0508,
+    '4"': 0.0572,
+  };
+  for (const [k, v] of Object.entries(table)) {
+    if (s.includes(k)) return v;
+  }
+  return 0.025;
+}
+
 export function exportOverlayIfc({
   runs = [],
   nodes = {},
@@ -116,32 +141,33 @@ export function exportOverlayIfc({
       pointIds.push(`#${pid}`);
     }
 
-    // Polyline
+    // Polyline directrix
     const polylineId = nextId();
     add(`#${polylineId}=IFCPOLYLINE((${pointIds.join(',')}));`);
 
-    // Geometric curve set
-    const curveSetId = nextId();
-    add(`#${curveSetId}=IFCGEOMETRICCURVESET((#${polylineId}));`);
+    const runName = run.name || `Run ${run.id}`;
+    const runSize = run.size || run.diameter || '3/4"';
+    const runSystem = run.system || 'Power';
+    const runLen = Number(run.length || 0).toFixed(3);
+    const radiusM = tradeRadiusFromLabel(runSize);
+
+    // 3D SweptDiskSolid pipe body (tessellatable by web-ifc, Revit, and Navisworks)
+    const sweptSolidId = nextId();
+    add(`#${sweptSolidId}=IFCSWEPTDISKSOLID(#${polylineId},${radiusM.toFixed(4)},$,0.,$);`);
 
     // Shape representation
     const shapeRepId = nextId();
-    add(`#${shapeRepId}=IFCSHAPEREPRESENTATION(#${geomContextId},'Body','GeometricCurveSet',(#${curveSetId}));`);
+    add(`#${shapeRepId}=IFCSHAPEREPRESENTATION(#${geomContextId},'Body','SweptSolid',(#${sweptSolidId}));`);
 
     // Product definition shape
     const prodShapeId = nextId();
     add(`#${prodShapeId}=IFCPRODUCTDEFINITIONSHAPE($,$,(#${shapeRepId}));`);
 
-    // Annotation product
+    // Conduit flow segment product
     const runGuid = makeGuid(runIdx++);
-    const annotationId = nextId();
-    const runName = run.name || `Run ${run.id}`;
-    const runSize = run.size || run.diameter || '3/4"';
-    const runSystem = run.system || 'Power';
-    const runLen = Number(run.length || 0).toFixed(3);
-
-    add(`#${annotationId}=IFCANNOTATION('${runGuid}',#${ownerHistId},'${runName}','Conduit Polyline',#${wcsId},#${prodShapeId},'${runSize}');`);
-    runEntityIds.push(`#${annotationId}`);
+    const segmentId = nextId();
+    add(`#${segmentId}=IFCFLOWSEGMENT('${runGuid}',#${ownerHistId},'${runName}','Conduit Run (${runSize})',$,#${wcsId},#${prodShapeId},'${runSize}');`);
+    runEntityIds.push(`#${segmentId}`);
 
     // Pset_ConduitRun properties
     const pSizeId = nextId();
@@ -157,7 +183,7 @@ export function exportOverlayIfc({
     add(`#${psetId}=IFCPROPERTYSET('${makeGuid(runIdx++)}',#${ownerHistId},'Pset_ConduitRun',$,(#${pSizeId},#${pSystemId},#${pLenId}));`);
 
     const relDefId = nextId();
-    add(`#${relDefId}=IFCRELDEFINESBYPROPERTIES('${makeGuid(runIdx++)}',#${ownerHistId},$,$,(#${annotationId}),#${psetId});`);
+    add(`#${relDefId}=IFCRELDEFINESBYPROPERTIES('${makeGuid(runIdx++)}',#${ownerHistId},$,$,(#${segmentId}),#${psetId});`);
   }
 
   // Relate runs to Site spatial structure

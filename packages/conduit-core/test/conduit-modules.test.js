@@ -187,8 +187,9 @@ test('IFC Exporter: generates valid STEP IFC file with polylines and Pset_Condui
   assert.ok(ifcText.startsWith('ISO-10303-21;'));
   assert.ok(ifcText.includes("FILE_SCHEMA(('IFC4'));"));
   assert.ok(ifcText.includes('IFCPOLYLINE'));
+  assert.ok(ifcText.includes('IFCSWEPTDISKSOLID'));
+  assert.ok(ifcText.includes('IFCFLOWSEGMENT'));
   assert.ok(ifcText.includes('Pset_ConduitRun'));
-  assert.ok(ifcText.includes('IFCANNOTATION'));
   assert.ok(ifcText.endsWith('END-ISO-10303-21;'));
 
   // Test toOriginal transformation (geolocalized origin shift + Z-up swap)
