@@ -2,7 +2,7 @@
 // Generates a valid STEP-format IFC (IFC2X3 or IFC4) containing 3D swept conduit
 // solids with smooth NEC-radius bends and Pset_ConduitRun properties, federatable in Revizto and BIM viewers.
 
-import { extractRunCenterline } from './centerline-builder.js';
+import { extractRunParts } from './centerline-builder.js';
 import { getNecBendRadiusM } from './fitting-solver.js';
 
 function formatIfcDate(d = new Date()) {
@@ -122,7 +122,32 @@ export function exportOverlayIfc({
   add(`#${relProjSiteId}=IFCRELAGGREGATES('${makeGuid(3)}',#${ownerHistId},$,$,#${projectId},(#${siteId}));`);
 
   const runEntityIds = [];
-  let runIdx = 10;
+  const systemMembers = new Map(); // systemName -> string[] of '#id'
+  let guidSeq = 10;
+
+  const isIfc4 = schemaUpper === 'IFC4';
+
+  const emitSweptPipePart = (partPts, radiusM) => {
+    const pointIds = [];
+    for (const rawPt of partPts) {
+      const pt = typeof toOriginal === 'function' ? toOriginal(rawPt) : rawPt;
+      const pid = nextId();
+      add(`#${pid}=IFCCARTESIANPOINT((${Number(pt.x).toFixed(4)},${Number(pt.y).toFixed(4)},${Number(pt.z).toFixed(4)}));`);
+      pointIds.push(`#${pid}`);
+    }
+    const polylineId = nextId();
+    add(`#${polylineId}=IFCPOLYLINE((${pointIds.join(',')}));`);
+
+    const sweptSolidId = nextId();
+    add(`#${sweptSolidId}=IFCSWEPTDISKSOLID(#${polylineId},${radiusM.toFixed(4)},$,0.,$);`);
+
+    const shapeRepId = nextId();
+    add(`#${shapeRepId}=IFCSHAPEREPRESENTATION(#${geomContextId},'Body','SweptSolid',(#${sweptSolidId}));`);
+
+    const prodShapeId = nextId();
+    add(`#${prodShapeId}=IFCPRODUCTDEFINITIONSHAPE($,$,(#${shapeRepId}));`);
+    return prodShapeId;
+  };
 
   for (const run of runs) {
     const nodeCoords = (run.nodeIds || [])
@@ -141,54 +166,66 @@ export function exportOverlayIfc({
     const runLen = Number(run.length || 0).toFixed(3);
     const radiusM = tradeRadiusFromLabel(runSize);
     const bendRadiusM = getNecBendRadiusM(runSize);
-    const centerlinePts = extractRunCenterline(nodeCoords, bendRadiusM, 12);
+    const parts = extractRunParts(nodeCoords, bendRadiusM, 12);
 
-    // Create Cartesian points for centerline vertices (including smooth NEC elbow arc points)
-    const pointIds = [];
-    for (const rawPt of centerlinePts) {
-      const pt = typeof toOriginal === 'function' ? toOriginal(rawPt) : rawPt;
-      const pid = nextId();
-      add(`#${pid}=IFCCARTESIANPOINT((${Number(pt.x).toFixed(4)},${Number(pt.y).toFixed(4)},${Number(pt.z).toFixed(4)}));`);
-      pointIds.push(`#${pid}`);
-    }
-
-    // Polyline directrix
-    const polylineId = nextId();
-    add(`#${polylineId}=IFCPOLYLINE((${pointIds.join(',')}));`);
-
-    // 3D SweptDiskSolid pipe body (tessellatable by web-ifc, Revit, and Navisworks)
-    const sweptSolidId = nextId();
-    add(`#${sweptSolidId}=IFCSWEPTDISKSOLID(#${polylineId},${radiusM.toFixed(4)},$,0.,$);`);
-
-    // Shape representation
-    const shapeRepId = nextId();
-    add(`#${shapeRepId}=IFCSHAPEREPRESENTATION(#${geomContextId},'Body','SweptSolid',(#${sweptSolidId}));`);
-
-    // Product definition shape
-    const prodShapeId = nextId();
-    add(`#${prodShapeId}=IFCPRODUCTDEFINITIONSHAPE($,$,(#${shapeRepId}));`);
-
-    // Conduit flow segment product
-    const runGuid = makeGuid(runIdx++);
-    const segmentId = nextId();
-    add(`#${segmentId}=IFCFLOWSEGMENT('${runGuid}',#${ownerHistId},'${runName}','Conduit Run (${runSize})',$,#${wcsId},#${prodShapeId},'${runSize}');`);
-    runEntityIds.push(`#${segmentId}`);
-
-    // Pset_ConduitRun properties
     const pSizeId = nextId();
     add(`#${pSizeId}=IFCPROPERTYSINGLEVALUE('Size',$,IFCLABEL('${runSize}'),$);`);
-
     const pSystemId = nextId();
     add(`#${pSystemId}=IFCPROPERTYSINGLEVALUE('System',$,IFCLABEL('${runSystem}'),$);`);
-
     const pLenId = nextId();
     add(`#${pLenId}=IFCPROPERTYSINGLEVALUE('Length',$,IFCLENGTHMEASURE(${runLen}),$);`);
+    const runPsetId = nextId();
+    add(`#${runPsetId}=IFCPROPERTYSET('${makeGuid(guidSeq++)}',#${ownerHistId},'Pset_ConduitRun',$,(#${pSizeId},#${pSystemId},#${pLenId}));`);
 
-    const psetId = nextId();
-    add(`#${psetId}=IFCPROPERTYSET('${makeGuid(runIdx++)}',#${ownerHistId},'Pset_ConduitRun',$,(#${pSizeId},#${pSystemId},#${pLenId}));`);
+    const partEntityRefs = [];
+    let segIdx = 1;
+    let fitIdx = 1;
 
-    const relDefId = nextId();
-    add(`#${relDefId}=IFCRELDEFINESBYPROPERTIES('${makeGuid(runIdx++)}',#${ownerHistId},$,$,(#${segmentId}),#${psetId});`);
+    for (const part of parts) {
+      const prodShapeId = emitSweptPipePart(part.points, radiusM);
+      const partId = nextId();
+      if (part.kind === 'fitting') {
+        const angleLabel = `${Math.round(part.bendAngle || 0)}°`;
+        const entityLine = isIfc4
+          ? `#${partId}=IFCCABLECARRIERFITTING('${makeGuid(guidSeq++)}',#${ownerHistId},'${runName} - Elbow ${fitIdx++}','${angleLabel} Conduit Bend (${runSize})',$,#${wcsId},#${prodShapeId},'${runSize}',.BEND.);`
+          : `#${partId}=IFCFLOWFITTING('${makeGuid(guidSeq++)}',#${ownerHistId},'${runName} - Elbow ${fitIdx++}','${angleLabel} Conduit Bend (${runSize})',$,#${wcsId},#${prodShapeId},'${runSize}');`;
+        add(entityLine);
+
+        const pAngleId = nextId();
+        add(`#${pAngleId}=IFCPROPERTYSINGLEVALUE('BendAngle',$,IFCREAL(${Number(part.bendAngle || 0).toFixed(2)}),$);`);
+        const pRadId = nextId();
+        add(`#${pRadId}=IFCPROPERTYSINGLEVALUE('BendRadius',$,IFCLENGTHMEASURE(${Number(part.radiusM || bendRadiusM).toFixed(4)}),$);`);
+        const fitPsetId = nextId();
+        add(`#${fitPsetId}=IFCPROPERTYSET('${makeGuid(guidSeq++)}',#${ownerHistId},'Pset_ConduitFitting',$,(#${pAngleId},#${pRadId}));`);
+        const relFitId = nextId();
+        add(`#${relFitId}=IFCRELDEFINESBYPROPERTIES('${makeGuid(guidSeq++)}',#${ownerHistId},$,$,(#${partId}),#${fitPsetId});`);
+      } else {
+        const entityLine = isIfc4
+          ? `#${partId}=IFCCABLECARRIERSEGMENT('${makeGuid(guidSeq++)}',#${ownerHistId},'${runName} - Seg ${segIdx++}','Conduit Segment (${runSize})',$,#${wcsId},#${prodShapeId},'${runSize}',.CONDUITSEGMENT.);`
+          : `#${partId}=IFCFLOWSEGMENT('${makeGuid(guidSeq++)}',#${ownerHistId},'${runName} - Seg ${segIdx++}','Conduit Segment (${runSize})',$,#${wcsId},#${prodShapeId},'${runSize}');`;
+        add(entityLine);
+      }
+
+      const ref = `#${partId}`;
+      runEntityIds.push(ref);
+      partEntityRefs.push(ref);
+      if (!systemMembers.has(runSystem)) systemMembers.set(runSystem, []);
+      systemMembers.get(runSystem).push(ref);
+    }
+
+    if (partEntityRefs.length > 0) {
+      const relDefId = nextId();
+      add(`#${relDefId}=IFCRELDEFINESBYPROPERTIES('${makeGuid(guidSeq++)}',#${ownerHistId},$,$,(${partEntityRefs.join(',')}),#${runPsetId});`);
+    }
+  }
+
+  // Group segments and fittings by electrical system (IFCSYSTEM)
+  for (const [sysName, members] of systemMembers) {
+    if (members.length === 0) continue;
+    const sysId = nextId();
+    add(`#${sysId}=IFCSYSTEM('${makeGuid(guidSeq++)}',#${ownerHistId},'${sysName}','Electrical Conduit System',$,$);`);
+    const relSysId = nextId();
+    add(`#${relSysId}=IFCRELASSIGNSTOGROUP('${makeGuid(guidSeq++)}',#${ownerHistId},$,$,(${members.join(',')}),$,#${sysId});`);
   }
 
   // Relate runs to Site spatial structure

@@ -536,16 +536,6 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
 
     if (coreBox && typeof coreBox.isEmpty === "function" && !coreBox.isEmpty()) {
       model.coreBox = coreBox.clone();
-      try {
-        if (model._bbox && typeof model._bbox.copy === "function") {
-          const localBox = coreBox.clone();
-          if (model.object?.matrixWorld) {
-            const inv = model.object.matrixWorld.clone().invert();
-            localBox.applyMatrix4(inv);
-          }
-          model._bbox.copy(localBox);
-        }
-      } catch { /* noop */ }
 
       try {
         const center = new THREE.Vector3();
@@ -799,6 +789,12 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
         throw new Error("No loaded model found to export as .frag");
       }
       return await targetModel.getBuffer(false);
+    },
+
+    getModelBounds(model) {
+      if (!model) return null;
+      const box = model.coreBox || model.box || null;
+      return box && typeof box.isEmpty === "function" && !box.isEmpty() ? box.clone() : null;
     },
 
     async getSelectionBounds(modelIdMap = {}) {
