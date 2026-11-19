@@ -38,11 +38,11 @@ export function createConduitRibbonDef(ctx) {
               [
                 {
                   id: 'conduit.open-ifc',
-                  label: 'Open IFC',
+                  label: 'Open Native IFC',
                   icon: 'open',
                   size: 'big',
                   keytip: 'MO',
-                  tooltip: 'Open IFC File',
+                  tooltip: 'Open native IFC file directly in browser',
                   run(c) {
                     const fileInput = c.els?.fileInput || getDoc()?.getElementById('file-input');
                     fileInput?.click();
@@ -72,6 +72,17 @@ export function createConduitRibbonDef(ctx) {
                   tooltip: 'Open optimized .frag cache for instant loading',
                   run(c) {
                     c.api?.openFragFile?.();
+                  },
+                },
+                {
+                  id: 'conduit.convert-frag',
+                  label: 'Compile IFC → .frag',
+                  icon: 'export',
+                  size: 'small',
+                  keytip: 'MFX',
+                  tooltip: 'Compile an IFC file via 64-bit processor into .frag cache and load it',
+                  run(c) {
+                    c.api?.openConvertFragFile?.();
                   },
                 },
                 {

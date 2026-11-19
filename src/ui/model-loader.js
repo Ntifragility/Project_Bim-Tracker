@@ -412,6 +412,11 @@ export function initModelLoader(ctx, dom, hooks, api = {}) {
     input?.click();
   }
 
+  function openConvertFragFile() {
+    const input = dom.convertFragInput || document.getElementById('convert-frag-input');
+    input?.click();
+  }
+
   // Helper: Unload a single model
   function unloadModel(modelEntry) {
     const model = modelEntry.model;
@@ -537,6 +542,46 @@ export function initModelLoader(ctx, dom, hooks, api = {}) {
       dom.fileInput.click();
     });
 
+    async function convertAndLoadIfcFile(file, progressLabel = '') {
+      if (typeof ctx.engine.convertAndLoadLargeIfc !== 'function') {
+        throw new Error('64-bit .frag compiler is unavailable in this environment.');
+      }
+      showLoader(dom, `Converting IFC → .frag${progressLabel}`, `Streaming ${file.name} (${formatBytes(file.size)}) to 64-bit .frag compiler...`, 15);
+      try {
+        const { model } = await ctx.engine.convertAndLoadLargeIfc(file, (p, detail) => {
+          updateLoader(dom, detail || `Compiling .frag cache... (${Math.round(p * 100)}%)`, 15 + p * 80);
+        });
+        if (model) {
+          ctx.activeModel = model;
+          const modelObject = model.object || model;
+          if (modelObject && !ctx.world.scene.three.children.includes(modelObject)) {
+            ctx.world.scene.three.add(modelObject);
+          }
+          ctx.loadedModels.push({
+            uuid: model.uuid || Math.random().toString(36).substring(7),
+            name: file.name,
+            size: formatBytes(file.size),
+            model,
+            sourceIfcBytes: null,
+            existingProjectTags: new Map(),
+            visible: true,
+          });
+          hooks.renderExcelTable?.();
+          hooks.renderTraySystemManager?.();
+          hooks.refreshValidationReportIfOpen?.();
+          fitModelToView(model);
+          setWireframeForModel(model, ctx.isWireframe);
+          refreshLoadedModelsList();
+          hooks.clearElementProperties?.();
+          hideLoader(dom);
+        }
+      } catch (err) {
+        console.error(`Failed to convert IFC ${file.name}:`, err);
+        updateLoader(dom, `Error: ${err.message}`, 0);
+        setTimeout(() => hideLoader(dom), 5000);
+      }
+    }
+
     dom.fileInput.addEventListener('change', async (event) => {
       const files = Array.from(event.target.files);
       if (files.length === 0) return;
@@ -547,45 +592,7 @@ export function initModelLoader(ctx, dom, hooks, api = {}) {
         const file = files[i];
         const progressLabel = files.length > 1 ? ` (${i + 1}/${files.length})` : '';
 
-        if (!file.name.toLowerCase().endsWith('.frag') && file.size > STREAM_TO_SERVER_BYTES && typeof ctx.engine.convertAndLoadLargeIfc === 'function') {
-          showLoader(dom, `Converting Large IFC${progressLabel}`, `Streaming ${file.name} (${formatBytes(file.size)}) to 64-bit .frag compiler...`, 15);
-          try {
-            const { model } = await ctx.engine.convertAndLoadLargeIfc(file, (p, detail) => {
-              updateLoader(dom, detail || `Compiling .frag cache... (${Math.round(p * 100)}%)`, 15 + p * 80);
-            });
-            if (model) {
-              ctx.activeModel = model;
-              const modelObject = model.object || model;
-              if (modelObject && !ctx.world.scene.three.children.includes(modelObject)) {
-                ctx.world.scene.three.add(modelObject);
-              }
-              ctx.loadedModels.push({
-                uuid: model.uuid || Math.random().toString(36).substring(7),
-                name: file.name,
-                size: formatBytes(file.size),
-                model,
-                sourceIfcBytes: null,
-                existingProjectTags: new Map(),
-                visible: true,
-              });
-              hooks.renderExcelTable?.();
-              hooks.renderTraySystemManager?.();
-              hooks.refreshValidationReportIfOpen?.();
-              fitModelToView(model);
-              setWireframeForModel(model, ctx.isWireframe);
-              refreshLoadedModelsList();
-              hooks.clearElementProperties?.();
-              hideLoader(dom);
-            }
-          } catch (err) {
-            console.error(`Failed to convert large IFC ${file.name}:`, err);
-            updateLoader(dom, `Error: ${err.message}`, 0);
-            setTimeout(() => hideLoader(dom), 5000);
-          }
-          continue;
-        }
-
-        showLoader(dom, `Uploading File${progressLabel}`, `Reading ${file.name}...`, 10);
+        showLoader(dom, `Uploading Native IFC${progressLabel}`, `Reading ${file.name}...`, 10);
         try {
           const data = await file.arrayBuffer();
           const buffer = new Uint8Array(data);
@@ -601,6 +608,20 @@ export function initModelLoader(ctx, dom, hooks, api = {}) {
         }
       }
     });
+
+    const convertInput = dom.convertFragInput || document.getElementById('convert-frag-input');
+    if (convertInput) {
+      convertInput.addEventListener('change', async (event) => {
+        const files = Array.from(event.target.files);
+        if (files.length === 0) return;
+        convertInput.value = '';
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const progressLabel = files.length > 1 ? ` (${i + 1}/${files.length})` : '';
+          await convertAndLoadIfcFile(file, progressLabel);
+        }
+      });
+    }
 
     if (dom.fragFileInput) {
       dom.fragFileInput.addEventListener('change', async (event) => {
@@ -657,6 +678,7 @@ export function initModelLoader(ctx, dom, hooks, api = {}) {
     api.fitModelToView = fitModelToView;
     api.loadFrag = loadFrag;
     api.openFragFile = openFragFile;
+    api.openConvertFragFile = openConvertFragFile;
     api.saveFragFile = saveFragFile;
   }
 

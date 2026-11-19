@@ -50,11 +50,10 @@ export function createModelLoad({ state, els, engine, api }) {
   let activeLoadedModel = null;
   const getModel = () => activeLoadedModel;
 
-  async function loadIfcFile(file) {
+  async function loadIfcFile(file, { convertToFrag = false } = {}) {
     if (file?.name?.toLowerCase().endsWith('.frag')) {
       return loadFragFile(file);
     }
-    const STREAM_TO_SERVER_BYTES = 200 * 1024 * 1024;
     const headerBuf = await file.slice(0, 4096).arrayBuffer();
     const headerBytes = new Uint8Array(headerBuf);
     if (
@@ -70,8 +69,11 @@ export function createModelLoad({ state, els, engine, api }) {
     let model = null;
     let retainedBuffer = null;
 
-    if (file.size > STREAM_TO_SERVER_BYTES && typeof engine.convertAndLoadLargeIfc === 'function') {
-      api.showLoading(`Streaming large IFC (${formatFileSize(file.size)}) to 64-bit .frag compiler…`, 15, file.name);
+    if (convertToFrag) {
+      if (typeof engine.convertAndLoadLargeIfc !== 'function') {
+        throw new Error('64-bit .frag compiler is unavailable in this environment.');
+      }
+      api.showLoading(`Compiling IFC → .frag (${formatFileSize(file.size)})…`, 15, file.name);
       const tailSlice = await file.slice(Math.max(0, file.size - 65536)).arrayBuffer();
       const headSlice = await file.slice(0, Math.min(file.size, 65536)).arrayBuffer();
       const fpBytes = new Uint8Array(headSlice.byteLength + tailSlice.byteLength + 8);
@@ -84,7 +86,7 @@ export function createModelLoad({ state, els, engine, api }) {
       });
       model = res.model;
     } else {
-      api.showLoading('Reading IFC file…', 10, file.name);
+      api.showLoading('Reading Native IFC file…', 10, file.name);
       const buffer = await file.arrayBuffer();
 
       api.showLoading('Calculating SHA-256 integrity hash…', 30);
@@ -196,6 +198,11 @@ export function createModelLoad({ state, els, engine, api }) {
     input?.click();
   }
 
+  function openConvertFragFile() {
+    const input = els.convertFragInput || document.getElementById('convert-frag-input');
+    input?.click();
+  }
+
   async function loadSampleModel(samplePath = '/BasicHouse.ifc') {
     try {
       api.showLoading('Fetching sample IFC model…', 15, 'BasicHouse.ifc');
@@ -229,6 +236,20 @@ export function createModelLoad({ state, els, engine, api }) {
         console.error('[Conduit Takeoff] Error loading .frag:', err);
         api.hideLoading();
         alert(`Failed to load .frag cache: ${err.message}`);
+      }
+    });
+
+    const convertInput = els.convertFragInput || document.getElementById('convert-frag-input');
+    convertInput?.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      e.target.value = '';
+      if (!file) return;
+      try {
+        await loadIfcFile(file, { convertToFrag: true });
+      } catch (err) {
+        console.error('[Conduit Takeoff] Error compiling IFC → .frag:', err);
+        api.hideLoading();
+        alert(`Failed to compile IFC → .frag: ${err.message}`);
       }
     });
 
@@ -285,6 +306,7 @@ export function createModelLoad({ state, els, engine, api }) {
   api.loadFragFile = loadFragFile;
   api.saveFragFile = saveFragFile;
   api.openFragFile = openFragFile;
+  api.openConvertFragFile = openConvertFragFile;
   api.loadSampleModel = loadSampleModel;
   api.fitCameraToModel = (model) => fitCameraToModel(engine, model);
   api.getLoadedModel = getModel;

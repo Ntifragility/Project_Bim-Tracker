@@ -41,11 +41,11 @@ export function createTrayRibbonDef(ctx) {
               [
                 {
                   id: 'tray.open-ifc',
-                  label: 'Open\nIFC',
+                  label: 'Open Native\nIFC',
                   icon: 'open',
                   size: 'big',
                   keytip: 'MO',
-                  tooltip: 'Open IFC file',
+                  tooltip: 'Open native IFC file (retained in memory for tagging & pure IFC re-export)',
                   run: () => {
                     if (dom.fileInput) dom.fileInput.click();
                   },
@@ -79,6 +79,21 @@ export function createTrayRibbonDef(ctx) {
                       api.openFragFile();
                     } else if (dom.fragFileInput) {
                       dom.fragFileInput.click();
+                    }
+                  },
+                },
+                {
+                  id: 'tray.convert-frag',
+                  label: 'Compile IFC → .frag',
+                  icon: 'export',
+                  size: 'small',
+                  keytip: 'MX',
+                  tooltip: 'Compile a large IFC file via 64-bit processor into .frag cache and load it',
+                  run: () => {
+                    if (typeof api.openConvertFragFile === 'function') {
+                      api.openConvertFragFile();
+                    } else if (dom.convertFragInput) {
+                      dom.convertFragInput.click();
                     }
                   },
                 },

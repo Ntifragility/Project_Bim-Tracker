@@ -20,6 +20,7 @@ export function collectEls() {
     btnOpenIfc: document.getElementById('btn-open-ifc'),
     fileInput: document.getElementById('file-input'),
     fragFileInput: document.getElementById('frag-file-input'),
+    convertFragInput: document.getElementById('convert-frag-input'),
     modelInfo: document.getElementById('model-info'),
     modelName: document.getElementById('model-name'),
     modelSize: document.getElementById('model-size'),
