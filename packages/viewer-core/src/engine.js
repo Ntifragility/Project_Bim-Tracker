@@ -553,8 +553,18 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
     },
 
     async loadIfc(buffer, name, onProgress) {
+      const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+      const isZlibFrag =
+        bytes.byteLength >= 2 &&
+        bytes[0] === 0x78 &&
+        (bytes[1] === 0x9c || bytes[1] === 0x01 || bytes[1] === 0xda || bytes[1] === 0x5e);
+      if ((typeof name === "string" && name.toLowerCase().endsWith(".frag")) || isZlibFrag) {
+        throw new Error(
+          "This file is a compiled .frag binary, not a plain-text STEP .ifc file. Please use 'Open Cache (.frag)' instead.",
+        );
+      }
       try {
-        return await ifcLoader.load(buffer, true, name, {
+        return await ifcLoader.load(bytes, true, name, {
           instanceCallback: (importer) => {
             importer.addAllAttributes();
             importer.addAllRelations();
@@ -565,7 +575,17 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
         });
       } catch (error) {
         console.warn("[COVILLAF] Loading with options failed, attempting a simple load:", error);
-        return ifcLoader.load(buffer, true, name);
+        try {
+          return await ifcLoader.load(bytes, true, name);
+        } catch (fallbackErr) {
+          const msg = fallbackErr?.message || String(fallbackErr);
+          if (/memory access out of bounds|abort\(/i.test(msg)) {
+            throw new Error(
+              `IFC parser ran out of WASM memory or hit non-STEP data (${msg}). For large models or .frag files, use 'Compile IFC -> .frag' or 'Open Cache (.frag)'.`,
+            );
+          }
+          throw fallbackErr;
+        }
       }
     },
 
