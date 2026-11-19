@@ -29,6 +29,19 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(zlib)
 
+# 2b. web-ifc 0.77 native 64-bit C++ core (Phase 2; enable when >= 1.5 GB free space is available)
+option(IFC2FRAG_WITH_WEBIFC "Fetch and link native web-ifc 0.77 C++ core" OFF)
+if(IFC2FRAG_WITH_WEBIFC)
+  FetchContent_Declare(
+    web_ifc
+    GIT_REPOSITORY https://github.com/ThatOpen/engine_web-ifc.git
+    GIT_TAG        0.77
+    GIT_SHALLOW    TRUE
+    SOURCE_SUBDIR  src/cpp
+  )
+  FetchContent_MakeAvailable(web_ifc)
+endif()
+
 # 3. Generate C++ FlatBuffers header from @thatopen/fragments schema
 set(FRAG_SCHEMA "${CMAKE_CURRENT_SOURCE_DIR}/schema/fragments.fbs")
 set(FRAG_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
@@ -56,6 +69,9 @@ target_include_directories(frag_core PUBLIC
   "${zlib_BINARY_DIR}"
 )
 target_link_libraries(frag_core PUBLIC flatbuffers zlibstatic)
+if(IFC2FRAG_WITH_WEBIFC)
+  target_link_libraries(frag_core PUBLIC web-ifc-library)
+endif()
 
 # 5. CLI executable
 add_executable(ifc2frag
