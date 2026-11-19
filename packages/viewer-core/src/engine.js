@@ -653,6 +653,9 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
         sphere.radius = 1.0;
       }
       world.camera.controls.fitToSphere(sphere, true);
+      if (typeof world.camera.controls.setOrbitPoint === "function") {
+        world.camera.controls.setOrbitPoint(sphere.center.x, sphere.center.y, sphere.center.z);
+      }
       try {
         fragments.core?.update?.(true);
       } catch { /* headless */ }
