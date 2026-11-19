@@ -84,6 +84,9 @@ add_executable(ifc2frag
   src/main.cpp
 )
 target_link_libraries(ifc2frag PRIVATE frag_core)
+if(WIN32)
+  target_link_libraries(ifc2frag PRIVATE comdlg32)
+endif()
 if(MINGW)
   target_link_options(ifc2frag PRIVATE -static -static-libgcc -static-libstdc++)
 endif()
