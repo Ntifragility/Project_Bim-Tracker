@@ -30,6 +30,45 @@ function decodeIfc(sourceBytes) {
   return typeof sourceBytes === 'string' ? sourceBytes : new TextDecoder('utf-8').decode(sourceBytes);
 }
 
+const DEFAULT_SCAN_CHUNK_BYTES = 16 * 1024 * 1024; // 16 MB sliding window
+
+/**
+ * Streams an IFC string or Uint8Array in line-aligned UTF-8 text chunks so V8's
+ * 512 MB max string length is never exceeded on 1.5 GB+ models.
+ */
+export function scanIfcChunks(sourceBytes, onChunkText, chunkSize = DEFAULT_SCAN_CHUNK_BYTES) {
+  if (typeof sourceBytes === 'string') {
+    onChunkText(sourceBytes);
+    return;
+  }
+  const bytes = sourceBytes instanceof Uint8Array ? sourceBytes : new Uint8Array(sourceBytes);
+  if (bytes.byteLength <= chunkSize) {
+    onChunkText(new TextDecoder('utf-8').decode(bytes));
+    return;
+  }
+
+  const decoder = new TextDecoder('utf-8');
+  let tail = '';
+  for (let offset = 0; offset < bytes.byteLength; offset += chunkSize) {
+    const end = Math.min(bytes.byteLength, offset + chunkSize);
+    const isLast = end >= bytes.byteLength;
+    const chunk = decoder.decode(bytes.subarray(offset, end), { stream: !isLast });
+    const combined = tail + chunk;
+    if (isLast) {
+      if (combined) onChunkText(combined);
+      tail = '';
+    } else {
+      const lastNewline = combined.lastIndexOf('\n');
+      if (lastNewline >= 0) {
+        onChunkText(combined.slice(0, lastNewline + 1));
+        tail = combined.slice(lastNewline + 1);
+      } else {
+        tail = combined;
+      }
+    }
+  }
+}
+
 function findDataTerminator(source) {
   const match = /ENDSEC\s*;\s*END-ISO-10303-21\s*;\s*$/i.exec(source);
   if (!match) throw new Error('The IFC DATA section terminator was not found.');
@@ -43,87 +82,137 @@ function getEntityIds(source) {
 export function extractProjectTagsFromIfc(sourceBytes, options = {}) {
   const propertySetName = options.propertySetName || 'CCP_TAG';
   const propertyName = options.propertyName || 'Tag';
-  const source = decodeIfc(sourceBytes);
   const stringPattern = "((?:''|[^'])*)";
-  const properties = new Map();
-  const propertySets = new Map();
-  const tags = new Map();
-
-  const propertyRegex = new RegExp(
-    `^\\s*#(\\d+)\\s*=\\s*IFCPROPERTYSINGLEVALUE\\(\\s*'${stringPattern}'\\s*,[^,]*,\\s*[A-Z0-9_]+\\(\\s*'${stringPattern}'\\s*\\)`,
-    'gmi',
-  );
-  for (const match of source.matchAll(propertyRegex)) {
-    if (unescapeStepString(match[2]).toLowerCase() !== propertyName.toLowerCase()) continue;
-    properties.set(Number(match[1]), unescapeStepString(match[3]));
-  }
+  const propertySets = new Map(); // psetId -> Set<propId>
+  const wantedPropIds = new Set();
+  const rawRelations = [];
 
   const propertySetRegex = new RegExp(
     `^\\s*#(\\d+)\\s*=\\s*IFCPROPERTYSET\\([^;]*?,\\s*'${stringPattern}'\\s*,[^;]*?\\(([^)]*)\\)\\s*\\)\\s*;`,
     'gmi',
   );
-  for (const match of source.matchAll(propertySetRegex)) {
-    if (unescapeStepString(match[2]).toLowerCase() !== propertySetName.toLowerCase()) continue;
-    const propertyId = Array.from(match[3].matchAll(/#(\d+)/g), (reference) => Number(reference[1]))
-      .find((id) => properties.has(id));
-    if (propertyId) propertySets.set(Number(match[1]), propertyId);
+  const relationRegex = /^\s*#\d+\s*=\s*IFCRELDEFINESBYPROPERTIES\([^;]*?\(([^)]*)\)\s*,\s*#(\d+)\s*\)\s*;/gmi;
+
+  // Pass 1: locate matching IFCPROPERTYSET + IFCRELDEFINESBYPROPERTIES
+  scanIfcChunks(sourceBytes, (chunkText) => {
+    for (const match of chunkText.matchAll(propertySetRegex)) {
+      if (unescapeStepString(match[2]).toLowerCase() !== propertySetName.toLowerCase()) continue;
+      const psetId = Number(match[1]);
+      const propIds = [];
+      for (const ref of match[3].matchAll(/#(\d+)/g)) {
+        const pid = Number(ref[1]);
+        propIds.push(pid);
+        wantedPropIds.add(pid);
+      }
+      if (propIds.length > 0) propertySets.set(psetId, propIds);
+    }
+    for (const match of chunkText.matchAll(relationRegex)) {
+      rawRelations.push({ targetsText: match[1], psetId: Number(match[2]) });
+    }
+  }, options.chunkSize);
+
+  if (propertySets.size === 0 || wantedPropIds.size === 0) {
+    return new Map();
   }
 
-  const relationRegex = /^\s*#\d+\s*=\s*IFCRELDEFINESBYPROPERTIES\([^;]*?\(([^)]*)\)\s*,\s*#(\d+)\s*\)\s*;/gmi;
-  for (const match of source.matchAll(relationRegex)) {
-    const propertyId = propertySets.get(Number(match[2]));
+  // Pass 2: resolve only the referenced IFCPROPERTYSINGLEVALUE entries
+  const properties = new Map();
+  const propertyRegex = new RegExp(
+    `^\\s*#(\\d+)\\s*=\\s*IFCPROPERTYSINGLEVALUE\\(\\s*'${stringPattern}'\\s*,[^,]*,\\s*[A-Z0-9_]+\\(\\s*'${stringPattern}'\\s*\\)`,
+    'gmi',
+  );
+  scanIfcChunks(sourceBytes, (chunkText) => {
+    for (const match of chunkText.matchAll(propertyRegex)) {
+      const pid = Number(match[1]);
+      if (!wantedPropIds.has(pid)) continue;
+      if (unescapeStepString(match[2]).toLowerCase() !== propertyName.toLowerCase()) continue;
+      properties.set(pid, unescapeStepString(match[3]));
+    }
+  }, options.chunkSize);
+
+  const tags = new Map();
+  for (const rel of rawRelations) {
+    const propIds = propertySets.get(rel.psetId);
+    if (!propIds) continue;
+    const propertyId = propIds.find((id) => properties.has(id));
     if (!propertyId) continue;
-    for (const reference of match[1].matchAll(/#(\d+)/g)) {
+    for (const reference of rel.targetsText.matchAll(/#(\d+)/g)) {
       tags.set(Number(reference[1]), { tag: properties.get(propertyId), propertyId });
     }
   }
   return tags;
 }
 
-function extractNamedPropertySets(sourceBytes) {
-  const source = decodeIfc(sourceBytes);
+function extractNamedPropertySets(sourceBytes, filterSetNames = null) {
   const stringPattern = "((?:''|[^'])*)";
-  const properties = new Map();
-  const propertySets = new Map();
-  const elementSets = new Map();
-  const propertyRegex = new RegExp(
-    `^\\s*#(\\d+)\\s*=\\s*IFCPROPERTYSINGLEVALUE\\(\\s*'${stringPattern}'\\s*,[^,]*,\\s*[A-Z0-9_]+\\(\\s*'${stringPattern}'\\s*\\)`,
-    'gmi',
-  );
-  for (const match of source.matchAll(propertyRegex)) {
-    properties.set(Number(match[1]), {
-      name: unescapeStepString(match[2]),
-      value: unescapeStepString(match[3]),
-    });
-  }
+  const propertySets = new Map(); // psetId -> { name, propIds }
+  const wantedPropIds = new Set();
+  const rawRelations = [];
+
   const propertySetRegex = new RegExp(
     `^\\s*#(\\d+)\\s*=\\s*IFCPROPERTYSET\\([^;]*?,\\s*'${stringPattern}'\\s*,[^;]*?\\(([^)]*)\\)\\s*\\)\\s*;`,
     'gmi',
   );
-  for (const match of source.matchAll(propertySetRegex)) {
+  const relationRegex = /^\s*#\d+\s*=\s*IFCRELDEFINESBYPROPERTIES\([^;]*?\(([^)]*)\)\s*,\s*#(\d+)\s*\)\s*;/gmi;
+
+  scanIfcChunks(sourceBytes, (chunkText) => {
+    for (const match of chunkText.matchAll(propertySetRegex)) {
+      const name = unescapeStepString(match[2]);
+      if (filterSetNames && !filterSetNames.has(name.toUpperCase())) continue;
+      const propIds = [];
+      for (const reference of match[3].matchAll(/#(\d+)/g)) {
+        const pid = Number(reference[1]);
+        propIds.push(pid);
+        wantedPropIds.add(pid);
+      }
+      propertySets.set(Number(match[1]), { name, propIds });
+    }
+    for (const match of chunkText.matchAll(relationRegex)) {
+      rawRelations.push({ targetsText: match[1], psetId: Number(match[2]) });
+    }
+  });
+
+  const elementSets = new Map();
+  if (propertySets.size === 0) return elementSets;
+
+  const properties = new Map();
+  if (wantedPropIds.size > 0) {
+    const propertyRegex = new RegExp(
+      `^\\s*#(\\d+)\\s*=\\s*IFCPROPERTYSINGLEVALUE\\(\\s*'${stringPattern}'\\s*,[^,]*,\\s*[A-Z0-9_]+\\(\\s*'${stringPattern}'\\s*\\)`,
+      'gmi',
+    );
+    scanIfcChunks(sourceBytes, (chunkText) => {
+      for (const match of chunkText.matchAll(propertyRegex)) {
+        const pid = Number(match[1]);
+        if (!wantedPropIds.has(pid)) continue;
+        properties.set(pid, {
+          name: unescapeStepString(match[2]),
+          value: unescapeStepString(match[3]),
+        });
+      }
+    });
+  }
+
+  for (const rel of rawRelations) {
+    const pset = propertySets.get(rel.psetId);
+    if (!pset) continue;
     const values = new Map();
-    for (const reference of match[3].matchAll(/#(\d+)/g)) {
-      const propertyId = Number(reference[1]);
+    for (const propertyId of pset.propIds) {
       const property = properties.get(propertyId);
       if (property) values.set(property.name.toLowerCase(), { ...property, propertyId });
     }
-    propertySets.set(Number(match[1]), { name: unescapeStepString(match[2]), values });
-  }
-  const relationRegex = /^\s*#\d+\s*=\s*IFCRELDEFINESBYPROPERTIES\([^;]*?\(([^)]*)\)\s*,\s*#(\d+)\s*\)\s*;/gmi;
-  for (const match of source.matchAll(relationRegex)) {
-    const propertySet = propertySets.get(Number(match[2]));
-    if (!propertySet) continue;
-    for (const reference of match[1].matchAll(/#(\d+)/g)) {
+    const resolvedSet = { name: pset.name, values };
+    for (const reference of rel.targetsText.matchAll(/#(\d+)/g)) {
       const localId = Number(reference[1]);
       if (!elementSets.has(localId)) elementSets.set(localId, new Map());
-      elementSets.get(localId).set(propertySet.name.toUpperCase(), propertySet);
+      elementSets.get(localId).set(pset.name.toUpperCase(), resolvedSet);
     }
   }
   return elementSets;
 }
 
 export function extractTraySystemAssignmentsFromIfc(sourceBytes) {
-  const elementSets = extractNamedPropertySets(sourceBytes);
+  const elementSets = extractNamedPropertySets(sourceBytes, new Set(['CCP_TRAY_SYSTEM']));
   const assignments = new Map();
   for (const [localId, sets] of elementSets) {
     const system = sets.get('CCP_TRAY_SYSTEM');

@@ -14,11 +14,35 @@
       <!-- 3D Viewport -->
       <div id="viewer-container"></div>
 
-      <!-- Right-Click Viewport Context Menu -->
+      <!-- Right-Click Revizto Viewport Context Menu -->
       <div id="viewer-context-menu" class="viewer-context-menu" role="menu" hidden>
         <button id="context-focus-item" type="button" role="menuitem" hidden>
           <span aria-hidden="true">◎</span>
           Focus on Item
+        </button>
+        <button id="context-hide-item" type="button" role="menuitem" hidden>
+          <span aria-hidden="true">🙈</span>
+          Hide Selected
+        </button>
+        <button id="context-unhide-all" type="button" role="menuitem" hidden>
+          <span aria-hidden="true">👁</span>
+          Unhide All
+        </button>
+        <button id="context-isolate-item" type="button" role="menuitem" hidden>
+          <span aria-hidden="true">◌</span>
+          Isolate Selected
+        </button>
+        <button id="context-isolate-ghost" type="button" role="menuitem" hidden>
+          <span aria-hidden="true">◈</span>
+          Isolate in Transparency
+        </button>
+        <button id="context-section-box" type="button" role="menuitem" hidden>
+          <span aria-hidden="true">◫</span>
+          Section Box Selection
+        </button>
+        <button id="context-show-all" type="button" role="menuitem" hidden>
+          <span aria-hidden="true">●</span>
+          Show All
         </button>
       </div>
 
@@ -112,6 +136,7 @@
             <button id="btn-open-ifc" type="button"></button>
             <input id="file-input" type="file" accept=".ifc,.frag" />
             <input id="frag-file-input" type="file" accept=".frag,.bin" style="display:none;" />
+            <input id="convert-frag-input" type="file" accept=".ifc" style="display:none;" />
             <div id="model-info" hidden>
               <span id="model-name">—</span>
               <span id="model-size">—</span>

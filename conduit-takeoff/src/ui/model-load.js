@@ -17,19 +17,30 @@ function detectIfcSchema(buf) {
   return 'IFC4';
 }
 
-function fitCameraToModel(engine, model) {
-  if (!model || !engine.world?.camera?.controls) return;
+function getModelBoundingSphere(model) {
+  if (!model) return null;
   const modelObject = model.object || model;
-  const storedBox = model.box;
+  const storedBox = model.coreBox || model.box;
   const box = storedBox && !storedBox.isEmpty()
     ? storedBox
     : new THREE.Box3().setFromObject(modelObject);
+  if (!box || box.isEmpty()) return null;
+  const sphere = new THREE.Sphere();
+  box.getBoundingSphere(sphere);
+  if (!Number.isFinite(sphere.radius) || sphere.radius <= 0) sphere.radius = 10;
+  return sphere;
+}
 
-  if (box && !box.isEmpty()) {
-    const sphere = new THREE.Sphere();
-    box.getBoundingSphere(sphere);
-    if (!Number.isFinite(sphere.radius) || sphere.radius <= 0) sphere.radius = 1;
+function fitCameraToModel(engine, model) {
+  if (!model || !engine.world?.camera?.controls) return;
+  const sphere = getModelBoundingSphere(model);
+
+  if (sphere) {
     engine.world.camera.controls.fitToSphere(sphere, true);
+    try { engine.fragments?.core?.update?.(true); } catch {}
+    setTimeout(() => {
+      try { engine.fragments?.core?.update?.(true); } catch {}
+    }, 220);
   } else {
     engine.world.camera.controls.setLookAt(12, 12, 12, 0, 2, 0, true);
   }
@@ -39,18 +50,54 @@ export function createModelLoad({ state, els, engine, api }) {
   let activeLoadedModel = null;
   const getModel = () => activeLoadedModel;
 
-  async function loadIfcFile(file) {
-    api.showLoading('Reading IFC file…', 10, file.name);
-    const buffer = await file.arrayBuffer();
+  async function loadIfcFile(file, { convertToFrag = false } = {}) {
+    if (file?.name?.toLowerCase().endsWith('.frag')) {
+      return loadFragFile(file);
+    }
+    const headerBuf = await file.slice(0, 4096).arrayBuffer();
+    const headerBytes = new Uint8Array(headerBuf);
+    if (
+      headerBytes.byteLength >= 2 &&
+      headerBytes[0] === 0x78 &&
+      (headerBytes[1] === 0x9c || headerBytes[1] === 0x01 || headerBytes[1] === 0xda || headerBytes[1] === 0x5e)
+    ) {
+      return loadFragFile(file);
+    }
+    const schema = detectIfcSchema(headerBuf);
 
-    api.showLoading('Calculating SHA-256 integrity hash…', 30);
-    const sha256 = await computeSha256(buffer);
-    const schema = detectIfcSchema(buffer);
+    let sha256 = '';
+    let model = null;
+    let retainedBuffer = null;
 
-    api.showLoading('Parsing IFC geometry in Web Worker…', 50);
-    const model = await engine.loadIfc(new Uint8Array(buffer), file.name, (progress) => {
-      api.showLoading('Loading fragments…', 50 + progress * 0.45);
-    });
+    if (convertToFrag) {
+      if (typeof engine.convertAndLoadLargeIfc !== 'function') {
+        throw new Error('64-bit .frag compiler is unavailable in this environment.');
+      }
+      api.showLoading(`Compiling IFC → .frag (${formatFileSize(file.size)})…`, 15, file.name);
+      const tailSlice = await file.slice(Math.max(0, file.size - 65536)).arrayBuffer();
+      const headSlice = await file.slice(0, Math.min(file.size, 65536)).arrayBuffer();
+      const fpBytes = new Uint8Array(headSlice.byteLength + tailSlice.byteLength + 8);
+      fpBytes.set(new Uint8Array(headSlice), 0);
+      fpBytes.set(new Uint8Array(tailSlice), headSlice.byteLength);
+      sha256 = await computeSha256(fpBytes.buffer);
+
+      const res = await engine.convertAndLoadLargeIfc(file, (p, detail) => {
+        api.showLoading(detail || 'Compiling .frag cache…', 15 + p * 80);
+      });
+      model = res.model;
+    } else {
+      api.showLoading('Reading Native IFC file…', 10, file.name);
+      const buffer = await file.arrayBuffer();
+
+      api.showLoading('Calculating SHA-256 integrity hash…', 30);
+      sha256 = await computeSha256(buffer);
+
+      api.showLoading('Parsing IFC geometry in Web Worker…', 50);
+      model = await engine.loadIfc(new Uint8Array(buffer), file.name, (progress) => {
+        api.showLoading('Loading fragments…', 50 + progress * 0.45);
+      });
+      retainedBuffer = file.size <= 150 * 1024 * 1024 ? buffer : null;
+    }
 
     if (!model) {
       throw new Error('Parsed IFC model is empty or invalid.');
@@ -70,7 +117,7 @@ export function createModelLoad({ state, els, engine, api }) {
     state.sourceModel.size = file.size;
     state.sourceModel.sha256 = sha256;
     state.sourceModel.schema = schema;
-    state.sourceModel.buffer = buffer;
+    state.sourceModel.buffer = retainedBuffer;
 
     // Populate UI
     els.modelInfo.hidden = false;
@@ -110,7 +157,7 @@ export function createModelLoad({ state, els, engine, api }) {
 
     state.sourceModel.name = file.name;
     state.sourceModel.size = file.size;
-    state.sourceModel.buffer = buffer;
+    state.sourceModel.buffer = null;
     state.sourceModel.schema = 'FRAG-BINARY';
 
     els.modelInfo.hidden = false;
@@ -151,6 +198,11 @@ export function createModelLoad({ state, els, engine, api }) {
     input?.click();
   }
 
+  function openConvertFragFile() {
+    const input = els.convertFragInput || document.getElementById('convert-frag-input');
+    input?.click();
+  }
+
   async function loadSampleModel(samplePath = '/BasicHouse.ifc') {
     try {
       api.showLoading('Fetching sample IFC model…', 15, 'BasicHouse.ifc');
@@ -176,6 +228,7 @@ export function createModelLoad({ state, els, engine, api }) {
 
     els.fragFileInput?.addEventListener('change', async (e) => {
       const file = e.target.files?.[0];
+      e.target.value = '';
       if (!file) return;
       try {
         await loadFragFile(file);
@@ -186,16 +239,35 @@ export function createModelLoad({ state, els, engine, api }) {
       }
     });
 
+    const convertInput = els.convertFragInput || document.getElementById('convert-frag-input');
+    convertInput?.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      e.target.value = '';
+      if (!file) return;
+      try {
+        await loadIfcFile(file, { convertToFrag: true });
+      } catch (err) {
+        console.error('[Conduit Takeoff] Error compiling IFC → .frag:', err);
+        api.hideLoading();
+        alert(`Failed to compile IFC → .frag: ${err.message}`);
+      }
+    });
+
     els.fileInput.addEventListener('change', async (e) => {
       const file = e.target.files?.[0];
+      e.target.value = '';
       if (!file) return;
 
       try {
-        await loadIfcFile(file);
+        if (file.name.toLowerCase().endsWith('.frag')) {
+          await loadFragFile(file);
+        } else {
+          await loadIfcFile(file);
+        }
       } catch (err) {
-        console.error('[Conduit Takeoff] Error loading IFC:', err);
+        console.error('[Conduit Takeoff] Error loading model:', err);
         api.hideLoading();
-        alert(`Failed to load IFC file: ${err.message}`);
+        alert(`Failed to load model file: ${err.message}`);
       }
     });
 
@@ -209,15 +281,24 @@ export function createModelLoad({ state, els, engine, api }) {
     });
 
     els.btnViewTop.addEventListener('click', () => {
-      engine.world?.camera?.controls?.setLookAt(0, 30, 0, 0, 0, 0, true);
+      const s = getModelBoundingSphere(activeLoadedModel);
+      const c = s ? s.center : { x: 0, y: 0, z: 0 };
+      const d = s ? Math.max(30, s.radius * 2.2) : 30;
+      engine.world?.camera?.controls?.setLookAt(c.x, c.y + d, c.z + 0.01, c.x, c.y, c.z, true);
     });
 
     els.btnViewFront.addEventListener('click', () => {
-      engine.world?.camera?.controls?.setLookAt(0, 2, 30, 0, 2, 0, true);
+      const s = getModelBoundingSphere(activeLoadedModel);
+      const c = s ? s.center : { x: 0, y: 2, z: 0 };
+      const d = s ? Math.max(30, s.radius * 2.2) : 30;
+      engine.world?.camera?.controls?.setLookAt(c.x, c.y, c.z + d, c.x, c.y, c.z, true);
     });
 
     els.btnViewRight.addEventListener('click', () => {
-      engine.world?.camera?.controls?.setLookAt(30, 2, 0, 0, 2, 0, true);
+      const s = getModelBoundingSphere(activeLoadedModel);
+      const c = s ? s.center : { x: 0, y: 2, z: 0 };
+      const d = s ? Math.max(30, s.radius * 2.2) : 30;
+      engine.world?.camera?.controls?.setLookAt(c.x + d, c.y, c.z, c.x, c.y, c.z, true);
     });
   }
 
@@ -225,6 +306,7 @@ export function createModelLoad({ state, els, engine, api }) {
   api.loadFragFile = loadFragFile;
   api.saveFragFile = saveFragFile;
   api.openFragFile = openFragFile;
+  api.openConvertFragFile = openConvertFragFile;
   api.loadSampleModel = loadSampleModel;
   api.fitCameraToModel = (model) => fitCameraToModel(engine, model);
   api.getLoadedModel = getModel;

@@ -32,7 +32,7 @@ export function initModelLoader(ctx, dom, hooks, api = {}) {
     for (const model of targets) {
       // FragmentsModel.box contains the complete IFC bounds even when its
       // distant tiles have not yet been rendered by the current camera view.
-      const storedBox = model?.box;
+      const storedBox = model?.coreBox || model?.box;
       const box = storedBox && !storedBox.isEmpty()
         // FragmentsModel.box is already returned in world coordinates.
         ? storedBox
@@ -52,6 +52,10 @@ export function initModelLoader(ctx, dom, hooks, api = {}) {
     combinedBox.getBoundingSphere(sphere);
     if (!Number.isFinite(sphere.radius) || sphere.radius <= 0) sphere.radius = 1;
     world.camera.controls.fitToSphere(sphere, true);
+    try { ctx.fragments?.core?.update?.(true); } catch {}
+    setTimeout(() => {
+      try { ctx.fragments?.core?.update?.(true); } catch {}
+    }, 220);
   }
 
   // Helper: Fit camera to a single model
@@ -214,10 +218,23 @@ export function initModelLoader(ctx, dom, hooks, api = {}) {
     hooks.updateProjectBrowser?.() || ctx.api?.updateProjectBrowser?.();
   }
 
+  const LARGE_IFC_BYTES = 150 * 1024 * 1024;
+  const STREAM_TO_SERVER_BYTES = 200 * 1024 * 1024;
+
   // Loader function
   async function loadModel(buffer, name, sizeFormatted) {
+    const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+    const isZlibFrag =
+      bytes.byteLength >= 2 &&
+      bytes[0] === 0x78 &&
+      (bytes[1] === 0x9c || bytes[1] === 0x01 || bytes[1] === 0xda || bytes[1] === 0x5e);
+    if ((typeof name === 'string' && name.toLowerCase().endsWith('.frag')) || isZlibFrag) {
+      return loadFrag(bytes, name, sizeFormatted);
+    }
     showLoader(dom, 'Loading Model', `Parsing '${name}'...`, 30);
-    const sourceIfcBytes = buffer.slice();
+    const isHeavy = bytes.byteLength > LARGE_IFC_BYTES;
+    // Never duplicate multi-hundred-MB buffers in JS heap; only retain source bytes for small/medium editable IFCs
+    const sourceIfcBytes = isHeavy ? null : bytes;
 
     // Check if the model with the same name is already loaded to avoid collisions
     if (ctx.loadedModels.some((m) => m.name === name)) {
@@ -268,7 +285,7 @@ export function initModelLoader(ctx, dom, hooks, api = {}) {
         size: sizeFormatted,
         model,
         sourceIfcBytes,
-        existingProjectTags: extractTraySystemAssignmentsFromIfc(sourceIfcBytes),
+        existingProjectTags: extractTraySystemAssignmentsFromIfc(bytes),
         visible: true,
       };
 
@@ -392,6 +409,11 @@ export function initModelLoader(ctx, dom, hooks, api = {}) {
 
   function openFragFile() {
     const input = dom.fragFileInput || document.getElementById('frag-file-input');
+    input?.click();
+  }
+
+  function openConvertFragFile() {
+    const input = dom.convertFragInput || document.getElementById('convert-frag-input');
     input?.click();
   }
 
@@ -520,6 +542,46 @@ export function initModelLoader(ctx, dom, hooks, api = {}) {
       dom.fileInput.click();
     });
 
+    async function convertAndLoadIfcFile(file, progressLabel = '') {
+      if (typeof ctx.engine.convertAndLoadLargeIfc !== 'function') {
+        throw new Error('64-bit .frag compiler is unavailable in this environment.');
+      }
+      showLoader(dom, `Converting IFC → .frag${progressLabel}`, `Streaming ${file.name} (${formatBytes(file.size)}) to 64-bit .frag compiler...`, 15);
+      try {
+        const { model } = await ctx.engine.convertAndLoadLargeIfc(file, (p, detail) => {
+          updateLoader(dom, detail || `Compiling .frag cache... (${Math.round(p * 100)}%)`, 15 + p * 80);
+        });
+        if (model) {
+          ctx.activeModel = model;
+          const modelObject = model.object || model;
+          if (modelObject && !ctx.world.scene.three.children.includes(modelObject)) {
+            ctx.world.scene.three.add(modelObject);
+          }
+          ctx.loadedModels.push({
+            uuid: model.uuid || Math.random().toString(36).substring(7),
+            name: file.name,
+            size: formatBytes(file.size),
+            model,
+            sourceIfcBytes: null,
+            existingProjectTags: new Map(),
+            visible: true,
+          });
+          hooks.renderExcelTable?.();
+          hooks.renderTraySystemManager?.();
+          hooks.refreshValidationReportIfOpen?.();
+          fitModelToView(model);
+          setWireframeForModel(model, ctx.isWireframe);
+          refreshLoadedModelsList();
+          hooks.clearElementProperties?.();
+          hideLoader(dom);
+        }
+      } catch (err) {
+        console.error(`Failed to convert IFC ${file.name}:`, err);
+        updateLoader(dom, `Error: ${err.message}`, 0);
+        setTimeout(() => hideLoader(dom), 5000);
+      }
+    }
+
     dom.fileInput.addEventListener('change', async (event) => {
       const files = Array.from(event.target.files);
       if (files.length === 0) return;
@@ -530,33 +592,36 @@ export function initModelLoader(ctx, dom, hooks, api = {}) {
         const file = files[i];
         const progressLabel = files.length > 1 ? ` (${i + 1}/${files.length})` : '';
 
-        showLoader(dom, `Uploading File${progressLabel}`, `Reading ${file.name}...`, 10);
-
-        await new Promise((resolve) => {
-          const reader = new FileReader();
-          reader.onload = async (e) => {
-            updateLoader(dom, `File ${file.name} loaded, parsing...`, 25);
-            const data = e.target.result;
-            const buffer = new Uint8Array(data);
-            try {
-              if (file.name.toLowerCase().endsWith('.frag')) {
-                await loadFrag(buffer, file.name, formatBytes(file.size));
-              } else {
-                await loadModel(buffer, file.name, formatBytes(file.size));
-              }
-            } catch (err) {
-              console.error(`Failed to load ${file.name}:`, err);
-            }
-            resolve();
-          };
-          reader.onerror = () => {
-            console.error(`Failed to read file ${file.name}`);
-            resolve();
-          };
-          reader.readAsArrayBuffer(file);
-        });
+        showLoader(dom, `Uploading Native IFC${progressLabel}`, `Reading ${file.name}...`, 10);
+        try {
+          const data = await file.arrayBuffer();
+          const buffer = new Uint8Array(data);
+          if (file.name.toLowerCase().endsWith('.frag')) {
+            await loadFrag(buffer, file.name, formatBytes(file.size));
+          } else {
+            await loadModel(buffer, file.name, formatBytes(file.size));
+          }
+        } catch (err) {
+          console.error(`Failed to load ${file.name}:`, err);
+          updateLoader(dom, `Error loading ${file.name}: ${err.message}`, 0);
+          setTimeout(() => hideLoader(dom), 4000);
+        }
       }
     });
+
+    const convertInput = dom.convertFragInput || document.getElementById('convert-frag-input');
+    if (convertInput) {
+      convertInput.addEventListener('change', async (event) => {
+        const files = Array.from(event.target.files);
+        if (files.length === 0) return;
+        convertInput.value = '';
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const progressLabel = files.length > 1 ? ` (${i + 1}/${files.length})` : '';
+          await convertAndLoadIfcFile(file, progressLabel);
+        }
+      });
+    }
 
     if (dom.fragFileInput) {
       dom.fragFileInput.addEventListener('change', async (event) => {
@@ -613,6 +678,7 @@ export function initModelLoader(ctx, dom, hooks, api = {}) {
     api.fitModelToView = fitModelToView;
     api.loadFrag = loadFrag;
     api.openFragFile = openFragFile;
+    api.openConvertFragFile = openConvertFragFile;
     api.saveFragFile = saveFragFile;
   }
 

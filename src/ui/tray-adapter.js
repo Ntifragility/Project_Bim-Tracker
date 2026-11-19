@@ -41,11 +41,11 @@ export function createTrayRibbonDef(ctx) {
               [
                 {
                   id: 'tray.open-ifc',
-                  label: 'Open\nIFC',
+                  label: 'Open Native\nIFC',
                   icon: 'open',
                   size: 'big',
                   keytip: 'MO',
-                  tooltip: 'Open IFC file',
+                  tooltip: 'Open native IFC file (retained in memory for tagging & pure IFC re-export)',
                   run: () => {
                     if (dom.fileInput) dom.fileInput.click();
                   },
@@ -79,6 +79,21 @@ export function createTrayRibbonDef(ctx) {
                       api.openFragFile();
                     } else if (dom.fragFileInput) {
                       dom.fragFileInput.click();
+                    }
+                  },
+                },
+                {
+                  id: 'tray.convert-frag',
+                  label: 'Compile IFC → .frag',
+                  icon: 'export',
+                  size: 'small',
+                  keytip: 'MX',
+                  tooltip: 'Compile a large IFC file via 64-bit processor into .frag cache and load it',
+                  run: () => {
+                    if (typeof api.openConvertFragFile === 'function') {
+                      api.openConvertFragFile();
+                    } else if (dom.convertFragInput) {
+                      dom.convertFragInput.click();
                     }
                   },
                 },
@@ -245,6 +260,40 @@ export function createTrayRibbonDef(ctx) {
                     if (dom.toggleFloatingLabelsSidebar) dom.toggleFloatingLabelsSidebar.checked = next;
                     ctx.isFloatingLabelsActive = next;
                     api.setFloatingLabelsActive?.(next);
+                  },
+                },
+              ],
+              [
+                {
+                  id: 'tray.tool-section',
+                  label: 'Section',
+                  icon: 'section',
+                  size: 'small',
+                  keytip: 'MVS',
+                  tooltip: 'Toggle Section Plane / Box (Ctrl+X)',
+                  run: () => {
+                    const drawer = api.reviztoToolbar?.getOpenDrawer?.();
+                    if (api.reviztoToolbar?.openDrawer) {
+                      api.reviztoToolbar.openDrawer(drawer === 'section' ? null : 'section');
+                    } else {
+                      ctx.engine?.section?.toggle?.();
+                    }
+                  },
+                },
+                {
+                  id: 'tray.tool-ruler',
+                  label: 'Ruler',
+                  icon: 'ruler',
+                  size: 'small',
+                  keytip: 'MVRU',
+                  tooltip: 'Toggle 5-Mode Ruler (Ctrl+M)',
+                  run: () => {
+                    const drawer = api.reviztoToolbar?.getOpenDrawer?.();
+                    if (api.reviztoToolbar?.openDrawer) {
+                      api.reviztoToolbar.openDrawer(drawer === 'ruler' ? null : 'ruler');
+                    } else {
+                      ctx.engine?.ruler?.toggleActive?.();
+                    }
                   },
                 },
               ],

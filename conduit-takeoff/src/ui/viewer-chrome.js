@@ -6,10 +6,12 @@
 // viewport controls, and surface picker.
 // Bootstraps universal Revit-style ribbon via ribbon-chrome and conduit-adapter.
 
+import * as THREE from 'three';
 import { createCovillafEngine } from 'viewer-core';
-import { createRibbon } from 'ribbon-chrome';
+import { createRibbon, createReviztoToolbar } from 'ribbon-chrome';
 import { createConduitRibbonDef } from './conduit-adapter.js';
 import { createLateralDock } from './lateral-dock.js';
+import { initConduitContextMenu } from './context-menu.js';
 import { createDrawingTool } from '../drawing-tool.js';
 import { createMepHud } from '../mep-hud.js';
 import { createViewportControls } from '../viewport-controls.js';
@@ -317,10 +319,24 @@ export function createViewerChrome({ state, els, api }) {
 
         api.updateUndoRedoButtons(drawingTool);
 
+        if (change.runSelected !== undefined) {
+          state.selectedRunId = change.runSelected;
+          api.renderRunsList(drawingTool);
+          if (state.selectedRunId != null) {
+            api.showContextual?.('modify-run');
+            api.switchDockTab?.('properties');
+          } else if (!drawingTool.isDrawingMode && (!drawingTool.activePoints || drawingTool.activePoints.length === 0)) {
+            api.hideContextual?.();
+          }
+          api.updatePropertiesPalette?.(state.selectedRunId);
+          engine.visibility?.notifySelectionChange?.();
+        }
+
         if (change.networkUpdated) {
           api.renderRunsList(drawingTool);
           api.renderSummary();
           api.updatePropertiesPalette?.(state.selectedRunId);
+          engine.visibility?.notifySelectionChange?.();
         }
 
         ribbonApi?.refresh();
@@ -337,6 +353,66 @@ export function createViewerChrome({ state, els, api }) {
 
     window.__drawingTool = drawingTool;
     drawingTool.attach(els.viewerContainer);
+
+    // Unified BIM + Conduit participation in Visibility, Isolation, Section & 5-Mode Ruler
+    if (engine.visibility?.registerExternalAdapter) {
+      engine.visibility.registerExternalAdapter('conduit-runs', {
+        getAllIds: () => Object.values(state.network?.runs || {}).map((r) => String(r.id)),
+        getSelectedIds: () => (state.selectedRunId != null ? [String(state.selectedRunId)] : []),
+        clearSelection: () => {
+          state.selectedRunId = null;
+          drawingTool.selectedRunId = null;
+          api.renderRunsList?.(drawingTool);
+          api.updatePropertiesPalette?.(null);
+        },
+        applyVisibility: ({ hiddenIds, ghostIds }) => {
+          drawingTool.setExternalVisibilityState({ hiddenIds, ghostIds });
+        },
+      });
+    }
+
+    if (engine.section) {
+      engine.section.registerClippedObject('conduit-completed-runs', drawingTool.completedRunsGroup);
+      engine.section.registerExternalBounds('conduit-runs', () => {
+        if (!drawingTool.completedRunsGroup?.children?.length) return null;
+        return new THREE.Box3().setFromObject(drawingTool.completedRunsGroup);
+      });
+      engine.section.onChange(() => drawingTool.syncViewportMode());
+    }
+
+    if (engine.ruler) {
+      engine.ruler.registerPickSource('conduit-completed-runs', drawingTool.completedRunsGroup);
+      engine.ruler.onChange(() => drawingTool.syncViewportMode());
+    }
+
+    // Revizto-Style Floating Viewport Toolbar (Hide/Unhide, Isolate/Ghost, Section Plane/Box, 5-Mode Ruler)
+    if (els.viewerContainer && engine?.visibility) {
+      const reviztoToolbar = createReviztoToolbar(els.viewerContainer, {
+        visibility: engine.visibility,
+        isolation: engine.isolation,
+        section: engine.section,
+        ruler: engine.ruler,
+        getSelectionMap: () => engine.highlighter?.selection?.select || {},
+      });
+      api.reviztoToolbar = reviztoToolbar;
+      api.unhidePill = reviztoToolbar;
+
+      els.viewerContainer.addEventListener('dblclick', (ev) => {
+        const secState = engine.section?.getState?.() || {};
+        if (secState.active && secState.mode === 'plane' && !engine.ruler?.active) {
+          const rect = els.viewerContainer.getBoundingClientRect();
+          if (!rect.width || !rect.height) return;
+          const ndc = new THREE.Vector2(
+            ((ev.clientX - rect.left) / rect.width) * 2 - 1,
+            -((ev.clientY - rect.top) / rect.height) * 2 + 1,
+          );
+          engine.section.cutAtNdc(ndc);
+        }
+      });
+    }
+
+    // Drag-guarded right-click Revizto viewport context menu
+    initConduitContextMenu({ state, els, engine, drawingTool });
 
     // Initial render of lateral dock components
     api.updatePropertiesPalette?.();

@@ -77,8 +77,55 @@ export function initEscapeHandler(ctx, dom, api) {
   }
 
   function onKeyDown(event) {
-    if (event.key !== 'Escape' && event.key !== 'Esc') return;
     if (event.defaultPrevented) return;
+
+    // Revizto-style Hide (Ctrl + H) and Unhide (Ctrl + Shift + H)
+    if (event.ctrlKey && event.key.toLowerCase() === 'h') {
+      if (isTypingTarget(event.target)) return;
+      event.preventDefault();
+      if (event.shiftKey) {
+        ctx.engine?.visibility?.unhideAll?.();
+      } else {
+        ctx.engine?.visibility?.hideSelection?.();
+      }
+      return;
+    }
+
+    // Revizto Section toggle (Ctrl + X)
+    if (event.ctrlKey && !event.shiftKey && event.key.toLowerCase() === 'x') {
+      if (isTypingTarget(event.target)) return;
+      event.preventDefault();
+      const drawer = api.reviztoToolbar?.getOpenDrawer?.();
+      if (api.reviztoToolbar?.openDrawer) {
+        api.reviztoToolbar.openDrawer(drawer === 'section' ? null : 'section');
+      } else {
+        ctx.engine?.section?.toggle?.();
+      }
+      return;
+    }
+
+    // Revizto Ruler toggle (Ctrl + M)
+    if (event.ctrlKey && !event.shiftKey && event.key.toLowerCase() === 'm') {
+      if (isTypingTarget(event.target)) return;
+      event.preventDefault();
+      const drawer = api.reviztoToolbar?.getOpenDrawer?.();
+      if (api.reviztoToolbar?.openDrawer) {
+        api.reviztoToolbar.openDrawer(drawer === 'ruler' ? null : 'ruler');
+      } else {
+        ctx.engine?.ruler?.toggleActive?.();
+      }
+      return;
+    }
+
+    // Revizto Ghost Isolate (Shift + I)
+    if (event.shiftKey && !event.ctrlKey && !event.altKey && event.key.toLowerCase() === 'i') {
+      if (isTypingTarget(event.target)) return;
+      event.preventDefault();
+      ctx.engine?.isolation?.ghostIsolate?.(api.getSelectedModelIdMap?.());
+      return;
+    }
+
+    if (event.key !== 'Escape' && event.key !== 'Esc') return;
 
     // (0) R5: If ribbon keytips are visible, ribbon dismisses them first.
     if (areKeytipsVisible()) {
@@ -143,13 +190,32 @@ export function initEscapeHandler(ctx, dom, api) {
     // Loading overlay: never dismissible — ESC during load does nothing.
     if (isLoadingVisible()) return;
 
-    // (3) No draw tool on tray — nothing to cancel.
+    // (3a) Active Ruler tool / draft measurement.
+    if (ctx.engine?.ruler?.cancelDraftOrDeactivate && ctx.engine.ruler.cancelDraftOrDeactivate() !== 'noop') {
+      event.preventDefault();
+      if (!ctx.engine.ruler.active && api.reviztoToolbar?.getOpenDrawer?.() === 'ruler') {
+        api.reviztoToolbar.closeDrawer();
+      }
+      return;
+    }
+
+    // (3b) Active Section surface-pick or open drawer.
+    if (ctx.engine?.section?.cancelPendingOrClose?.()) {
+      event.preventDefault();
+      if (api.reviztoToolbar?.getOpenDrawer?.() === 'section') {
+        api.reviztoToolbar.closeDrawer();
+      }
+      return;
+    }
 
     // (4) Non-empty selection or active isolation → clear via highlighter
-    // (selection.js onClear fan-out handles the rest).
-    if (hasViewerSelection() || ctx.isolationActive) {
+    // (selection.js onClear fan-out handles the rest) and reset composable isolation.
+    if (hasViewerSelection() || ctx.isolationActive || ctx.engine?.isolation?.isIsolated?.()) {
       event.preventDefault();
       try {
+        if (ctx.engine?.isolation?.isIsolated?.()) {
+          ctx.engine.isolation.resetIsolation().catch(() => {});
+        }
         const cleared = ctx.highlighter?.clear?.('select');
         if (cleared && typeof cleared.catch === 'function') {
           cleared.catch(() => {});

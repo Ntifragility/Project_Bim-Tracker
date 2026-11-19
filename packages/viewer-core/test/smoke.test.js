@@ -141,6 +141,11 @@ test('engine exposes Phase-B APIs (selection, perf, appearanceHistory)', async (
     assert.ok(src.includes(token), `engine.js contains ${token}`);
   }
 
+  // Revizto-style Hide/Unhide visibility controller contract
+  for (const token of ['visibility:', 'hideSelection(targetMap', 'unhideAll()', 'getHiddenCount()', 'onVisibilityChange(callback)']) {
+    assert.ok(src.includes(token), `engine.js contains ${token}`);
+  }
+
   // Focus on Item camera & selection bounds contract
   for (const token of ['getSelectionBounds(', 'focusOnBox(box)', 'focusOnSelection(']) {
     assert.ok(src.includes(token), `engine.js contains ${token}`);

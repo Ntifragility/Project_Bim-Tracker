@@ -45,6 +45,22 @@ export function createProjectIo({ state, els, engine, api }) {
       active.blur();
       return 'typing';
     }
+    // (1b) Cancel active Ruler measurement or close Ruler tool
+    if (engine.ruler?.cancelDraftOrDeactivate && engine.ruler.cancelDraftOrDeactivate() !== 'noop') {
+      if (!engine.ruler.active && api.reviztoToolbar?.getOpenDrawer?.() === 'ruler') {
+        api.reviztoToolbar.closeDrawer();
+      }
+      drawingTool.syncViewportMode?.();
+      return 'cancel-ruler';
+    }
+    // (1c) Cancel pending Section surface cut or close Section bar
+    if (engine.section?.cancelPendingOrClose?.()) {
+      if (api.reviztoToolbar?.getOpenDrawer?.() === 'section') {
+        api.reviztoToolbar.closeDrawer();
+      }
+      drawingTool.syncViewportMode?.();
+      return 'cancel-section';
+    }
     // (2) Cancel in-progress capture.
     if (drawingTool.activePoints.length > 0) {
       drawingTool.cancelCurrentRun();
@@ -62,12 +78,17 @@ export function createProjectIo({ state, els, engine, api }) {
       api.refreshRibbon?.();
       return 'cancel-pick';
     }
-    // (3) Clear selection.
-    if (state.selectedRunId !== null && state.selectedRunId !== undefined) {
+    // (3) Clear selection & active isolation.
+    if (state.selectedRunId !== null && state.selectedRunId !== undefined || engine.isolation?.isIsolated?.()) {
       state.selectedRunId = null;
       drawingTool.selectedRunId = null;
+      if (engine.isolation?.isIsolated?.()) {
+        engine.isolation.resetIsolation().catch(() => {});
+      }
+      engine.highlighter?.clear?.('select')?.catch(() => {});
       drawingTool.renderRuns(state.network);
       api.renderRunsList(drawingTool);
+      engine.visibility?.notifySelectionChange?.();
       if (!drawingTool.isDrawingMode && (!drawingTool.activePoints || drawingTool.activePoints.length === 0)) {
         api.hideContextual?.();
       }
@@ -99,6 +120,48 @@ export function createProjectIo({ state, els, engine, api }) {
           e.preventDefault();
           handleEscape(drawingTool);
         }
+        return;
+      }
+
+      // Revizto-style Hide (Ctrl + H) and Unhide (Ctrl + Shift + H)
+      if (e.ctrlKey && e.key.toLowerCase() === 'h') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          engine.visibility?.unhideAll?.();
+        } else {
+          engine.visibility?.hideSelection?.();
+        }
+        return;
+      }
+
+      // Revizto Section toggle (Ctrl + X)
+      if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 'x') {
+        e.preventDefault();
+        const drawer = api.reviztoToolbar?.getOpenDrawer?.();
+        if (api.reviztoToolbar?.openDrawer) {
+          api.reviztoToolbar.openDrawer(drawer === 'section' ? null : 'section');
+        } else {
+          engine.section?.toggle?.();
+        }
+        return;
+      }
+
+      // Revizto Ruler toggle (Ctrl + M)
+      if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 'm') {
+        e.preventDefault();
+        const drawer = api.reviztoToolbar?.getOpenDrawer?.();
+        if (api.reviztoToolbar?.openDrawer) {
+          api.reviztoToolbar.openDrawer(drawer === 'ruler' ? null : 'ruler');
+        } else {
+          engine.ruler?.toggleActive?.();
+        }
+        return;
+      }
+
+      // Revizto Ghost Isolate (Shift + I)
+      if (e.shiftKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'i') {
+        e.preventDefault();
+        engine.isolation?.ghostIsolate?.();
         return;
       }
 
