@@ -20,6 +20,7 @@ export function collectEls() {
     btnOpenIfc: document.getElementById('btn-open-ifc'),
     fileInput: document.getElementById('file-input'),
     fragFileInput: document.getElementById('frag-file-input'),
+    convertFragInput: document.getElementById('convert-frag-input'),
     modelInfo: document.getElementById('model-info'),
     modelName: document.getElementById('model-name'),
     modelSize: document.getElementById('model-size'),
@@ -69,6 +70,8 @@ export function collectEls() {
     summaryTableContainer: document.getElementById('summary-table-container'),
 
     // Footer & Status
+    viewerContextMenu: document.getElementById('viewer-context-menu'),
+    contextFocusItem: document.getElementById('context-focus-item'),
     projectFileInput: document.getElementById('project-file-input'),
     btnLoadProject: document.getElementById('btn-load-project'),
     btnSave: document.getElementById('btn-save'),
@@ -76,5 +79,14 @@ export function collectEls() {
     btnExportIfc: document.getElementById('btn-export-ifc'),
     statusText: document.getElementById('status-text'),
     cursorCoords: document.getElementById('cursor-coords'),
+
+    // Context menu
+    viewerContextMenu: document.getElementById('viewer-context-menu'),
+    contextHideItem: document.getElementById('context-hide-item'),
+    contextUnhideAll: document.getElementById('context-unhide-all'),
+    contextIsolateItem: document.getElementById('context-isolate-item'),
+    contextIsolateGhost: document.getElementById('context-isolate-ghost'),
+    contextSectionBox: document.getElementById('context-section-box'),
+    contextShowAll: document.getElementById('context-show-all'),
   };
 }

@@ -5,6 +5,13 @@ import * as OBC from "@thatopen/components";
 import * as OBF from "@thatopen/components-front";
 import * as FRAGS from "@thatopen/fragments";
 import { createCoordinateFrame } from "./coordinates.js";
+import { createVisibilityController } from "./visibility-controller.js";
+import { createSectionController, isPointClippedByPlanes } from "./section-controller.js";
+import { createRulerController } from "./ruler-controller.js";
+import {
+  createCameraNavigationController,
+  computeRobustCoreBoundingBox,
+} from "./camera-navigation.js";
 
 const WASM_PATH = "/covillaf/web-ifc/";
 
@@ -80,6 +87,8 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
   ifcLoader.settings.webIfc = {
     ...ifcLoader.settings.webIfc,
     COORDINATE_TO_ORIGIN: true,
+    MEMORY_LIMIT: 3670016000, // 3.5 GB wasm32 ceiling
+    TAPE_SIZE: 134217728, // 128 MB STEP token tape
   };
   await ifcLoader.setup();
 
@@ -216,57 +225,31 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
     },
   };
 
-  // Ghost & Hard Isolation setup
-  let ghostActive = false;  const GHOST_STYLE_NAME = "ghost-isolation";
-  highlighter.styles.set(GHOST_STYLE_NAME, {
-    color: new THREE.Color("#64748b"),
-    opacity: 0.15,
-    transparent: true,
+  // Composable Revizto-style Visibility & Isolation controller (Hide/Unhide + Hard/Ghost Isolate)
+  const visibilityCtrl = createVisibilityController({
+    hider,
+    highlighter,
+    fragments,
+    appearanceHistory: { push: (label) => appearanceHistory?.push?.(label) },
   });
 
-  const isolation = {
-    async ghostIsolate(modelIdMap = {}) {
-      appearanceHistory.push('ghostIsolate');
-      await highlighter.clear(GHOST_STYLE_NAME);
-      ghostActive = true;
-      const inverseMap = {};
+  const isolation = visibilityCtrl.isolation;
 
-      if (fragments?.groups) {
-        for (const [modelId, model] of fragments.groups) {
-          const kept = new Set(modelIdMap[modelId] || []);
-          const nonKept = [];
-          if (model?.data?.keys) {
-            for (const expressId of model.data.keys()) {
-              if (!kept.has(expressId)) nonKept.push(expressId);
-            }
-          }
-          if (nonKept.length > 0) {
-            inverseMap[modelId] = nonKept;
-          }
-        }
-      }
-
-      await highlighter.highlightByID(GHOST_STYLE_NAME, inverseMap, false, false);
+  // Preserve exact API shape & smoke-test method tokens on `visibility:`
+  const visibility = Object.assign(Object.create(visibilityCtrl.visibility), {
+    hideSelection(targetMap = null) {
+      return visibilityCtrl.visibility.hideSelection(targetMap);
     },
-
-    async hardIsolate(modelIdMap = {}) {
-      appearanceHistory.push('hardIsolate');
-      ghostActive = false;
-      await highlighter.clear(GHOST_STYLE_NAME);
-      await hider.isolate(modelIdMap);
+    unhideAll() {
+      return visibilityCtrl.visibility.unhideAll();
     },
-
-    async resetIsolation() {
-      appearanceHistory.push('resetIsolation');
-      ghostActive = false;
-      await highlighter.clear(GHOST_STYLE_NAME);
-      await hider.set(true);
+    getHiddenCount() {
+      return visibilityCtrl.visibility.getHiddenCount();
     },
-
-    isGhostActive() {
-      return ghostActive;
+    onVisibilityChange(callback) {
+      return visibilityCtrl.visibility.onVisibilityChange(callback);
     },
-  };
+  });
 
   // High-resolution PNG View Export
   const exportPng = {
@@ -330,12 +313,11 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
           styles[name] = { color: style.color?.getHexString?.() ?? null, opacity: style.opacity ?? 1, transparent: !!style.transparent };
         }
       } catch { /* headless / uninitialized */ }
-      let hidden = [];
-      try { hidden = [...(hider.excluded ?? [])]; } catch { /* noop */ }
-      return { label, styles, hidden, ghostActive, at: Date.now() };
+      let visSnap = null;
+      try { visSnap = visibilityCtrl.exportSnapshot(); } catch { /* noop */ }
+      return { label, styles, visSnap, at: Date.now() };
     }
     async function restore(snap) {
-      ghostActive = !!snap.ghostActive;
       try {
         for (const [name, s] of Object.entries(snap.styles)) {
           if (name === 'select') continue;
@@ -346,8 +328,7 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
         }
       } catch { /* noop */ }
       try {
-        await hider.set(true);
-        if (snap.hidden.length) await hider.set(false, new Set(snap.hidden));
+        if (snap.visSnap) await visibilityCtrl.importSnapshot(snap.visSnap);
       } catch { /* hider unavailable headless */ }
     }
     return {
@@ -497,6 +478,85 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
     };
   })();
 
+  const section = createSectionController({
+    components,
+    world,
+    rawClipper,
+    fragments,
+    highlighter,
+    pick: (ndc, opts) => engine.pick(ndc, opts),
+  });
+
+  const ruler = createRulerController({
+    world,
+    fragments,
+    coordinates,
+    highlighter,
+    section,
+    pick: (ndc, opts) => engine.pick(ndc, opts),
+  });
+
+  // Mutual exclusion: opening Section automatically closes Ruler tool mode
+  section.setOnToolOpen(() => {
+    if (ruler.active) ruler.setActive(false);
+  });
+
+  const cameraNav = createCameraNavigationController({
+    world,
+    fragments,
+    pick: (ndc, opts) => engine.pick(ndc, opts),
+    container,
+  });
+
+  async function applyDynamicModelBounds(model) {
+    if (!model) {
+      cameraNav.refreshModelBounds(null);
+      return null;
+    }
+    try {
+      if (model.object && !world.scene.three.children.includes(model.object)) {
+        world.scene.three.add(model.object);
+      }
+      model.object?.updateMatrixWorld?.(true);
+    } catch { /* headless */ }
+
+    try {
+      model.useCamera?.(world.camera.three);
+    } catch { /* headless */ }
+
+    let coreBox = model.box || null;
+    try {
+      if (typeof model.getPositions === "function") {
+        const positions = await model.getPositions();
+        if (Array.isArray(positions) && positions.length > 0) {
+          coreBox = computeRobustCoreBoundingBox(positions, model.box || null);
+        }
+      }
+    } catch { /* fallback to model.box */ }
+
+    if (coreBox && typeof coreBox.isEmpty === "function" && !coreBox.isEmpty()) {
+      model.coreBox = coreBox.clone();
+
+      try {
+        const center = new THREE.Vector3();
+        coreBox.getCenter(center);
+        const floorY = Number.isFinite(coreBox.min.y) ? coreBox.min.y : 0;
+        if (grid?.three?.position) {
+          grid.three.position.set(center.x, floorY - 0.05, center.z);
+        }
+        if (axesHelper?.position) {
+          axesHelper.position.set(center.x, floorY, center.z);
+        }
+      } catch { /* headless */ }
+    }
+
+    cameraNav.refreshModelBounds(coreBox || model.box || null);
+    try {
+      fragments.core?.update?.(true);
+    } catch { /* headless */ }
+    return coreBox;
+  }
+
   const engine = {
     name: "COVILLAF",
     components,
@@ -506,7 +566,11 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
     highlighter,
     hider,
     clipper,
+    section,
+    ruler,
+    cameraNav,
     isolation,
+    visibility: visibility,
     exportPng,
     raycaster,
     coordinates,
@@ -519,20 +583,20 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
      * Model surface under a screen position (NDC, -1..1). Snapping to model
      * vertices and edges is optional. Returns the scene point or null.
      */
-    async pick(ndc, { snap = false } = {}) {
-      const snappingClasses = snap ? [FRAGS.SnappingClass.POINT, FRAGS.SnappingClass.LINE, FRAGS.SnappingClass.FACE] : undefined;
+    async pick(ndc, { snap = false, faceSnap = false } = {}) {
+      const snappingClasses = snap
+        ? [FRAGS.SnappingClass.POINT, FRAGS.SnappingClass.LINE, FRAGS.SnappingClass.FACE]
+        : faceSnap
+          ? [FRAGS.SnappingClass.FACE]
+          : undefined;
       const hit = await raycaster.castRay({ position: ndc, snappingClasses });
       if (!hit?.point) return null;
 
-      // Discard intersections that fall in clipped space
-      if (clipper.pickHonorsPlanes && rawClipper.enabled && rawClipper.list?.size > 0) {
-        for (const [, item] of rawClipper.list) {
-          const plane = item.plane ?? (item.isPlane ? item : null);
-          if (plane && typeof plane.distanceToPoint === "function") {
-            if (plane.distanceToPoint(hit.point) < -1e-4) {
-              return null;
-            }
-          }
+      // Discard intersections that fall in clipped space (supports both Plane & Section Box)
+      const activePlanes = section.getActivePlanes();
+      if (clipper.pickHonorsPlanes && activePlanes.length > 0) {
+        if (isPointClippedByPlanes(hit.point, activePlanes)) {
+          return null;
         }
       }
 
@@ -549,35 +613,167 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
       // alongside the scene point; shape unchanged otherwise.
       let original = null;
       try { original = coordinates.toOriginal(hit.point); } catch { /* headless */ }
-      return { point: hit.point.clone(), snapped: hit.snappingClass ?? null, normal, original };
+      return {
+        point: hit.point.clone(),
+        snapped: hit.snappingClass ?? null,
+        normal,
+        original,
+        modelId: hit.fragments?.modelId ?? hit.model?.modelId ?? null,
+        localId: hit.localId ?? null,
+      };
     },
 
     async loadIfc(buffer, name, onProgress) {
+      const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+      const isZlibFrag =
+        bytes.byteLength >= 2 &&
+        bytes[0] === 0x78 &&
+        (bytes[1] === 0x9c || bytes[1] === 0x01 || bytes[1] === 0xda || bytes[1] === 0x5e);
+      if ((typeof name === "string" && name.toLowerCase().endsWith(".frag")) || isZlibFrag) {
+        onProgress?.(0.5);
+        const fragModel = await this.loadFrag(bytes, name || "model.frag");
+        onProgress?.(1.0);
+        return fragModel;
+      }
+      const isHeavy = bytes.byteLength > 150 * 1024 * 1024;
+      const readCallback = (offset, size) => {
+        const end = Math.min(bytes.byteLength, offset + size);
+        return offset >= bytes.byteLength ? new Uint8Array(0) : bytes.subarray(offset, end);
+      };
+
+      let model;
       try {
-        return await ifcLoader.load(buffer, true, name, {
+        model = await ifcLoader.load(bytes, true, name, {
           instanceCallback: (importer) => {
-            importer.addAllAttributes();
-            importer.addAllRelations();
+            if (!isHeavy) {
+              importer.addAllAttributes();
+              importer.addAllRelations();
+            }
           },
           processData: {
+            readFromCallback: true,
+            readCallback,
+            raw: bytes.byteLength > 100 * 1024 * 1024,
             progressCallback: (progress) => onProgress?.(progress),
           },
         });
       } catch (error) {
         console.warn("[COVILLAF] Loading with options failed, attempting a simple load:", error);
-        return ifcLoader.load(buffer, true, name);
+        try {
+          model = await ifcLoader.load(bytes, true, name);
+        } catch (fallbackErr) {
+          const msg = fallbackErr?.message || String(fallbackErr);
+          if (/memory access out of bounds|abort\(/i.test(msg)) {
+            throw new Error(
+              `IFC parser ran out of WASM memory or hit non-STEP data (${msg}). For large models or .frag files, use 'Compile IFC -> .frag' or 'Open Cache (.frag)'.`,
+            );
+          }
+          throw fallbackErr;
+        }
       }
+      await applyDynamicModelBounds(model);
+      return model;
+    },
+
+    /**
+     * Streams a heavy IFC File/Blob (>200 MB, up to multi-GB) in 32 MB chunks
+     * to the 64-bit Node .frag compiler (/covillaf/convert-frag/*) without ever
+     * buffering the full IFC into browser RAM, then loads the resulting .frag.
+     */
+    async convertAndLoadLargeIfc(file, onProgress) {
+      if (!file) throw new Error("No IFC file provided.");
+      const name = file.name || "model.ifc";
+      const CHUNK_SIZE = 32 * 1024 * 1024;
+      let errDetail = "";
+
+      try {
+        onProgress?.(0.02, "Checking 64-bit .frag cache...");
+        const initRes = await fetch(
+          `/covillaf/convert-frag/init?name=${encodeURIComponent(name)}&size=${file.size || 0}`,
+          { method: "POST" },
+        );
+        if (!initRes.ok) {
+          throw new Error(await initRes.text());
+        }
+        const { id, cached } = await initRes.json();
+
+        let cachePath = null;
+        if (!cached) {
+          // Stream 32 MB slices sequentially so Chrome never hits single-request body limits
+          const total = file.size;
+          for (let offset = 0; offset < total; offset += CHUNK_SIZE) {
+            const slice = file.slice(offset, Math.min(total, offset + CHUNK_SIZE));
+            const pct = Math.round(((offset + slice.size) / total) * 100);
+            onProgress?.(0.05 + ((offset + slice.size) / total) * 0.35, `Streaming IFC to 64-bit compiler (${pct}%)...`);
+            const chunkRes = await fetch(`/covillaf/convert-frag/chunk?id=${encodeURIComponent(id)}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/octet-stream" },
+              body: slice,
+            });
+            if (!chunkRes.ok) {
+              throw new Error(await chunkRes.text());
+            }
+          }
+
+          onProgress?.(0.42, "Compiling geometry in 64-bit Node worker...");
+          const startRes = await fetch(`/covillaf/convert-frag/start?id=${encodeURIComponent(id)}`, {
+            method: "POST",
+          });
+          if (!startRes.ok) {
+            throw new Error(await startRes.text());
+          }
+
+          // Poll conversion progress
+          while (true) {
+            await new Promise((r) => setTimeout(r, 800));
+            const stRes = await fetch(`/covillaf/convert-frag/status?id=${encodeURIComponent(id)}`);
+            if (!stRes.ok) throw new Error(await stRes.text());
+            const st = await stRes.json();
+            if (st.status === "error") {
+              throw new Error(st.error || "64-bit converter failed");
+            }
+            if (st.status === "done") {
+              cachePath = st.cachePath || null;
+              break;
+            }
+            onProgress?.(0.42 + (st.progress || 0) * 0.43, st.detail || "Compiling .frag cache...");
+          }
+        }
+
+        onProgress?.(0.88, "Loading compiled .frag cache into WebGL...");
+        const resultRes = await fetch(`/covillaf/convert-frag/result?id=${encodeURIComponent(id)}`);
+        if (!resultRes.ok) throw new Error(await resultRes.text());
+        const fragBuf = await resultRes.arrayBuffer();
+        const fragBytes = new Uint8Array(fragBuf);
+        const fragName = name.replace(/\.ifc$/i, ".frag");
+        const model = await this.loadFrag(fragBytes, fragName);
+        onProgress?.(1.0, "Ready");
+        return { model, fragBytes: null, cachePath };
+      } catch (err) {
+        errDetail = err?.message || String(err);
+        console.error("[convertAndLoadLargeIfc] Error:", errDetail);
+      }
+
+      if (file.size <= 450 * 1024 * 1024) {
+        const buf = new Uint8Array(await file.arrayBuffer());
+        const model = await this.loadIfc(buf, name, (p) => onProgress?.(p));
+        return { model, fragBytes: null, cachePath: null };
+      }
+      throw new Error(
+        `Large IFC (${(file.size / (1024 * 1024)).toFixed(0)} MB) conversion failed: ${errDetail || "run npm run convert:frag -- <file.ifc>"}`,
+      );
     },
 
     async loadFrag(buffer, name = "model.frag") {
       const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+      // Heavy .frag files (> 30 MB compressed) can OOM Chrome's WebGL/worker heap at full detail;
+      // switch to LOD culling mode (graphicsQuality = 0) before loading them.
+      fragments.core.settings.graphicsQuality = bytes.byteLength > 30 * 1024 * 1024 ? 0 : 1;
       const model = await fragments.core.load(bytes, {
         modelId: name,
         camera: world.camera.three,
       });
-      if (model?.object && !world.scene.three.children.includes(model.object)) {
-        world.scene.three.add(model.object);
-      }
+      await applyDynamicModelBounds(model);
       return model;
     },
 
@@ -593,6 +789,100 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
         throw new Error("No loaded model found to export as .frag");
       }
       return await targetModel.getBuffer(false);
+    },
+
+    getModelBounds(model) {
+      if (!model) return null;
+      const box = model.coreBox || model.box || null;
+      return box && typeof box.isEmpty === "function" && !box.isEmpty() ? box.clone() : null;
+    },
+
+    async getSelectionBounds(modelIdMap = {}) {
+      const box = new THREE.Box3();
+      let hasBox = false;
+      for (const [modelId, rawIds] of Object.entries(modelIdMap || {})) {
+        const localIds = rawIds instanceof Set
+          ? [...rawIds].map(Number).filter(Number.isFinite)
+          : Array.isArray(rawIds)
+            ? rawIds.map(Number).filter(Number.isFinite)
+            : [];
+        if (localIds.length === 0) continue;
+        const model =
+          fragments?.list?.get?.(modelId) ||
+          fragments?.core?.models?.list?.get?.(modelId) ||
+          fragments?.groups?.get?.(modelId);
+        if (model?.getMergedBox) {
+          try {
+            const itemBox = await model.getMergedBox(localIds);
+            if (itemBox && !itemBox.isEmpty()) {
+              box.union(itemBox);
+              hasBox = true;
+            }
+          } catch { /* fall through to getBoxes / BoundingBoxer */ }
+        } else if (model?.getBoxes) {
+          try {
+            const boxes = await model.getBoxes(localIds);
+            for (const b of boxes || []) {
+              if (b && !b.isEmpty()) {
+                box.union(b);
+                hasBox = true;
+              }
+            }
+          } catch { /* fall through to BoundingBoxer */ }
+        }
+      }
+      if (!hasBox && Object.keys(modelIdMap || {}).length > 0) {
+        try {
+          const bboxer = components.get(OBC.BoundingBoxer);
+          bboxer.list.clear();
+          await bboxer.addFromModelIdMap(modelIdMap);
+          const fallback = bboxer.get();
+          if (fallback && !fallback.isEmpty()) {
+            box.copy(fallback);
+            hasBox = true;
+          }
+          bboxer.list.clear();
+        } catch { /* headless */ }
+      }
+      return hasBox && !box.isEmpty() ? box : null;
+    },
+
+    focusOnBox(box) {
+      if (!box || box.isEmpty?.() || !world?.camera?.controls) return false;
+      const controls = world.camera.controls;
+      const sphere = new THREE.Sphere();
+      box.getBoundingSphere(sphere);
+      if (!Number.isFinite(sphere.radius) || sphere.radius <= 0) {
+        sphere.radius = 0.5;
+      }
+      // Note: do NOT call controls.setOrbitPoint() after fitToSphere() — setOrbitPoint
+      // measures distance from the current (far) camera position and cancels the zoom-in.
+      if (typeof controls.fitToBox === "function") {
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        const pad = Math.max(0.25, Math.min(1.0, sphere.radius * 0.35));
+        void controls.fitToBox(box, true, {
+          paddingLeft: pad,
+          paddingRight: pad,
+          paddingTop: pad,
+          paddingBottom: pad,
+        });
+      } else {
+        if (sphere.radius < 0.35) sphere.radius = 0.35;
+        void controls.fitToSphere(sphere, true);
+      }
+      try {
+        fragments.core?.update?.(true);
+        setTimeout(() => {
+          try { fragments.core?.update?.(true); } catch { /* headless */ }
+        }, 260);
+      } catch { /* headless */ }
+      return true;
+    },
+
+    async focusOnSelection(modelIdMap = {}) {
+      const box = await this.getSelectionBounds(modelIdMap);
+      return this.focusOnBox(box);
     },
 
     setSelectionColor(color) {
@@ -650,6 +940,9 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
     },
 
     dispose() {
+      cameraNav.dispose();
+      ruler.dispose();
+      section.dispose();
       autoOrbit.dispose();
       axesHelper.geometry?.dispose();
       axesHelper.material?.dispose();

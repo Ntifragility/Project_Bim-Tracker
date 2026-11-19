@@ -187,10 +187,15 @@ export function initSelection(ctx, dom, api) {
   async function zoomToElementInModel(model, expressId) {
     if (!model) return;
     try {
+      const modelId = model.modelId || model.uuid;
+      const targetMap = { [modelId]: new Set([Number(expressId)]) };
+      if (typeof ctx.engine?.focusOnSelection === 'function') {
+        const focused = await ctx.engine.focusOnSelection(targetMap);
+        if (focused) return;
+      }
       const bboxer = ctx.components.get(OBC.BoundingBoxer);
       bboxer.list.clear();
-      const modelId = model.modelId || model.uuid;
-      await bboxer.addFromModelIdMap({ [modelId]: new Set([Number(expressId)]) });
+      await bboxer.addFromModelIdMap(targetMap);
       const box = bboxer.get();
       if (box && !box.isEmpty()) {
         const sphere = new THREE.Sphere();

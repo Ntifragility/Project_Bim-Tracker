@@ -140,5 +140,25 @@ test('engine exposes Phase-B APIs (selection, perf, appearanceHistory)', async (
   for (const token of ['loadFrag(buffer', 'exportFrag(modelOrId', 'targetModel.getBuffer(false)']) {
     assert.ok(src.includes(token), `engine.js contains ${token}`);
   }
+
+  // Revizto-style Hide/Unhide visibility controller contract
+  for (const token of ['visibility:', 'hideSelection(targetMap', 'unhideAll()', 'getHiddenCount()', 'onVisibilityChange(callback)']) {
+    assert.ok(src.includes(token), `engine.js contains ${token}`);
+  }
+
+  // Focus on Item camera & selection bounds contract
+  for (const token of ['getSelectionBounds(', 'focusOnBox(box)', 'focusOnSelection(']) {
+    assert.ok(src.includes(token), `engine.js contains ${token}`);
+  }
+});
+
+test('Right Click -> Focus on Item is wired in both Tray and Conduit context menus', () => {
+  const trayMenu = fs.readFileSync(path.resolve('src/ui/context-menu.js'), 'utf8');
+  const conduitMenu = fs.readFileSync(path.resolve('conduit-takeoff/src/ui/context-menu.js'), 'utf8');
+  assert.ok(trayMenu.includes('contextFocusItem'));
+  assert.ok(trayMenu.includes('focusOnSelection'));
+  assert.ok(conduitMenu.includes('contextFocusItem'));
+  assert.ok(conduitMenu.includes('focusOnSelection'));
+  assert.ok(conduitMenu.includes('focusOnBox'));
 });
 

@@ -187,8 +187,10 @@ test('IFC Exporter: generates valid STEP IFC file with polylines and Pset_Condui
   assert.ok(ifcText.startsWith('ISO-10303-21;'));
   assert.ok(ifcText.includes("FILE_SCHEMA(('IFC4'));"));
   assert.ok(ifcText.includes('IFCPOLYLINE'));
+  assert.ok(ifcText.includes('IFCSWEPTDISKSOLID'));
+  assert.ok(ifcText.includes('IFCCABLECARRIERSEGMENT'));
+  assert.ok(ifcText.includes('IFCSYSTEM'));
   assert.ok(ifcText.includes('Pset_ConduitRun'));
-  assert.ok(ifcText.includes('IFCANNOTATION'));
   assert.ok(ifcText.endsWith('END-ISO-10303-21;'));
 
   // Test toOriginal transformation (geolocalized origin shift + Z-up swap)
@@ -201,4 +203,20 @@ test('IFC Exporter: generates valid STEP IFC file with polylines and Pset_Condui
   assert.ok(shiftIfc.includes('350000.0000'), 'Easting applied to Cartesian points');
   assert.ok(shiftIfc.includes('8599997.5000'), 'Northing applied to Cartesian points');
   assert.ok(shiftIfc.includes('100.0000'), 'Elevation applied to Cartesian points');
+
+  // Test 90-degree bend emits separate straight segments + smooth NEC elbow fitting
+  const bendIfc = exportOverlayIfc({
+    runs: [{ id: 'r2', name: 'Bent Run', size: '1"', system: 'Power', length: 6, nodeIds: ['b1', 'b2', 'b3'] }],
+    nodes: {
+      b1: { x: 0, y: 0, z: 0 },
+      b2: { x: 3, y: 0, z: 0 },
+      b3: { x: 3, y: 0, z: 3 },
+    },
+    schema: 'IFC4',
+  });
+  assert.ok(bendIfc.includes('IFCCABLECARRIERFITTING'), '90-deg bend emits IFCCABLECARRIERFITTING');
+  assert.ok(bendIfc.includes('Pset_ConduitFitting'), 'elbow fitting includes Pset_ConduitFitting');
+  const polyMatches = [...bendIfc.matchAll(/IFCPOLYLINE\(\(([^)]+)\)\)/g)];
+  assert.equal(polyMatches.length, 3, '2 straight segments + 1 elbow fitting');
+  assert.ok(polyMatches.some((m) => m[1].split(',').length >= 10), 'elbow fitting polyline has >= 10 arc points');
 });

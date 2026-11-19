@@ -67,6 +67,7 @@ export function createRunsList({ state, els, api }) {
           api.hideContextual?.();
         }
         api.updatePropertiesPalette?.(state.selectedRunId);
+        api.engine?.visibility?.notifySelectionChange?.();
         api.refreshRibbon?.();
       });
 

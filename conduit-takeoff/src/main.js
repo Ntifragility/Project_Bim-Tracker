@@ -17,6 +17,7 @@ import { createDrawToolbar } from './ui/draw-toolbar.js';
 import { createRunsList } from './ui/runs-list.js';
 import { createSummary } from './ui/summary.js';
 import { createProjectIo } from './ui/project-io.js';
+import { initConduitContextMenu } from './ui/context-menu.js';
 
 // Shared runtime API: feature modules register helpers here so later
 // modules (and the coordinator below) can call across panel boundaries
@@ -57,8 +58,9 @@ export async function initApp() {
   const projects = createProjectIo({ state, els, engine, api });
   projects.wireProjectControls(drawingTool);
 
-  // 7. Draw controls last (needs everything registered above).
+  // 7. Draw controls + context menu last (needs everything registered above).
   toolbar.wireDrawControls(drawingTool);
+  initConduitContextMenu({ state, els, engine });
 
   // Initial renders
   api.renderDiameterPicker();
