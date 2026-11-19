@@ -35,7 +35,7 @@ export function initContextMenu(ctx, dom, api) {
     const selection = api.getSelectedModelIdMap();
     const selectionCount = api.countModelIdMapItems(selection);
     const currentSelectionIsAlreadyIsolated = ctx.isolationActive && api.areModelIdMapsEqual(selection, ctx.lastIsolatedSelectionMap);
-    dom.contextFocusItem.hidden = !ctx.selectedIfcElement;
+    dom.contextFocusItem.hidden = selectionCount === 0 && !ctx.selectedIfcElement;
     dom.contextIsolateItem.hidden = selectionCount === 0 || currentSelectionIsAlreadyIsolated;
     dom.contextColorControl.hidden = selectionCount === 0;
     dom.contextIsolateItem.textContent = selectionCount > 1
@@ -47,7 +47,20 @@ export function initContextMenu(ctx, dom, api) {
   }
 
   function wireContextMenu() {
+    let rightDownPos = null;
+    dom.container.addEventListener('pointerdown', (event) => {
+      if (event.button === 2) {
+        rightDownPos = { x: event.clientX, y: event.clientY };
+      }
+    });
+
     dom.container.addEventListener('contextmenu', (event) => {
+      const moved = rightDownPos ? Math.hypot(event.clientX - rightDownPos.x, event.clientY - rightDownPos.y) : 0;
+      rightDownPos = null;
+      if (moved > 4) {
+        event.preventDefault();
+        return; // Right-drag orbit gesture — do not pop menu
+      }
       closeViewerContextMenu();
       updateContextMenuActions();
       if (dom.contextFocusItem.hidden && dom.contextIsolateItem.hidden && dom.contextColorControl.hidden && dom.contextShowAll.hidden) return;
@@ -126,8 +139,27 @@ export function initContextMenu(ctx, dom, api) {
     });
 
     dom.contextFocusItem.addEventListener('click', async () => {
+      const selection = api.getSelectedModelIdMap();
+      const selectionCount = api.countModelIdMapItems(selection);
       const element = ctx.selectedIfcElement ? { ...ctx.selectedIfcElement } : null;
       closeViewerContextMenu();
+
+      if (selectionCount > 1 || (!element && selectionCount > 0)) {
+        ensureModelObjectsVisible(selection);
+        try {
+          const focused = await ctx.engine?.focusOnSelection?.(selection);
+          if (focused) {
+            api.updateTagAssignmentUi(`Focused on ${selectionCount} selected element${selectionCount === 1 ? '' : 's'}.`);
+          } else {
+            api.updateTagAssignmentUi('Warning: selected elements could not be focused.', 'warning');
+          }
+        } catch (error) {
+          console.warn('[Focus on Item] Failed:', error);
+          api.updateTagAssignmentUi('Warning: selected elements could not be focused.', 'warning');
+        }
+        return;
+      }
+
       if (!element) return;
 
       const modelEntry = ctx.loadedModels.find((entry) =>

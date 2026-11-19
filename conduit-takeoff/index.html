@@ -14,6 +14,14 @@
       <!-- 3D Viewport -->
       <div id="viewer-container"></div>
 
+      <!-- Right-Click Viewport Context Menu -->
+      <div id="viewer-context-menu" class="viewer-context-menu" role="menu" hidden>
+        <button id="context-focus-item" type="button" role="menuitem" hidden>
+          <span aria-hidden="true">◎</span>
+          Focus on Item
+        </button>
+      </div>
+
       <!-- Revit-Style Ribbon host (R1: ribbon owns commands) -->
       <header id="ribbon" class="ribbon-host" data-rc-host></header>
 

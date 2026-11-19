@@ -595,6 +595,75 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
       return await targetModel.getBuffer(false);
     },
 
+    async getSelectionBounds(modelIdMap = {}) {
+      const box = new THREE.Box3();
+      let hasBox = false;
+      for (const [modelId, rawIds] of Object.entries(modelIdMap || {})) {
+        const localIds = rawIds instanceof Set
+          ? [...rawIds].map(Number).filter(Number.isFinite)
+          : Array.isArray(rawIds)
+            ? rawIds.map(Number).filter(Number.isFinite)
+            : [];
+        if (localIds.length === 0) continue;
+        const model =
+          fragments?.list?.get?.(modelId) ||
+          fragments?.core?.models?.list?.get?.(modelId) ||
+          fragments?.groups?.get?.(modelId);
+        if (model?.getMergedBox) {
+          try {
+            const itemBox = await model.getMergedBox(localIds);
+            if (itemBox && !itemBox.isEmpty()) {
+              box.union(itemBox);
+              hasBox = true;
+            }
+          } catch { /* fall through to getBoxes / BoundingBoxer */ }
+        } else if (model?.getBoxes) {
+          try {
+            const boxes = await model.getBoxes(localIds);
+            for (const b of boxes || []) {
+              if (b && !b.isEmpty()) {
+                box.union(b);
+                hasBox = true;
+              }
+            }
+          } catch { /* fall through to BoundingBoxer */ }
+        }
+      }
+      if (!hasBox && Object.keys(modelIdMap || {}).length > 0) {
+        try {
+          const bboxer = components.get(OBC.BoundingBoxer);
+          bboxer.list.clear();
+          await bboxer.addFromModelIdMap(modelIdMap);
+          const fallback = bboxer.get();
+          if (fallback && !fallback.isEmpty()) {
+            box.copy(fallback);
+            hasBox = true;
+          }
+          bboxer.list.clear();
+        } catch { /* headless */ }
+      }
+      return hasBox && !box.isEmpty() ? box : null;
+    },
+
+    focusOnBox(box) {
+      if (!box || box.isEmpty?.() || !world?.camera?.controls) return false;
+      const sphere = new THREE.Sphere();
+      box.getBoundingSphere(sphere);
+      if (!Number.isFinite(sphere.radius) || sphere.radius < 0.5) {
+        sphere.radius = 1.0;
+      }
+      world.camera.controls.fitToSphere(sphere, true);
+      try {
+        fragments.core?.update?.(true);
+      } catch { /* headless */ }
+      return true;
+    },
+
+    async focusOnSelection(modelIdMap = {}) {
+      const box = await this.getSelectionBounds(modelIdMap);
+      return this.focusOnBox(box);
+    },
+
     setSelectionColor(color) {
       const normalized = /^#[0-9a-fA-F]{6}$/.test(color) ? color.toLowerCase() : "#6366f1";
       highlighter.styles.set("select", {

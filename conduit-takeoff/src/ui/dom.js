@@ -69,6 +69,8 @@ export function collectEls() {
     summaryTableContainer: document.getElementById('summary-table-container'),
 
     // Footer & Status
+    viewerContextMenu: document.getElementById('viewer-context-menu'),
+    contextFocusItem: document.getElementById('context-focus-item'),
     projectFileInput: document.getElementById('project-file-input'),
     btnLoadProject: document.getElementById('btn-load-project'),
     btnSave: document.getElementById('btn-save'),
