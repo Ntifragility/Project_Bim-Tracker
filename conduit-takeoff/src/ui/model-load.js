@@ -40,8 +40,19 @@ export function createModelLoad({ state, els, engine, api }) {
   const getModel = () => activeLoadedModel;
 
   async function loadIfcFile(file) {
+    if (file?.name?.toLowerCase().endsWith('.frag')) {
+      return loadFragFile(file);
+    }
     const STREAM_TO_SERVER_BYTES = 200 * 1024 * 1024;
     const headerBuf = await file.slice(0, 4096).arrayBuffer();
+    const headerBytes = new Uint8Array(headerBuf);
+    if (
+      headerBytes.byteLength >= 2 &&
+      headerBytes[0] === 0x78 &&
+      (headerBytes[1] === 0x9c || headerBytes[1] === 0x01 || headerBytes[1] === 0xda || headerBytes[1] === 0x5e)
+    ) {
+      return loadFragFile(file);
+    }
     const schema = detectIfcSchema(headerBuf);
 
     let sha256 = '';
@@ -133,7 +144,7 @@ export function createModelLoad({ state, els, engine, api }) {
 
     state.sourceModel.name = file.name;
     state.sourceModel.size = file.size;
-    state.sourceModel.buffer = buffer;
+    state.sourceModel.buffer = null;
     state.sourceModel.schema = 'FRAG-BINARY';
 
     els.modelInfo.hidden = false;
@@ -199,6 +210,7 @@ export function createModelLoad({ state, els, engine, api }) {
 
     els.fragFileInput?.addEventListener('change', async (e) => {
       const file = e.target.files?.[0];
+      e.target.value = '';
       if (!file) return;
       try {
         await loadFragFile(file);
@@ -211,14 +223,19 @@ export function createModelLoad({ state, els, engine, api }) {
 
     els.fileInput.addEventListener('change', async (e) => {
       const file = e.target.files?.[0];
+      e.target.value = '';
       if (!file) return;
 
       try {
-        await loadIfcFile(file);
+        if (file.name.toLowerCase().endsWith('.frag')) {
+          await loadFragFile(file);
+        } else {
+          await loadIfcFile(file);
+        }
       } catch (err) {
-        console.error('[Conduit Takeoff] Error loading IFC:', err);
+        console.error('[Conduit Takeoff] Error loading model:', err);
         api.hideLoading();
-        alert(`Failed to load IFC file: ${err.message}`);
+        alert(`Failed to load model file: ${err.message}`);
       }
     });
 

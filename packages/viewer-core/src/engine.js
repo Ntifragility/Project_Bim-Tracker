@@ -573,6 +573,16 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
 
     async loadIfc(buffer, name, onProgress) {
       const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+      const isZlibFrag =
+        bytes.byteLength >= 2 &&
+        bytes[0] === 0x78 &&
+        (bytes[1] === 0x9c || bytes[1] === 0x01 || bytes[1] === 0xda || bytes[1] === 0x5e);
+      if ((typeof name === "string" && name.toLowerCase().endsWith(".frag")) || isZlibFrag) {
+        onProgress?.(0.5);
+        const fragModel = await this.loadFrag(bytes, name || "model.frag");
+        onProgress?.(1.0);
+        return fragModel;
+      }
       const isHeavy = bytes.byteLength > 150 * 1024 * 1024;
       const readCallback = (offset, size) => {
         const end = Math.min(bytes.byteLength, offset + size);

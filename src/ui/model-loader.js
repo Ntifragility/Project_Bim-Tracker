@@ -219,8 +219,15 @@ export function initModelLoader(ctx, dom, hooks, api = {}) {
 
   // Loader function
   async function loadModel(buffer, name, sizeFormatted) {
-    showLoader(dom, 'Loading Model', `Parsing '${name}'...`, 30);
     const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+    const isZlibFrag =
+      bytes.byteLength >= 2 &&
+      bytes[0] === 0x78 &&
+      (bytes[1] === 0x9c || bytes[1] === 0x01 || bytes[1] === 0xda || bytes[1] === 0x5e);
+    if ((typeof name === 'string' && name.toLowerCase().endsWith('.frag')) || isZlibFrag) {
+      return loadFrag(bytes, name, sizeFormatted);
+    }
+    showLoader(dom, 'Loading Model', `Parsing '${name}'...`, 30);
     const isHeavy = bytes.byteLength > LARGE_IFC_BYTES;
     // Never duplicate multi-hundred-MB buffers in JS heap; only retain source bytes for small/medium editable IFCs
     const sourceIfcBytes = isHeavy ? null : bytes;
