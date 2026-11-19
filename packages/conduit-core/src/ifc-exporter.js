@@ -1,6 +1,9 @@
 // IFC Exporter for Conduit Overlay.
-// Generates a valid STEP-format IFC (IFC2X3 or IFC4) containing 3D polylines
-// for traced conduit runs with Pset_ConduitRun properties, federatable in Revizto and BIM viewers.
+// Generates a valid STEP-format IFC (IFC2X3 or IFC4) containing 3D swept conduit
+// solids with smooth NEC-radius bends and Pset_ConduitRun properties, federatable in Revizto and BIM viewers.
+
+import { extractRunCenterline } from './centerline-builder.js';
+import { getNecBendRadiusM } from './fitting-solver.js';
 
 function formatIfcDate(d = new Date()) {
   return d.toISOString().replace(/[-:]/g, '').split('.')[0];
@@ -132,9 +135,17 @@ export function exportOverlayIfc({
 
     if (nodeCoords.length < 2) continue;
 
-    // Create Cartesian points for vertices
+    const runName = run.name || `Run ${run.id}`;
+    const runSize = run.size || run.diameter || '3/4"';
+    const runSystem = run.system || 'Power';
+    const runLen = Number(run.length || 0).toFixed(3);
+    const radiusM = tradeRadiusFromLabel(runSize);
+    const bendRadiusM = getNecBendRadiusM(runSize);
+    const centerlinePts = extractRunCenterline(nodeCoords, bendRadiusM, 12);
+
+    // Create Cartesian points for centerline vertices (including smooth NEC elbow arc points)
     const pointIds = [];
-    for (const rawPt of nodeCoords) {
+    for (const rawPt of centerlinePts) {
       const pt = typeof toOriginal === 'function' ? toOriginal(rawPt) : rawPt;
       const pid = nextId();
       add(`#${pid}=IFCCARTESIANPOINT((${Number(pt.x).toFixed(4)},${Number(pt.y).toFixed(4)},${Number(pt.z).toFixed(4)}));`);
@@ -144,12 +155,6 @@ export function exportOverlayIfc({
     // Polyline directrix
     const polylineId = nextId();
     add(`#${polylineId}=IFCPOLYLINE((${pointIds.join(',')}));`);
-
-    const runName = run.name || `Run ${run.id}`;
-    const runSize = run.size || run.diameter || '3/4"';
-    const runSystem = run.system || 'Power';
-    const runLen = Number(run.length || 0).toFixed(3);
-    const radiusM = tradeRadiusFromLabel(runSize);
 
     // 3D SweptDiskSolid pipe body (tessellatable by web-ifc, Revit, and Navisworks)
     const sweptSolidId = nextId();

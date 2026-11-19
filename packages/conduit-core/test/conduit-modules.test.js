@@ -202,4 +202,18 @@ test('IFC Exporter: generates valid STEP IFC file with polylines and Pset_Condui
   assert.ok(shiftIfc.includes('350000.0000'), 'Easting applied to Cartesian points');
   assert.ok(shiftIfc.includes('8599997.5000'), 'Northing applied to Cartesian points');
   assert.ok(shiftIfc.includes('100.0000'), 'Elevation applied to Cartesian points');
+
+  // Test 90-degree bend emits smooth NEC elbow arc points along IFCPOLYLINE
+  const bendIfc = exportOverlayIfc({
+    runs: [{ id: 'r2', name: 'Bent Run', size: '1"', system: 'Power', length: 6, nodeIds: ['b1', 'b2', 'b3'] }],
+    nodes: {
+      b1: { x: 0, y: 0, z: 0 },
+      b2: { x: 3, y: 0, z: 0 },
+      b3: { x: 3, y: 0, z: 3 },
+    },
+    schema: 'IFC4',
+  });
+  const polyMatch = bendIfc.match(/IFCPOLYLINE\(\(([^)]+)\)\)/);
+  assert.ok(polyMatch, 'IFCPOLYLINE present');
+  assert.ok(polyMatch[1].split(',').length >= 10, 'smooth NEC bend arc emits >= 10 centerline points');
 });
