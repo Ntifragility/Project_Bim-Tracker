@@ -853,17 +853,33 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
 
     focusOnBox(box) {
       if (!box || box.isEmpty?.() || !world?.camera?.controls) return false;
+      const controls = world.camera.controls;
       const sphere = new THREE.Sphere();
       box.getBoundingSphere(sphere);
-      if (!Number.isFinite(sphere.radius) || sphere.radius < 0.5) {
-        sphere.radius = 1.0;
+      if (!Number.isFinite(sphere.radius) || sphere.radius <= 0) {
+        sphere.radius = 0.5;
       }
-      world.camera.controls.fitToSphere(sphere, true);
-      if (typeof world.camera.controls.setOrbitPoint === "function") {
-        world.camera.controls.setOrbitPoint(sphere.center.x, sphere.center.y, sphere.center.z);
+      // Note: do NOT call controls.setOrbitPoint() after fitToSphere() — setOrbitPoint
+      // measures distance from the current (far) camera position and cancels the zoom-in.
+      if (typeof controls.fitToBox === "function") {
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        const pad = Math.max(0.25, Math.min(1.0, sphere.radius * 0.35));
+        void controls.fitToBox(box, true, {
+          paddingLeft: pad,
+          paddingRight: pad,
+          paddingTop: pad,
+          paddingBottom: pad,
+        });
+      } else {
+        if (sphere.radius < 0.35) sphere.radius = 0.35;
+        void controls.fitToSphere(sphere, true);
       }
       try {
         fragments.core?.update?.(true);
+        setTimeout(() => {
+          try { fragments.core?.update?.(true); } catch { /* headless */ }
+        }, 260);
       } catch { /* headless */ }
       return true;
     },
