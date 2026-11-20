@@ -189,13 +189,10 @@ export function createProjectIo({ state, els, engine, api }) {
         e.preventDefault();
         if (e.shiftKey) {
           if (state.commandStack.canRedo()) state.commandStack.redo();
-        } else {
-          if (drawingTool.activePoints.length > 0) {
-            drawingTool.undoLastPoint();
-            api.updateUndoRedoButtons(drawingTool);
-          } else if (state.commandStack.canUndo()) {
-            state.commandStack.undo();
-          }
+        } else if (drawingTool.activePoints.length > 0) {
+          drawingTool.undoLastPoint();
+          api.updateUndoRedoButtons(drawingTool);
+          api.refreshRibbon?.();
         }
       } else if (e.ctrlKey && e.key.toLowerCase() === 'y') {
         e.preventDefault();
