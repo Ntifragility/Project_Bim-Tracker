@@ -65,6 +65,16 @@ export function createModelLoad({ state, els, engine, api }) {
     }
     const schema = detectIfcSchema(headerBuf);
 
+    if (!convertToFrag && file.size > 200 * 1024 * 1024) {
+      const proceed = window.confirm(
+        `${file.name} (${formatFileSize(file.size)}) is over 200 MB.\n\n` +
+        'Browsers may run out of memory loading large Native IFCs directly.\n' +
+        'For best results, compile it first with ifc2frag.exe and open the .frag via "Open Cache (.frag)".\n\n' +
+        'Click OK to try loading in the browser anyway, or Cancel to abort.'
+      );
+      if (!proceed) return null;
+    }
+
     let sha256 = '';
     let model = null;
     let retainedBuffer = null;

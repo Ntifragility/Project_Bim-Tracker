@@ -229,6 +229,11 @@ std::string jsonEscape(std::string_view s) {
 
 CompileResult compileIfcToFrag(const CompileOptions& opts) {
   const auto t0 = std::chrono::steady_clock::now();
+  const auto report = [&](int stage, const std::string& msg) {
+    if (opts.onProgress) {
+      opts.onProgress(stage, 5, msg);
+    }
+  };
 
   std::ifstream ifs(opts.inputPath, std::ios::binary);
   if (!ifs) {
@@ -248,6 +253,7 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
   if (!loader) {
     throw std::runtime_error("Failed to create web-ifc IfcLoader");
   }
+  report(1, "Parsing IFC STEP file...");
   loader->LoadFile(ifs);
 
   auto* geomProc = manager.GetGeometryProcessor(modelID);
@@ -304,12 +310,37 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
     elementTypes.push_back(annotationCode);
   }
 
+  size_t totalCandidates = 0;
+  std::vector<std::pair<uint32_t, std::vector<uint32_t>>> typedIds;
+  typedIds.reserve(elementTypes.size());
   for (const uint32_t typeCode : elementTypes) {
-    const auto ids = loader->GetExpressIDsWithType(typeCode);
-    if (ids.empty()) continue;
+    auto ids = loader->GetExpressIDsWithType(typeCode);
+    if (!ids.empty()) {
+      totalCandidates += ids.size();
+      typedIds.emplace_back(typeCode, std::move(ids));
+    }
+  }
+  report(2, "Extracting geometry (0%, " + std::to_string(totalCandidates) + " entities)...");
+  size_t processedCandidates = 0;
+  auto lastProgressAt = std::chrono::steady_clock::now();
+
+  for (const auto& [typeCode, ids] : typedIds) {
     const std::string catName = schemaMgr.IfcTypeCodeToType(typeCode);
 
     for (const uint32_t expressID : ids) {
+      ++processedCandidates;
+      if ((processedCandidates & 255u) == 0u) {
+        const auto now = std::chrono::steady_clock::now();
+        if (now - lastProgressAt >= std::chrono::milliseconds(1000)) {
+          const int pct = totalCandidates > 0
+              ? static_cast<int>((processedCandidates * 100u) / totalCandidates)
+              : 0;
+          report(2, "Extracting geometry (" + std::to_string(pct) + "%, " +
+                        std::to_string(localIds.size()) + " meshes, " +
+                        std::to_string(shells.size()) + " shells)...");
+          lastProgressAt = now;
+        }
+      }
       auto flatMesh = geomProc->GetFlatMesh(expressID);
       if (flatMesh.geometries.empty()) continue;
 
@@ -466,7 +497,11 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
       }
     }
   }
+  report(2, "Extracted " + std::to_string(localIds.size()) + " meshes (" +
+                std::to_string(shells.size()) + " unique shells, " +
+                std::to_string(samples.size()) + " samples)");
 
+  report(3, "Building spatial hierarchy & releasing IFC memory...");
   // Build spatial structure tree (IfcProject -> IfcSite -> IfcBuilding -> IfcBuildingStorey -> elements)
   std::unordered_map<uint32_t, std::vector<uint32_t>> spatialChildren;
   const uint32_t relAggCode = schemaMgr.IfcTypeToTypeCode("IFCRELAGGREGATES");
@@ -519,6 +554,8 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
   ifs.close();
 
   // Assemble FlatBuffers Model
+  report(4, "Packing FlatBuffers model (" + std::to_string(shells.size()) + " shells, " +
+                std::to_string(samples.size()) + " samples)...");
   flatbuffers::FlatBufferBuilder builder(1024 * 1024);
 
   // Build Shells
@@ -682,6 +719,8 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
 
   const uint8_t* ptr = builder.GetBufferPointer();
   const size_t rawSize = builder.GetSize();
+  report(5, "Compressing zlib level " + std::to_string(opts.zlibLevel) + " (" +
+                std::to_string((rawSize + (1024 * 1024 - 1)) / (1024 * 1024)) + " MB) & writing .frag...");
   const auto compressed = deflateZlibPtr(ptr, rawSize, opts.zlibLevel);
   builder.Clear();
   writeFileBytes(opts.outputPath, compressed);

@@ -1,9 +1,12 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <string>
 
 namespace ifc2frag {
+
+using ProgressCallback = std::function<void(int stage, int totalStages, const std::string& message)>;
 
 struct CompileOptions {
   std::string inputPath;
@@ -13,6 +16,7 @@ struct CompileOptions {
   double distanceThresholdM = 100000.0;
   int zlibLevel = 6;
   uint32_t threads = 0;
+  ProgressCallback onProgress;
 };
 
 struct CompileResult {

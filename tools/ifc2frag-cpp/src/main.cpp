@@ -79,7 +79,13 @@ static int runCompile(const ifc2frag::CompileOptions& opts, bool showDialog) {
 #ifdef IFC2FRAG_HAS_WEBIFC
   try {
     std::cout << "Compiling " << opts.inputPath << " -> " << opts.outputPath << " ...\n";
-    const auto res = ifc2frag::compileIfcToFrag(opts);
+    ifc2frag::CompileOptions runOpts = opts;
+    if (!runOpts.onProgress) {
+      runOpts.onProgress = [](int stage, int totalStages, const std::string& message) {
+        std::cout << "  [" << stage << "/" << totalStages << "] " << message << std::endl;
+      };
+    }
+    const auto res = ifc2frag::compileIfcToFrag(runOpts);
     std::ostringstream summary;
     summary << "Compiled " << opts.inputPath << " -> " << opts.outputPath << "\n"
             << "  Elements:    " << res.elementsProcessed << "\n"
