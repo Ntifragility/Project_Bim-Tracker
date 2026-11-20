@@ -241,6 +241,8 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
   webifc::manager::LoaderSettings settings{};
   settings.COORDINATE_TO_ORIGIN = opts.coordinateToOrigin;
   settings.CIRCLE_SEGMENTS = 12;
+  settings.TAPE_SIZE = 134217728;       // 128 MB STEP token tape
+  settings.MEMORY_LIMIT = 0xFFFFFFFFu;  // 4 GB tape limit on 64-bit host
   const uint32_t modelID = manager.CreateModel(settings);
   auto* loader = manager.GetIfcLoader(modelID);
   if (!loader) {
@@ -493,6 +495,29 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
     }
   }
 
+  // Pre-capture spatial node categories before closing web-ifc model to free 1-2+ GB RAM
+  std::unordered_map<uint32_t, std::string> spatialCats;
+  for (const auto& [pid, children] : spatialChildren) {
+    if (loader->IsValidExpressID(pid)) {
+      spatialCats.emplace(pid, schemaMgr.IfcTypeCodeToType(loader->GetLineType(pid)));
+    }
+    for (const uint32_t cid : children) {
+      if (!spatialCats.count(cid) && loader->IsValidExpressID(cid)) {
+        spatialCats.emplace(cid, schemaMgr.IfcTypeCodeToType(loader->GetLineType(cid)));
+      }
+    }
+  }
+  const uint32_t projCode = schemaMgr.IfcTypeToTypeCode("IFCPROJECT");
+  const auto projIds = loader->GetExpressIDsWithType(projCode);
+  if (!projIds.empty() && loader->IsValidExpressID(projIds[0])) {
+    spatialCats.emplace(projIds[0], schemaMgr.IfcTypeCodeToType(loader->GetLineType(projIds[0])));
+  }
+
+  // Release all web-ifc STEP tape & geometry caches BEFORE FlatBuffer allocation!
+  geomProc->Clear();
+  manager.CloseAllModels();
+  ifs.close();
+
   // Assemble FlatBuffers Model
   flatbuffers::FlatBufferBuilder builder(1024 * 1024);
 
@@ -570,6 +595,20 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
       ltIdsOff,
       gtIdsOff);
 
+  // Capture counts before releasing mesh vectors
+  const uint32_t uniqueShellsCount = static_cast<uint32_t>(shells.size());
+  const uint32_t samplesCountVal = static_cast<uint32_t>(samples.size());
+
+  // Release mesh vectors now that they are serialized into FlatBuffers
+  {
+    std::vector<ShellData>().swap(shells);
+    std::vector<Sample>().swap(samples);
+    std::vector<Representation>().swap(representations);
+    std::vector<Transform>().swap(globalTransforms);
+    std::vector<Transform>().swap(localTransforms);
+    std::vector<Material>().swap(materials);
+  }
+
   // Attributes (["Name","<val>","STRING"])
   std::vector<flatbuffers::Offset<Attribute>> attrOffsets;
   attrOffsets.reserve(localIds.size());
@@ -586,15 +625,14 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
     }
   }
 
-  // Spatial structure recursive builder
+  // Spatial structure recursive builder (uses pre-captured spatialCats; web-ifc is already closed)
   std::unordered_set<uint32_t> visitedSpatial;
   auto buildSpatialNode = [&](auto& self, uint32_t eid) -> flatbuffers::Offset<SpatialStructure> {
     if (!visitedSpatial.insert(eid).second) {
       return 0;
     }
-    const std::string cat = loader->IsValidExpressID(eid)
-        ? schemaMgr.IfcTypeCodeToType(loader->GetLineType(eid))
-        : "";
+    auto catIt = spatialCats.find(eid);
+    const std::string cat = catIt != spatialCats.end() ? catIt->second : "";
     std::vector<flatbuffers::Offset<SpatialStructure>> childOffsets;
     auto cit = spatialChildren.find(eid);
     if (cit != spatialChildren.end()) {
@@ -611,8 +649,6 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
   };
 
   flatbuffers::Offset<SpatialStructure> spatialRootOff = 0;
-  const uint32_t projCode = schemaMgr.IfcTypeToTypeCode("IFCPROJECT");
-  const auto projIds = loader->GetExpressIDsWithType(projCode);
   if (!projIds.empty()) {
     spatialRootOff = buildSpatialNode(buildSpatialNode, projIds[0]);
   }
@@ -646,9 +682,8 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
 
   const uint8_t* ptr = builder.GetBufferPointer();
   const size_t rawSize = builder.GetSize();
-  std::vector<uint8_t> rawBuf(ptr, ptr + rawSize);
-
-  const auto compressed = deflateZlib(rawBuf, opts.zlibLevel);
+  const auto compressed = deflateZlibPtr(ptr, rawSize, opts.zlibLevel);
+  builder.Clear();
   writeFileBytes(opts.outputPath, compressed);
 
   const auto t1 = std::chrono::steady_clock::now();
@@ -656,8 +691,8 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
 
   CompileResult res{};
   res.elementsProcessed = static_cast<uint32_t>(localIds.size());
-  res.uniqueShells = static_cast<uint32_t>(shells.size());
-  res.samplesCount = static_cast<uint32_t>(samples.size());
+  res.uniqueShells = uniqueShellsCount;
+  res.samplesCount = samplesCountVal;
   res.rawFlatBufferBytes = rawSize;
   res.compressedFragBytes = compressed.size();
   res.elapsedSeconds = elapsed;

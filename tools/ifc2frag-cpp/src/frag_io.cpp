@@ -70,23 +70,27 @@ std::vector<uint8_t> inflateZlib(const std::vector<uint8_t>& compressed) {
   return out;
 }
 
-std::vector<uint8_t> deflateZlib(const std::vector<uint8_t>& raw, int level) {
-  if (raw.empty()) {
+std::vector<uint8_t> deflateZlibPtr(const uint8_t* data, size_t size, int level) {
+  if (!data || size == 0) {
     return {};
   }
-  uLongf destLen = compressBound(static_cast<uLong>(raw.size()));
+  uLongf destLen = compressBound(static_cast<uLong>(size));
   std::vector<uint8_t> out(destLen);
   const int res = compress2(
       out.data(),
       &destLen,
-      raw.data(),
-      static_cast<uLong>(raw.size()),
+      data,
+      static_cast<uLong>(size),
       level);
   if (res != Z_OK) {
     throw std::runtime_error("zlib compress2 failed with code " + std::to_string(res));
   }
   out.resize(destLen);
   return out;
+}
+
+std::vector<uint8_t> deflateZlib(const std::vector<uint8_t>& raw, int level) {
+  return deflateZlibPtr(raw.data(), raw.size(), level);
 }
 
 FragStats inspectFragBytes(const std::vector<uint8_t>& compressedOrRaw) {
