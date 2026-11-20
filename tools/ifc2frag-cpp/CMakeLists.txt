@@ -79,6 +79,10 @@ if(IFC2FRAG_WITH_WEBIFC)
   target_compile_definitions(frag_core PUBLIC IFC2FRAG_HAS_WEBIFC=1)
 endif()
 
+if(MINGW)
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static -static-libgcc -static-libstdc++")
+endif()
+
 # 5. CLI executable
 add_executable(ifc2frag
   src/main.cpp
@@ -87,9 +91,6 @@ target_link_libraries(ifc2frag PRIVATE frag_core)
 if(WIN32)
   target_link_libraries(ifc2frag PRIVATE comdlg32)
 endif()
-if(MINGW)
-  target_link_options(ifc2frag PRIVATE -static -static-libgcc -static-libstdc++)
-endif()
 
 # 6. Phase 1 Schema Parity Test
 enable_testing()
@@ -97,9 +98,6 @@ add_executable(frag_schema_parity_test
   tests/parity_test.cpp
 )
 target_link_libraries(frag_schema_parity_test PRIVATE frag_core)
-if(MINGW)
-  target_link_options(frag_schema_parity_test PRIVATE -static -static-libgcc -static-libstdc++)
-endif()
 target_compile_definitions(frag_schema_parity_test PRIVATE
   PROJECT_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../.."
 )

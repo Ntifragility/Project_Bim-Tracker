@@ -330,9 +330,9 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
 
       const glm::dmat4 invElemMat = glm::inverse(elemDecomp.withoutScale);
       struct PendingSample {
-        uint32_t matId;
-        uint32_t reprId;
-        uint32_t ltId;
+        uint32_t matIndex;
+        uint32_t reprIndex;
+        uint32_t ltIndex;
       };
       std::vector<PendingSample> pending;
       pending.reserve(flatMesh.geometries.size());
@@ -353,29 +353,30 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
             gDecomp.sz);
         const std::string geomKey(keyBuf);
 
-        uint32_t reprId = 0;
+        uint32_t reprIndex = UINT32_MAX;
         auto git = geomKeyToReprId.find(geomKey);
         if (git != geomKeyToReprId.end()) {
-          reprId = git->second;
-          if (reprId == 0) continue;  // Previously skipped invalid/empty geometry
+          reprIndex = git->second;
+          if (reprIndex == UINT32_MAX) continue;  // Previously skipped invalid/empty geometry
         } else {
           auto& rawGeom = geomProc->GetGeometry(placed.geometryExpressID);
           ShellData sh = buildRawShell(rawGeom, gDecomp.sx, gDecomp.sy, gDecomp.sz);
           if (!sh.valid) {
-            geomKeyToReprId.emplace(geomKey, 0);
+            geomKeyToReprId.emplace(geomKey, UINT32_MAX);
             continue;
           }
-          reprId = nextSyntheticId++;
-          geomKeyToReprId.emplace(geomKey, reprId);
+          reprIndex = static_cast<uint32_t>(representations.size());
+          const uint32_t reprId = nextSyntheticId++;
+          geomKeyToReprId.emplace(geomKey, reprIndex);
           representations.emplace_back(
-              reprId,
+              reprIndex,
               BoundingBox(FloatVector(sh.minX, sh.minY, sh.minZ), FloatVector(sh.maxX, sh.maxY, sh.maxZ)),
               RepresentationClass_SHELL);
           representationIds.push_back(reprId);
           shells.push_back(std::move(sh));
         }
 
-        // Material deduplication
+        // Material deduplication (Sample stores 0-based index into meshes.materials)
         uint8_t mr = static_cast<uint8_t>(std::clamp(std::round(placed.color.r * 255.0), 0.0, 255.0));
         uint8_t mg = static_cast<uint8_t>(std::clamp(std::round(placed.color.g * 255.0), 0.0, 255.0));
         uint8_t mb = static_cast<uint8_t>(std::clamp(std::round(placed.color.b * 255.0), 0.0, 255.0));
@@ -385,18 +386,18 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
         }
         uint8_t ma = static_cast<uint8_t>(std::clamp(std::round(alpha * 255.0), 0.0, 255.0));
         const uint32_t matKey = (uint32_t(mr) << 24) | (uint32_t(mg) << 16) | (uint32_t(mb) << 8) | uint32_t(ma);
-        uint32_t matId = 0;
+        uint32_t matIndex = 0;
         auto mit = materialKeyToId.find(matKey);
         if (mit != materialKeyToId.end()) {
-          matId = mit->second;
+          matIndex = mit->second;
         } else {
-          matId = nextSyntheticId++;
-          materialKeyToId.emplace(matKey, matId);
+          matIndex = static_cast<uint32_t>(materials.size());
+          materialKeyToId.emplace(matKey, matIndex);
           materials.emplace_back(mr, mg, mb, ma, RenderedFaces_ONE, Stroke_DEFAULT);
-          materialIds.push_back(matId);
+          materialIds.push_back(nextSyntheticId++);
         }
 
-        // Local transform relative to element globalTransform
+        // Local transform relative to element globalTransform (0 = identity at index 0)
         const glm::dmat4 relMat = invElemMat * gDecomp.withoutScale;
         const DecomposedTransform relDecomp = decomposeMatrix(relMat);
         const bool isIdentity =
@@ -404,7 +405,7 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
             relDecomp.dxx == 1.0f && relDecomp.dxy == 0.0f && relDecomp.dxz == 0.0f &&
             relDecomp.dyx == 0.0f && relDecomp.dyy == 1.0f && relDecomp.dyz == 0.0f;
 
-        uint32_t ltId = 0;
+        uint32_t ltIndex = 0;
         if (!isIdentity) {
           char ltBuf[160];
           std::snprintf(
@@ -416,16 +417,16 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
               relDecomp.dyx, relDecomp.dyy, relDecomp.dyz);
           auto lit = localTransformMap.find(ltBuf);
           if (lit != localTransformMap.end()) {
-            ltId = lit->second;
+            ltIndex = lit->second;
           } else {
-            ltId = static_cast<uint32_t>(localTransformMap.size() + 1);
-            localTransformMap.emplace(ltBuf, ltId);
+            ltIndex = static_cast<uint32_t>(localTransforms.size());
+            localTransformMap.emplace(ltBuf, ltIndex);
             localTransforms.push_back(toFbTransform(relDecomp));
-            localTransformIds.push_back(ltId);
+            localTransformIds.push_back(nextSyntheticId++);
           }
         }
 
-        pending.push_back({matId, reprId, ltId});
+        pending.push_back({matIndex, reprIndex, ltIndex});
       }
 
       if (pending.empty()) continue;
@@ -458,7 +459,7 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
 
       for (const auto& ps : pending) {
         const uint32_t sId = nextSyntheticId++;
-        samples.emplace_back(itemIndex, ps.matId, ps.reprId, ps.ltId);
+        samples.emplace_back(itemIndex, ps.matIndex, ps.reprIndex, ps.ltIndex);
         sampleIds.push_back(sId);
       }
     }
