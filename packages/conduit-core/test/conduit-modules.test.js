@@ -219,4 +219,15 @@ test('IFC Exporter: generates valid STEP IFC file with polylines and Pset_Condui
   const polyMatches = [...bendIfc.matchAll(/IFCPOLYLINE\(\(([^)]+)\)\)/g)];
   assert.equal(polyMatches.length, 3, '2 straight segments + 1 elbow fitting');
   assert.ok(polyMatches.some((m) => m[1].split(',').length >= 10), 'elbow fitting polyline has >= 10 arc points');
+
+  // Verify 2-level IFCSYSTEM -> IFCELEMENTASSEMBLY hierarchy & TotalLengthFt/Sticks10Ft/SegmentLengthFt properties
+  assert.ok(bendIfc.includes('IFCELEMENTASSEMBLY'), 'each run is packaged under an IFCELEMENTASSEMBLY');
+  assert.ok(bendIfc.includes("IFCPROPERTYSINGLEVALUE('RunId',$,IFCLABEL('r2'),$)"));
+  assert.ok(bendIfc.includes("IFCPROPERTYSINGLEVALUE('TotalLengthM',$,IFCLENGTHMEASURE(6.000),$)"));
+  assert.ok(bendIfc.includes("IFCPROPERTYSINGLEVALUE('TotalLengthFt',$,IFCREAL(19.69),$)"));
+  assert.ok(bendIfc.includes("IFCPROPERTYSINGLEVALUE('Sticks10Ft',$,IFCINTEGER(2),$)"));
+  assert.ok(bendIfc.includes("IFCPROPERTYSINGLEVALUE('TotalBendDeg',$,IFCREAL(90.0),$)"));
+  assert.ok(bendIfc.includes('Pset_ConduitSegment'), 'straight segments include per-piece Pset_ConduitSegment');
+  assert.ok(bendIfc.includes('Pset_ConduitSystem'), 'IFCSYSTEM includes aggregated Pset_ConduitSystem');
+  assert.ok(bendIfc.includes("IFCPROPERTYSINGLEVALUE('SystemTotalLengthFt',$,IFCREAL(19.69),$)"));
 });
