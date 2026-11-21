@@ -27,6 +27,7 @@ dist-ssr
 *.log.html
 *.frag
 .cache/
+tools/ifc2frag-cpp/build/
 
 # Shared-parameter exports may reference real project data (ARCH section 9 hygiene)
 *.sharedparameters.txt

@@ -1,0 +1,1089 @@
+#include "ifc_compiler.hpp"
+#include "frag_io.hpp"
+#include "fragments_generated.h"
+
+#include <web-ifc/modelmanager/ModelManager.h>
+#include <web-ifc/geometry/IfcGeometryProcessor.h>
+#include <web-ifc/parsing/IfcLoader.h>
+#include <web-ifc/schema/IfcSchemaManager.h>
+#include <web-ifc/schema/ifc-schema.h>
+
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
+
+#include <algorithm>
+#include <atomic>
+#include <cctype>
+#include <chrono>
+#include <cmath>
+#include <cstdio>
+#include <fstream>
+#include <iostream>
+#include <map>
+#include <set>
+#include <sstream>
+#include <stdexcept>
+#include <thread>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
+namespace ifc2frag {
+
+namespace {
+
+constexpr size_t USHORT_MAX_POINTS = 65000;
+
+struct DecomposedTransform {
+  double px = 0, py = 0, pz = 0;
+  float dxx = 1, dxy = 0, dxz = 0;
+  float dyx = 0, dyy = 1, dyz = 0;
+  double sx = 1, sy = 1, sz = 1;
+  glm::dmat4 withoutScale{1.0};
+};
+
+double roundTo(double v, double precision) {
+  return std::round(v * precision) / precision;
+}
+
+DecomposedTransform decomposeMatrix(const glm::dmat4& m) {
+  DecomposedTransform out{};
+  out.px = m[3][0];
+  out.py = m[3][1];
+  out.pz = m[3][2];
+
+  glm::dvec3 col0(m[0][0], m[0][1], m[0][2]);
+  glm::dvec3 col1(m[1][0], m[1][1], m[1][2]);
+  glm::dvec3 col2(m[2][0], m[2][1], m[2][2]);
+
+  double sx = glm::length(col0);
+  double sy = glm::length(col1);
+  double sz = glm::length(col2);
+  if (sx < 1e-12) sx = 1.0;
+  if (sy < 1e-12) sy = 1.0;
+  if (sz < 1e-12) sz = 1.0;
+
+  // Handle reflection if determinant < 0
+  if (glm::determinant(glm::dmat3(col0, col1, col2)) < 0.0) {
+    sx = -sx;
+  }
+
+  glm::dvec3 ux = col0 / sx;
+  glm::dvec3 uy = col1 / sy;
+  glm::dvec3 uz = col2 / sz;
+
+  out.sx = sx;
+  out.sy = sy;
+  out.sz = sz;
+
+  out.dxx = static_cast<float>(roundTo(ux.x, 1e3));
+  out.dxy = static_cast<float>(roundTo(ux.y, 1e3));
+  out.dxz = static_cast<float>(roundTo(ux.z, 1e3));
+  out.dyx = static_cast<float>(roundTo(uy.x, 1e5));
+  out.dyy = static_cast<float>(roundTo(uy.y, 1e5));
+  out.dyz = static_cast<float>(roundTo(uy.z, 1e5));
+  out.px = roundTo(out.px, 1e5);
+  out.py = roundTo(out.py, 1e5);
+  out.pz = roundTo(out.pz, 1e5);
+
+  out.withoutScale = glm::dmat4(
+      glm::dvec4(ux, 0.0),
+      glm::dvec4(uy, 0.0),
+      glm::dvec4(uz, 0.0),
+      glm::dvec4(m[3][0], m[3][1], m[3][2], 1.0));
+  return out;
+}
+
+Transform toFbTransform(const DecomposedTransform& dt) {
+  return Transform(
+      DoubleVector(dt.px, dt.py, dt.pz),
+      FloatVector(dt.dxx, dt.dxy, dt.dxz),
+      FloatVector(dt.dyx, dt.dyy, dt.dyz));
+}
+
+struct ShellData {
+  std::vector<FloatVector> points;
+  std::vector<std::array<uint32_t, 3>> triangles;
+  float minX = 0, minY = 0, minZ = 0;
+  float maxX = 0, maxY = 0, maxZ = 0;
+  bool valid = false;
+};
+
+struct PointKey {
+  int64_t qx, qy, qz;
+  bool operator==(const PointKey& o) const {
+    return qx == o.qx && qy == o.qy && qz == o.qz;
+  }
+};
+
+struct PointKeyHash {
+  size_t operator()(const PointKey& k) const {
+    size_t h = static_cast<size_t>(k.qx) * 73856093ULL;
+    h ^= static_cast<size_t>(k.qy) * 19349663ULL;
+    h ^= static_cast<size_t>(k.qz) * 83492791ULL;
+    return h;
+  }
+};
+
+struct RawShellJob {
+  uint32_t shellSlot = 0;
+  std::vector<double> verts;
+  std::vector<uint32_t> indices;
+  double sx = 1.0, sy = 1.0, sz = 1.0;
+};
+
+ShellData buildRawShellFromBuffers(
+    const std::vector<double>& verts,
+    const std::vector<uint32_t>& indices,
+    double sx,
+    double sy,
+    double sz) {
+  ShellData shell{};
+  if (verts.empty() || indices.size() < 3) {
+    return shell;
+  }
+
+  const size_t stride = webifc::geometry::VERTEX_FORMAT_SIZE_FLOATS;
+  const size_t vertCount = verts.size() / stride;
+
+  std::unordered_map<PointKey, uint32_t, PointKeyHash> pointMap;
+  pointMap.reserve(vertCount);
+  shell.points.reserve(vertCount);
+  shell.triangles.reserve(indices.size() / 3);
+
+  float minX = std::numeric_limits<float>::infinity();
+  float minY = std::numeric_limits<float>::infinity();
+  float minZ = std::numeric_limits<float>::infinity();
+  float maxX = -std::numeric_limits<float>::infinity();
+  float maxY = -std::numeric_limits<float>::infinity();
+  float maxZ = -std::numeric_limits<float>::infinity();
+
+  constexpr double WELD_GRID = 1e5;  // 1e-5 m (0.01 mm) vertex weld grid
+
+  auto getPointIdx = [&](uint32_t vIdx) -> uint32_t {
+    const size_t base = static_cast<size_t>(vIdx) * stride;
+    const double dx = static_cast<double>(verts[base + 0]) * sx;
+    const double dy = static_cast<double>(verts[base + 1]) * sy;
+    const double dz = static_cast<double>(verts[base + 2]) * sz;
+    const float px = static_cast<float>(dx);
+    const float py = static_cast<float>(dy);
+    const float pz = static_cast<float>(dz);
+    minX = std::min(minX, px);
+    minY = std::min(minY, py);
+    minZ = std::min(minZ, pz);
+    maxX = std::max(maxX, px);
+    maxY = std::max(maxY, py);
+    maxZ = std::max(maxZ, pz);
+    PointKey key{
+        static_cast<int64_t>(std::llround(dx * WELD_GRID)),
+        static_cast<int64_t>(std::llround(dy * WELD_GRID)),
+        static_cast<int64_t>(std::llround(dz * WELD_GRID))};
+    auto it = pointMap.find(key);
+    if (it != pointMap.end()) return it->second;
+    const uint32_t idx = static_cast<uint32_t>(shell.points.size());
+    pointMap.emplace(key, idx);
+    shell.points.emplace_back(px, py, pz);
+    return idx;
+  };
+
+  for (size_t i = 0; i + 2 < indices.size(); i += 3) {
+    const uint32_t a = indices[i + 0];
+    const uint32_t b = indices[i + 1];
+    const uint32_t c = indices[i + 2];
+    if (a >= vertCount || b >= vertCount || c >= vertCount) continue;
+    const uint32_t ia = getPointIdx(a);
+    const uint32_t ib = getPointIdx(b);
+    const uint32_t ic = getPointIdx(c);
+    if (ia == ib || ib == ic || ic == ia) continue;  // Drop degenerate welded triangles
+    shell.triangles.push_back({ia, ib, ic});
+  }
+
+  if (shell.triangles.empty() || shell.points.empty() || !std::isfinite(minX)) {
+    return shell;
+  }
+  if (minX == 0 && minY == 0 && minZ == 0 && maxX == 0 && maxY == 0 && maxZ == 0) {
+    return shell;
+  }
+
+  shell.minX = minX;
+  shell.minY = minY;
+  shell.minZ = minZ;
+  shell.maxX = maxX;
+  shell.maxY = maxY;
+  shell.maxZ = maxZ;
+  shell.valid = true;
+  return shell;
+}
+
+std::string toUpperAscii(std::string_view s) {
+  std::string out(s);
+  for (char& c : out) {
+    c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+  }
+  return out;
+}
+
+std::pair<std::string, std::string> readNominalValue(const webifc::parsing::IfcLoader* loader, uint32_t propId) {
+  using webifc::parsing::IfcTokenType;
+  if (!loader || loader->GetNoLineArguments(propId) <= 2) return {};
+  loader->MoveToLineArgument(propId, 2);
+  const IfcTokenType tt = loader->GetTokenType();
+  if (tt == IfcTokenType::EMPTY || tt == IfcTokenType::UNKNOWN) return {};
+
+  std::string valType = "STRING";
+  IfcTokenType inner = tt;
+  if (tt == IfcTokenType::LABEL) {
+    valType = std::string(loader->GetStringArgument());
+    if (loader->GetTokenType() == IfcTokenType::SET_BEGIN) {
+      // Advance past '(' token by reading next token type
+      loader->GetStringArgument();
+    }
+    inner = loader->GetTokenType();
+  }
+
+  switch (inner) {
+    case IfcTokenType::STRING:
+      return {loader->GetDecodedStringArgument(), valType};
+    case IfcTokenType::REAL:
+      return {std::string(loader->GetDoubleArgumentAsString()), valType};
+    case IfcTokenType::INTEGER:
+      return {std::to_string(loader->GetIntArgument()), valType};
+    case IfcTokenType::ENUM:
+      return {std::string(loader->GetStringArgument()), valType};
+    default:
+      return {};
+  }
+}
+
+std::string makeUuidV4(uint64_t seed) {
+  char buf[40];
+  std::snprintf(
+      buf,
+      sizeof(buf),
+      "c2f-%08x-0000-4000-8000-%012llx",
+      static_cast<uint32_t>(seed & 0xFFFFFFFFu),
+      static_cast<unsigned long long>(seed * 6364136223846793005ULL + 1442695040888963407ULL) & 0xFFFFFFFFFFFFULL);
+  return std::string(buf);
+}
+
+std::string jsonEscape(std::string_view s) {
+  std::string out;
+  out.reserve(s.size() + 4);
+  for (unsigned char c : s) {
+    if (c == '"') out += "\\\"";
+    else if (c == '\\') out += "\\\\";
+    else if (c < 0x20) out += ' ';
+    else out += static_cast<char>(c);
+  }
+  return out;
+}
+
+}  // namespace
+
+CompileResult compileIfcToFrag(const CompileOptions& opts) {
+  const auto t0 = std::chrono::steady_clock::now();
+  const auto checkCancelled = [&]() {
+    if (opts.cancelRequested && opts.cancelRequested->load(std::memory_order_relaxed)) {
+      throw CompileCancelledError();
+    }
+  };
+  const auto report = [&](int stage, const std::string& msg) {
+    if (opts.onProgress) {
+      opts.onProgress(stage, 5, msg);
+    }
+  };
+  const uint32_t hwThreads = std::thread::hardware_concurrency();
+  const uint32_t workerCount = opts.threads > 0 ? opts.threads : (hwThreads > 0 ? hwThreads : 1u);
+
+  checkCancelled();
+
+  std::ifstream ifs(opts.inputPath, std::ios::binary);
+  if (!ifs) {
+    throw std::runtime_error("Cannot open input IFC file: " + opts.inputPath);
+  }
+
+  webifc::manager::ModelManager manager(false);
+  manager.SetLogLevel(6);  // LOG_LEVEL_OFF
+
+  webifc::manager::LoaderSettings settings{};
+  settings.COORDINATE_TO_ORIGIN = opts.coordinateToOrigin;
+  settings.CIRCLE_SEGMENTS = 12;
+  settings.TAPE_SIZE = 134217728;       // 128 MB STEP token tape
+  settings.MEMORY_LIMIT = 0xFFFFFFFFu;  // 4 GB tape limit on 64-bit host
+  const uint32_t modelID = manager.CreateModel(settings);
+  auto* loader = manager.GetIfcLoader(modelID);
+  if (!loader) {
+    throw std::runtime_error("Failed to create web-ifc IfcLoader");
+  }
+  report(1, "Parsing IFC STEP file...");
+  loader->LoadFile(ifs);
+
+  auto* geomProc = manager.GetGeometryProcessor(modelID);
+  const auto& schemaMgr = manager.GetSchemaManager();
+  const uint32_t maxExpressId = loader->GetMaxExpressId();
+  uint32_t nextSyntheticId = maxExpressId + 1;
+
+  // Read coordination matrix
+  bool coordsInitialized = false;
+  Transform fbCoords(DoubleVector(0, 0, 0), FloatVector(1, 0, 0), FloatVector(0, 1, 0));
+
+  // Buffers for Meshes
+  std::vector<uint32_t> meshesItems;
+  std::vector<Transform> globalTransforms;
+  std::vector<uint32_t> globalTransformIds;
+
+  std::vector<Transform> localTransforms;
+  std::vector<uint32_t> localTransformIds;
+  std::unordered_map<std::string, uint32_t> localTransformMap;
+  // Identity local transform at index 0
+  localTransforms.emplace_back(DoubleVector(0, 0, 0), FloatVector(1, 0, 0), FloatVector(0, 1, 0));
+  localTransformIds.push_back(0);
+
+  std::vector<Material> materials;
+  std::vector<uint32_t> materialIds;
+  std::unordered_map<uint32_t, uint32_t> materialKeyToId;
+
+  std::vector<ShellData> shells;
+  std::vector<Representation> representations;
+  std::vector<uint32_t> representationIds;
+  std::unordered_map<std::string, uint32_t> geomKeyToReprId;
+
+  std::vector<Sample> samples;
+  std::vector<uint32_t> sampleIds;
+
+  // Metadata per item
+  std::vector<uint32_t> localIds;
+  std::vector<std::string> categories;
+  std::vector<std::string> guids;
+  std::vector<uint32_t> guidsItems;
+  std::unordered_map<uint32_t, std::string> itemAttributes;
+  std::unordered_map<uint32_t, uint32_t> expressIdToItemIndex;
+
+  // Collect element types from schema (put IFCANNOTATION last just like @thatopen/fragments)
+  const auto& elementTypesSet = schemaMgr.GetIfcElementList();
+  std::vector<uint32_t> elementTypes(elementTypesSet.begin(), elementTypesSet.end());
+  std::sort(elementTypes.begin(), elementTypes.end());
+  const uint32_t annotationCode = schemaMgr.IfcTypeToTypeCode("IFCANNOTATION");
+  const uint32_t spaceCode = schemaMgr.IfcTypeToTypeCode("IFCSPACE");
+
+  auto itAnn = std::find(elementTypes.begin(), elementTypes.end(), annotationCode);
+  if (itAnn != elementTypes.end()) {
+    elementTypes.erase(itAnn);
+    elementTypes.push_back(annotationCode);
+  }
+
+  std::unordered_set<std::string> excludeSet;
+  for (const auto& c : opts.excludeCategories) excludeSet.insert(toUpperAscii(c));
+  std::unordered_set<std::string> onlySet;
+  for (const auto& c : opts.onlyCategories) onlySet.insert(toUpperAscii(c));
+
+  size_t totalCandidates = 0;
+  std::vector<std::pair<uint32_t, std::vector<uint32_t>>> typedIds;
+  typedIds.reserve(elementTypes.size());
+  for (const uint32_t typeCode : elementTypes) {
+    const std::string upperCat = toUpperAscii(schemaMgr.IfcTypeCodeToType(typeCode));
+    if (!excludeSet.empty() && excludeSet.count(upperCat)) continue;
+    if (!onlySet.empty() && !onlySet.count(upperCat)) continue;
+    auto ids = loader->GetExpressIDsWithType(typeCode);
+    if (!ids.empty()) {
+      totalCandidates += ids.size();
+      typedIds.emplace_back(typeCode, std::move(ids));
+    }
+  }
+  report(2, "Extracting geometry (0%, " + std::to_string(totalCandidates) + " entities, " +
+                std::to_string(workerCount) + " threads)...");
+  size_t processedCandidates = 0;
+  auto lastProgressAt = std::chrono::steady_clock::now();
+
+  constexpr size_t SHELL_BATCH_SIZE = 1024;
+  std::vector<RawShellJob> shellJobs;
+  shellJobs.reserve(SHELL_BATCH_SIZE);
+
+  auto flushShellBatch = [&]() {
+    if (shellJobs.empty()) return;
+    const size_t n = shellJobs.size();
+    const uint32_t nThreads = std::min<uint32_t>(workerCount, static_cast<uint32_t>(n));
+    if (nThreads <= 1) {
+      for (size_t i = 0; i < n; ++i) {
+        const auto& job = shellJobs[i];
+        ShellData sh = buildRawShellFromBuffers(job.verts, job.indices, job.sx, job.sy, job.sz);
+        if (sh.valid) {
+          representations[job.shellSlot] = Representation(
+              job.shellSlot,
+              BoundingBox(FloatVector(sh.minX, sh.minY, sh.minZ), FloatVector(sh.maxX, sh.maxY, sh.maxZ)),
+              RepresentationClass_SHELL);
+        }
+        shells[job.shellSlot] = std::move(sh);
+      }
+    } else {
+      std::atomic<size_t> nextIdx{0};
+      std::vector<std::thread> pool;
+      pool.reserve(nThreads);
+      for (uint32_t t = 0; t < nThreads; ++t) {
+        pool.emplace_back([&]() {
+          while (true) {
+            const size_t i = nextIdx.fetch_add(1, std::memory_order_relaxed);
+            if (i >= n) break;
+            const auto& job = shellJobs[i];
+            ShellData sh = buildRawShellFromBuffers(job.verts, job.indices, job.sx, job.sy, job.sz);
+            if (sh.valid) {
+              representations[job.shellSlot] = Representation(
+                  job.shellSlot,
+                  BoundingBox(FloatVector(sh.minX, sh.minY, sh.minZ), FloatVector(sh.maxX, sh.maxY, sh.maxZ)),
+                  RepresentationClass_SHELL);
+            }
+            shells[job.shellSlot] = std::move(sh);
+          }
+        });
+      }
+      for (auto& th : pool) th.join();
+    }
+    shellJobs.clear();
+  };
+
+  for (const auto& [typeCode, ids] : typedIds) {
+    const std::string catName = schemaMgr.IfcTypeCodeToType(typeCode);
+
+    for (const uint32_t expressID : ids) {
+      ++processedCandidates;
+      if ((processedCandidates & 255u) == 0u) {
+        checkCancelled();
+        const auto now = std::chrono::steady_clock::now();
+        if (now - lastProgressAt >= std::chrono::milliseconds(1000)) {
+          const int pct = totalCandidates > 0
+              ? static_cast<int>((processedCandidates * 100u) / totalCandidates)
+              : 0;
+          report(2, "Extracting geometry (" + std::to_string(pct) + "%, " +
+                        std::to_string(localIds.size()) + " meshes, " +
+                        std::to_string(shells.size()) + " shells)...");
+          lastProgressAt = now;
+        }
+      }
+      auto flatMesh = geomProc->GetFlatMesh(expressID);
+      if (flatMesh.geometries.empty()) continue;
+
+      if (!coordsInitialized) {
+        const glm::dmat4 coordMat = geomProc->GetCoordinationMatrix();
+        fbCoords = toFbTransform(decomposeMatrix(coordMat));
+        coordsInitialized = true;
+      }
+
+      const glm::dmat4 firstMat = glm::make_mat4(flatMesh.geometries[0].flatTransformation.data());
+      const DecomposedTransform elemDecomp = decomposeMatrix(firstMat);
+
+      if (opts.distanceThresholdM > 0.0) {
+        if (std::abs(elemDecomp.px) > opts.distanceThresholdM ||
+            std::abs(elemDecomp.py) > opts.distanceThresholdM ||
+            std::abs(elemDecomp.pz) > opts.distanceThresholdM) {
+          continue;
+        }
+      }
+
+      const glm::dmat4 invElemMat = glm::inverse(elemDecomp.withoutScale);
+      struct PendingSample {
+        uint32_t matIndex;
+        uint32_t reprIndex;
+        uint32_t ltIndex;
+      };
+      std::vector<PendingSample> pending;
+      pending.reserve(flatMesh.geometries.size());
+
+      for (const auto& placed : flatMesh.geometries) {
+        const glm::dmat4 gMat = glm::make_mat4(placed.flatTransformation.data());
+        const DecomposedTransform gDecomp = decomposeMatrix(gMat);
+
+        // Scale-aware geometry key
+        char keyBuf[96];
+        std::snprintf(
+            keyBuf,
+            sizeof(keyBuf),
+            "%u|%.4f|%.4f|%.4f",
+            placed.geometryExpressID,
+            gDecomp.sx,
+            gDecomp.sy,
+            gDecomp.sz);
+        const std::string geomKey(keyBuf);
+
+        uint32_t reprIndex = UINT32_MAX;
+        auto git = geomKeyToReprId.find(geomKey);
+        if (git != geomKeyToReprId.end()) {
+          reprIndex = git->second;
+          if (reprIndex == UINT32_MAX) continue;  // Previously skipped invalid/empty geometry
+        } else {
+          auto& rawGeom = geomProc->GetGeometry(placed.geometryExpressID);
+          if (rawGeom.vertexData.empty() || rawGeom.indexData.size() < 3) {
+            geomKeyToReprId.emplace(geomKey, UINT32_MAX);
+            continue;
+          }
+          reprIndex = static_cast<uint32_t>(representations.size());
+          const uint32_t reprId = nextSyntheticId++;
+          geomKeyToReprId.emplace(geomKey, reprIndex);
+          representations.emplace_back(
+              reprIndex,
+              BoundingBox(FloatVector(0, 0, 0), FloatVector(0, 0, 0)),
+              RepresentationClass_SHELL);
+          representationIds.push_back(reprId);
+          shells.emplace_back();
+
+          if (workerCount <= 1) {
+            ShellData sh = buildRawShellFromBuffers(rawGeom.vertexData, rawGeom.indexData, gDecomp.sx, gDecomp.sy, gDecomp.sz);
+            if (sh.valid) {
+              representations[reprIndex] = Representation(
+                  reprIndex,
+                  BoundingBox(FloatVector(sh.minX, sh.minY, sh.minZ), FloatVector(sh.maxX, sh.maxY, sh.maxZ)),
+                  RepresentationClass_SHELL);
+            }
+            shells[reprIndex] = std::move(sh);
+          } else {
+            RawShellJob job{};
+            job.shellSlot = reprIndex;
+            job.verts = rawGeom.vertexData;
+            job.indices = rawGeom.indexData;
+            job.sx = gDecomp.sx;
+            job.sy = gDecomp.sy;
+            job.sz = gDecomp.sz;
+            shellJobs.push_back(std::move(job));
+            if (shellJobs.size() >= SHELL_BATCH_SIZE) {
+              flushShellBatch();
+            }
+          }
+        }
+
+        // Material deduplication (Sample stores 0-based index into meshes.materials)
+        uint8_t mr = static_cast<uint8_t>(std::clamp(std::round(placed.color.r * 255.0), 0.0, 255.0));
+        uint8_t mg = static_cast<uint8_t>(std::clamp(std::round(placed.color.g * 255.0), 0.0, 255.0));
+        uint8_t mb = static_cast<uint8_t>(std::clamp(std::round(placed.color.b * 255.0), 0.0, 255.0));
+        double alpha = placed.color.a;
+        if (typeCode == spaceCode && alpha >= 0.99) {
+          alpha = 0.5;
+        }
+        uint8_t ma = static_cast<uint8_t>(std::clamp(std::round(alpha * 255.0), 0.0, 255.0));
+        const uint32_t matKey = (uint32_t(mr) << 24) | (uint32_t(mg) << 16) | (uint32_t(mb) << 8) | uint32_t(ma);
+        uint32_t matIndex = 0;
+        auto mit = materialKeyToId.find(matKey);
+        if (mit != materialKeyToId.end()) {
+          matIndex = mit->second;
+        } else {
+          matIndex = static_cast<uint32_t>(materials.size());
+          materialKeyToId.emplace(matKey, matIndex);
+          materials.emplace_back(mr, mg, mb, ma, RenderedFaces_ONE, Stroke_DEFAULT);
+          materialIds.push_back(nextSyntheticId++);
+        }
+
+        // Local transform relative to element globalTransform (0 = identity at index 0)
+        const glm::dmat4 relMat = invElemMat * gDecomp.withoutScale;
+        const DecomposedTransform relDecomp = decomposeMatrix(relMat);
+        const bool isIdentity =
+            relDecomp.px == 0.0 && relDecomp.py == 0.0 && relDecomp.pz == 0.0 &&
+            relDecomp.dxx == 1.0f && relDecomp.dxy == 0.0f && relDecomp.dxz == 0.0f &&
+            relDecomp.dyx == 0.0f && relDecomp.dyy == 1.0f && relDecomp.dyz == 0.0f;
+
+        uint32_t ltIndex = 0;
+        if (!isIdentity) {
+          char ltBuf[160];
+          std::snprintf(
+              ltBuf,
+              sizeof(ltBuf),
+              "%.4f|%.4f|%.4f|%.3f|%.3f|%.3f|%.4f|%.4f|%.4f",
+              relDecomp.px, relDecomp.py, relDecomp.pz,
+              relDecomp.dxx, relDecomp.dxy, relDecomp.dxz,
+              relDecomp.dyx, relDecomp.dyy, relDecomp.dyz);
+          auto lit = localTransformMap.find(ltBuf);
+          if (lit != localTransformMap.end()) {
+            ltIndex = lit->second;
+          } else {
+            ltIndex = static_cast<uint32_t>(localTransforms.size());
+            localTransformMap.emplace(ltBuf, ltIndex);
+            localTransforms.push_back(toFbTransform(relDecomp));
+            localTransformIds.push_back(nextSyntheticId++);
+          }
+        }
+
+        pending.push_back({matIndex, reprIndex, ltIndex});
+      }
+
+      if (pending.empty()) continue;
+
+      const uint32_t itemIndex = static_cast<uint32_t>(localIds.size());
+      expressIdToItemIndex.emplace(expressID, itemIndex);
+      meshesItems.push_back(itemIndex);
+      globalTransforms.push_back(toFbTransform(elemDecomp));
+      globalTransformIds.push_back(nextSyntheticId++);
+
+      localIds.push_back(expressID);
+      categories.push_back(catName);
+
+      // Extract GlobalId & Name from STEP line (arg 0 = GlobalId, arg 2 = Name)
+      std::string guidStr;
+      std::string nameStr;
+      if (loader->IsValidExpressID(expressID)) {
+        loader->MoveToLineArgument(expressID, 0);
+        guidStr = loader->GetDecodedStringArgument();
+        if (loader->GetNoLineArguments(expressID) > 2) {
+          loader->MoveToLineArgument(expressID, 2);
+          nameStr = loader->GetDecodedStringArgument();
+        }
+      }
+      if (!guidStr.empty()) {
+        guids.push_back(guidStr);
+        guidsItems.push_back(itemIndex);
+      }
+      itemAttributes.emplace(expressID, nameStr);
+
+      for (const auto& ps : pending) {
+        const uint32_t sId = nextSyntheticId++;
+        samples.emplace_back(itemIndex, ps.matIndex, ps.reprIndex, ps.ltIndex);
+        sampleIds.push_back(sId);
+      }
+    }
+  }
+  flushShellBatch();
+  checkCancelled();
+
+  // Filter out any samples referencing degenerate shells that became invalid after welding
+  if (!samples.empty()) {
+    std::vector<Sample> validSamples;
+    std::vector<uint32_t> validSampleIds;
+    validSamples.reserve(samples.size());
+    validSampleIds.reserve(sampleIds.size());
+    for (size_t i = 0; i < samples.size(); ++i) {
+      const uint32_t rIdx = samples[i].representation();
+      if (rIdx < shells.size() && shells[rIdx].valid) {
+        validSamples.push_back(samples[i]);
+        validSampleIds.push_back(sampleIds[i]);
+      }
+    }
+    samples.swap(validSamples);
+    sampleIds.swap(validSampleIds);
+  }
+
+  const uint32_t geomElementsCount = static_cast<uint32_t>(localIds.size());
+  report(2, "Extracted " + std::to_string(geomElementsCount) + " meshes (" +
+                std::to_string(shells.size()) + " unique shells, " +
+                std::to_string(samples.size()) + " samples)");
+
+  report(3, "Building spatial hierarchy, properties & releasing IFC memory...");
+  // Build spatial structure tree (IfcProject -> IfcSite -> IfcBuilding -> IfcBuildingStorey -> elements)
+  std::unordered_map<uint32_t, std::vector<uint32_t>> spatialChildren;
+  const uint32_t relAggCode = schemaMgr.IfcTypeToTypeCode("IFCRELAGGREGATES");
+  const uint32_t relContCode = schemaMgr.IfcTypeToTypeCode("IFCRELCONTAINEDINSPATIALSTRUCTURE");
+
+  for (const uint32_t relId : loader->GetExpressIDsWithType(relAggCode)) {
+    if (loader->GetNoLineArguments(relId) < 6) continue;
+    loader->MoveToLineArgument(relId, 4);
+    const uint32_t parentId = loader->GetOptionalRefArgument();
+    loader->MoveToLineArgument(relId, 5);
+    const auto children = loader->GetSetArgument();
+    if (parentId != 0) {
+      auto& vec = spatialChildren[parentId];
+      vec.insert(vec.end(), children.begin(), children.end());
+    }
+  }
+  for (const uint32_t relId : loader->GetExpressIDsWithType(relContCode)) {
+    if (loader->GetNoLineArguments(relId) < 6) continue;
+    loader->MoveToLineArgument(relId, 4);
+    const auto elems = loader->GetSetArgument();
+    loader->MoveToLineArgument(relId, 5);
+    const uint32_t parentId = loader->GetOptionalRefArgument();
+    if (parentId != 0) {
+      auto& vec = spatialChildren[parentId];
+      vec.insert(vec.end(), elems.begin(), elems.end());
+    }
+  }
+
+  // Pre-capture spatial node categories before closing web-ifc model to free 1-2+ GB RAM
+  std::unordered_map<uint32_t, std::string> spatialCats;
+  for (const auto& [pid, children] : spatialChildren) {
+    if (loader->IsValidExpressID(pid)) {
+      spatialCats.emplace(pid, schemaMgr.IfcTypeCodeToType(loader->GetLineType(pid)));
+    }
+    for (const uint32_t cid : children) {
+      if (!spatialCats.count(cid) && loader->IsValidExpressID(cid)) {
+        spatialCats.emplace(cid, schemaMgr.IfcTypeCodeToType(loader->GetLineType(cid)));
+      }
+    }
+  }
+  const uint32_t projCode = schemaMgr.IfcTypeToTypeCode("IFCPROJECT");
+  const auto projIds = loader->GetExpressIDsWithType(projCode);
+  if (!projIds.empty() && loader->IsValidExpressID(projIds[0])) {
+    spatialCats.emplace(projIds[0], schemaMgr.IfcTypeCodeToType(loader->GetLineType(projIds[0])));
+  }
+
+  // Extract IFC Property Sets & Relations (Option 2A + 2C) before closing web-ifc
+  std::unordered_map<uint32_t, std::vector<std::string>> extraAttrEntries;
+  std::map<uint32_t, std::map<std::string, std::vector<uint32_t>>> relationsMap;
+  uint32_t propertySetsCount = 0;
+
+  if (opts.includeProperties) {
+    checkCancelled();
+    const uint32_t relDefPropsCode = schemaMgr.IfcTypeToTypeCode("IFCRELDEFINESBYPROPERTIES");
+    const uint32_t relDefTypeCode = schemaMgr.IfcTypeToTypeCode("IFCRELDEFINESBYTYPE");
+    const uint32_t psetCode = schemaMgr.IfcTypeToTypeCode("IFCPROPERTYSET");
+    const uint32_t singleValCode = schemaMgr.IfcTypeToTypeCode("IFCPROPERTYSINGLEVALUE");
+
+    std::unordered_set<uint32_t> registeredPsets;
+    std::unordered_set<uint32_t> registeredProps;
+
+    auto registerPropertySet = [&](uint32_t psetId) -> bool {
+      if (psetId == 0 || !loader->IsValidExpressID(psetId)) return false;
+      if (loader->GetLineType(psetId) != psetCode) return false;
+      if (!registeredPsets.insert(psetId).second) return true;
+
+      std::string psetName;
+      if (loader->GetNoLineArguments(psetId) > 2) {
+        loader->MoveToLineArgument(psetId, 2);
+        psetName = loader->GetDecodedStringArgument();
+      }
+      if (!expressIdToItemIndex.count(psetId)) {
+        const uint32_t idx = static_cast<uint32_t>(localIds.size());
+        expressIdToItemIndex.emplace(psetId, idx);
+        localIds.push_back(psetId);
+        categories.push_back("IFCPROPERTYSET");
+      }
+      if (!psetName.empty()) {
+        extraAttrEntries[psetId].push_back("[\"Name\",\"" + jsonEscape(psetName) + "\",\"IFCLABEL\"]");
+      }
+
+      if (loader->GetNoLineArguments(psetId) > 4) {
+        loader->MoveToLineArgument(psetId, 4);
+        const auto propIds = loader->GetSetArgument();
+        std::vector<uint32_t> validPropIds;
+        validPropIds.reserve(propIds.size());
+        for (const uint32_t pid : propIds) {
+          if (pid == 0 || !loader->IsValidExpressID(pid)) continue;
+          if (loader->GetLineType(pid) != singleValCode) continue;
+          validPropIds.push_back(pid);
+          if (registeredProps.insert(pid).second) {
+            std::string propName;
+            if (loader->GetNoLineArguments(pid) > 0) {
+              loader->MoveToLineArgument(pid, 0);
+              propName = loader->GetDecodedStringArgument();
+            }
+            const auto [nomVal, nomType] = readNominalValue(loader, pid);
+            if (!expressIdToItemIndex.count(pid)) {
+              const uint32_t pidx = static_cast<uint32_t>(localIds.size());
+              expressIdToItemIndex.emplace(pid, pidx);
+              localIds.push_back(pid);
+              categories.push_back("IFCPROPERTYSINGLEVALUE");
+            }
+            auto& entries = extraAttrEntries[pid];
+            if (!propName.empty()) {
+              entries.push_back("[\"Name\",\"" + jsonEscape(propName) + "\",\"IFCLABEL\"]");
+            }
+            if (!nomVal.empty()) {
+              entries.push_back("[\"NominalValue\",\"" + jsonEscape(nomVal) + "\",\"" + jsonEscape(nomType) + "\"]");
+            }
+          }
+        }
+        if (!validPropIds.empty()) {
+          relationsMap[psetId]["HasProperties"] = std::move(validPropIds);
+        }
+      }
+      ++propertySetsCount;
+      return true;
+    };
+
+    // Direct element -> PropertySet links
+    for (const uint32_t relId : loader->GetExpressIDsWithType(relDefPropsCode)) {
+      if (loader->GetNoLineArguments(relId) < 6) continue;
+      loader->MoveToLineArgument(relId, 5);
+      const uint32_t psetId = loader->GetOptionalRefArgument();
+      if (psetId == 0 || !loader->IsValidExpressID(psetId) || loader->GetLineType(psetId) != psetCode) continue;
+      loader->MoveToLineArgument(relId, 4);
+      const auto relatedObjs = loader->GetSetArgument();
+      bool anyMatched = false;
+      for (const uint32_t eid : relatedObjs) {
+        auto it = expressIdToItemIndex.find(eid);
+        if (it != expressIdToItemIndex.end() && it->second < geomElementsCount) {
+          anyMatched = true;
+          break;
+        }
+      }
+      if (!anyMatched) continue;
+      if (!registerPropertySet(psetId)) continue;
+      for (const uint32_t eid : relatedObjs) {
+        auto it = expressIdToItemIndex.find(eid);
+        if (it != expressIdToItemIndex.end() && it->second < geomElementsCount) {
+          relationsMap[eid]["IsDefinedBy"].push_back(psetId);
+        }
+      }
+    }
+
+    // Type-inherited PropertySet links (IfcRelDefinesByType -> IfcTypeObject.HasPropertySets)
+    for (const uint32_t relId : loader->GetExpressIDsWithType(relDefTypeCode)) {
+      if (loader->GetNoLineArguments(relId) < 6) continue;
+      loader->MoveToLineArgument(relId, 5);
+      const uint32_t typeId = loader->GetOptionalRefArgument();
+      if (typeId == 0 || !loader->IsValidExpressID(typeId) || loader->GetNoLineArguments(typeId) <= 5) continue;
+      loader->MoveToLineArgument(typeId, 5);
+      const auto typePsets = loader->GetSetArgument();
+      if (typePsets.empty()) continue;
+      loader->MoveToLineArgument(relId, 4);
+      const auto relatedObjs = loader->GetSetArgument();
+      std::vector<uint32_t> matchedObjs;
+      for (const uint32_t eid : relatedObjs) {
+        auto it = expressIdToItemIndex.find(eid);
+        if (it != expressIdToItemIndex.end() && it->second < geomElementsCount) {
+          matchedObjs.push_back(eid);
+        }
+      }
+      if (matchedObjs.empty()) continue;
+      for (const uint32_t psetId : typePsets) {
+        if (!registerPropertySet(psetId)) continue;
+        for (const uint32_t eid : matchedObjs) {
+          relationsMap[eid]["IsDefinedBy"].push_back(psetId);
+        }
+      }
+    }
+  }
+
+  // Release all web-ifc STEP tape & geometry caches BEFORE FlatBuffer allocation!
+  geomProc->Clear();
+  manager.CloseAllModels();
+  ifs.close();
+  checkCancelled();
+
+  // Pre-size FlatBufferBuilder to avoid 2x doubling spikes during serialization
+  size_t estimatedBytes = 1024 * 1024;
+  for (const auto& sh : shells) {
+    estimatedBytes += sh.points.size() * 16u + sh.triangles.size() * 28u + 64u;
+  }
+  estimatedBytes += samples.size() * 32u + localIds.size() * 64u + relationsMap.size() * 64u;
+  estimatedBytes = estimatedBytes + (estimatedBytes / 6u);  // +~16% headroom
+  constexpr size_t MAX_PRESIZE = 1536ULL * 1024ULL * 1024ULL;
+  if (estimatedBytes > MAX_PRESIZE) estimatedBytes = MAX_PRESIZE;
+
+  // Assemble FlatBuffers Model
+  report(4, "Packing FlatBuffers model (" + std::to_string(shells.size()) + " shells, " +
+                std::to_string(samples.size()) + " samples, " +
+                std::to_string(propertySetsCount) + " psets)...");
+  flatbuffers::FlatBufferBuilder builder(estimatedBytes);
+
+  // Build Shells
+  std::vector<flatbuffers::Offset<Shell>> shellOffsets;
+  shellOffsets.reserve(shells.size());
+  for (const auto& sh : shells) {
+    const auto pointsOffset = builder.CreateVectorOfStructs(sh.points);
+    const bool isBig = sh.points.size() > USHORT_MAX_POINTS;
+    std::vector<uint16_t> faceIds(sh.triangles.size(), 0);
+    const auto faceIdsOffset = builder.CreateVector(faceIds);
+
+    if (isBig) {
+      std::vector<flatbuffers::Offset<BigShellProfile>> bigProfiles;
+      bigProfiles.reserve(sh.triangles.size());
+      for (const auto& tri : sh.triangles) {
+        const uint32_t arr[3] = {tri[0], tri[1], tri[2]};
+        const auto idxOff = builder.CreateVector(arr, 3);
+        bigProfiles.push_back(CreateBigShellProfile(builder, idxOff));
+      }
+      const auto emptyProf = builder.CreateVector(std::vector<flatbuffers::Offset<ShellProfile>>{});
+      const auto emptyHole = builder.CreateVector(std::vector<flatbuffers::Offset<ShellHole>>{});
+      const auto bigProfOff = builder.CreateVector(bigProfiles);
+      const auto emptyBigHole = builder.CreateVector(std::vector<flatbuffers::Offset<BigShellHole>>{});
+      shellOffsets.push_back(CreateShell(
+          builder, emptyProf, emptyHole, pointsOffset, bigProfOff, emptyBigHole, ShellType_BIG, faceIdsOffset));
+    } else {
+      std::vector<flatbuffers::Offset<ShellProfile>> profiles;
+      profiles.reserve(sh.triangles.size());
+      for (const auto& tri : sh.triangles) {
+        const uint16_t arr[3] = {
+            static_cast<uint16_t>(tri[0]),
+            static_cast<uint16_t>(tri[1]),
+            static_cast<uint16_t>(tri[2])};
+        const auto idxOff = builder.CreateVector(arr, 3);
+        profiles.push_back(CreateShellProfile(builder, idxOff));
+      }
+      const auto profOff = builder.CreateVector(profiles);
+      const auto emptyHole = builder.CreateVector(std::vector<flatbuffers::Offset<ShellHole>>{});
+      const auto emptyBigProf = builder.CreateVector(std::vector<flatbuffers::Offset<BigShellProfile>>{});
+      const auto emptyBigHole = builder.CreateVector(std::vector<flatbuffers::Offset<BigShellHole>>{});
+      shellOffsets.push_back(CreateShell(
+          builder, profOff, emptyHole, pointsOffset, emptyBigProf, emptyBigHole, ShellType_NONE, faceIdsOffset));
+    }
+  }
+
+  const auto meshesItemsOff = builder.CreateVector(meshesItems);
+  const auto samplesOff = builder.CreateVectorOfStructs(samples);
+  const auto reprOff = builder.CreateVectorOfStructs(representations);
+  const auto matOff = builder.CreateVectorOfStructs(materials);
+  const auto emptyCircleExt = builder.CreateVector(std::vector<flatbuffers::Offset<CircleExtrusion>>{});
+  const auto shellsOff = builder.CreateVector(shellOffsets);
+  const auto ltOff = builder.CreateVectorOfStructs(localTransforms);
+  const auto gtOff = builder.CreateVectorOfStructs(globalTransforms);
+  const auto matIdsOff = builder.CreateVector(materialIds);
+  const auto reprIdsOff = builder.CreateVector(representationIds);
+  const auto sampleIdsOff = builder.CreateVector(sampleIds);
+  const auto ltIdsOff = builder.CreateVector(localTransformIds);
+  const auto gtIdsOff = builder.CreateVector(globalTransformIds);
+
+  const auto meshesOff = CreateMeshes(
+      builder,
+      &fbCoords,
+      meshesItemsOff,
+      samplesOff,
+      reprOff,
+      matOff,
+      emptyCircleExt,
+      shellsOff,
+      ltOff,
+      gtOff,
+      matIdsOff,
+      reprIdsOff,
+      sampleIdsOff,
+      ltIdsOff,
+      gtIdsOff);
+
+  // Capture counts before releasing mesh vectors
+  const uint32_t uniqueShellsCount = static_cast<uint32_t>(shells.size());
+  const uint32_t samplesCountVal = static_cast<uint32_t>(samples.size());
+
+  // Release mesh vectors now that they are serialized into FlatBuffers
+  {
+    std::vector<ShellData>().swap(shells);
+    std::vector<Sample>().swap(samples);
+    std::vector<Representation>().swap(representations);
+    std::vector<Transform>().swap(globalTransforms);
+    std::vector<Transform>().swap(localTransforms);
+    std::vector<Material>().swap(materials);
+  }
+
+  // Attributes (elements + IFCPROPERTYSET + IFCPROPERTYSINGLEVALUE)
+  std::vector<flatbuffers::Offset<Attribute>> attrOffsets;
+  attrOffsets.reserve(localIds.size());
+  for (const uint32_t eid : localIds) {
+    auto extraIt = extraAttrEntries.find(eid);
+    if (extraIt != extraAttrEntries.end() && !extraIt->second.empty()) {
+      std::vector<flatbuffers::Offset<flatbuffers::String>> strOffs;
+      strOffs.reserve(extraIt->second.size());
+      for (const auto& entry : extraIt->second) {
+        strOffs.push_back(builder.CreateString(entry));
+      }
+      attrOffsets.push_back(CreateAttribute(builder, builder.CreateVector(strOffs)));
+      continue;
+    }
+    auto nmIt = itemAttributes.find(eid);
+    if (nmIt == itemAttributes.end() || nmIt->second.empty()) {
+      const auto emptyVec = builder.CreateVector(std::vector<flatbuffers::Offset<flatbuffers::String>>{});
+      attrOffsets.push_back(CreateAttribute(builder, emptyVec));
+    } else {
+      std::string entry = "[\"Name\",\"" + jsonEscape(nmIt->second) + "\",\"STRING\"]";
+      auto sOff = builder.CreateString(entry);
+      auto vecOff = builder.CreateVector(&sOff, 1);
+      attrOffsets.push_back(CreateAttribute(builder, vecOff));
+    }
+  }
+
+  // Relations (owner localId -> ["IsDefinedBy", pset1, ...] / ["HasProperties", prop1, ...])
+  std::vector<flatbuffers::Offset<Relation>> relOffsets;
+  std::vector<int32_t> relItems;
+  relOffsets.reserve(relationsMap.size());
+  relItems.reserve(relationsMap.size());
+  for (const auto& [ownerId, relByName] : relationsMap) {
+    std::vector<flatbuffers::Offset<flatbuffers::String>> dataOffs;
+    dataOffs.reserve(relByName.size());
+    for (const auto& [relName, targets] : relByName) {
+      if (targets.empty()) continue;
+      std::string json = "[\"" + jsonEscape(relName) + "\"";
+      for (const uint32_t tid : targets) {
+        json += "," + std::to_string(tid);
+      }
+      json += "]";
+      dataOffs.push_back(builder.CreateString(json));
+    }
+    if (!dataOffs.empty()) {
+      relItems.push_back(static_cast<int32_t>(ownerId));
+      relOffsets.push_back(CreateRelation(builder, builder.CreateVector(dataOffs)));
+    }
+  }
+  const uint32_t relationsCountVal = static_cast<uint32_t>(relOffsets.size());
+
+  // Spatial structure recursive builder (uses pre-captured spatialCats; web-ifc is already closed)
+  std::unordered_set<uint32_t> visitedSpatial;
+  auto buildSpatialNode = [&](auto& self, uint32_t eid) -> flatbuffers::Offset<SpatialStructure> {
+    if (!visitedSpatial.insert(eid).second) {
+      return 0;
+    }
+    auto catIt = spatialCats.find(eid);
+    const std::string cat = catIt != spatialCats.end() ? catIt->second : "";
+    std::vector<flatbuffers::Offset<SpatialStructure>> childOffsets;
+    auto cit = spatialChildren.find(eid);
+    if (cit != spatialChildren.end()) {
+      for (const uint32_t cid : cit->second) {
+        if (spatialChildren.count(cid) || expressIdToItemIndex.count(cid)) {
+          auto childOff = self(self, cid);
+          if (!childOff.IsNull()) childOffsets.push_back(childOff);
+        }
+      }
+    }
+    const auto catOff = cat.empty() ? 0 : builder.CreateString(cat);
+    const auto childrenOff = builder.CreateVector(childOffsets);
+    return CreateSpatialStructure(builder, eid, catOff, childrenOff);
+  };
+
+  flatbuffers::Offset<SpatialStructure> spatialRootOff = 0;
+  if (!projIds.empty()) {
+    spatialRootOff = buildSpatialNode(buildSpatialNode, projIds[0]);
+  }
+
+  const auto metaOff = builder.CreateString("{\"schema\":\"IFC\",\"compiler\":\"ifc2frag-cpp\"}");
+  const auto guidsOff = builder.CreateVectorOfStrings(guids);
+  const auto guidsItemsOff = builder.CreateVector(guidsItems);
+  const auto localIdsOff = builder.CreateVector(localIds);
+  const auto catsOff = builder.CreateVectorOfStrings(categories);
+  const auto attrsOff = builder.CreateVector(attrOffsets);
+  const auto relsOff = builder.CreateVector(relOffsets);
+  const auto relItemsOff = builder.CreateVector(relItems);
+  const auto modelGuidOff = builder.CreateString(makeUuidV4(maxExpressId));
+
+  const auto modelOff = CreateModel(
+      builder,
+      metaOff,
+      guidsOff,
+      guidsItemsOff,
+      nextSyntheticId,
+      localIdsOff,
+      catsOff,
+      meshesOff,
+      attrsOff,
+      relsOff,
+      relItemsOff,
+      modelGuidOff,
+      spatialRootOff);
+
+  builder.Finish(modelOff);
+  checkCancelled();
+
+  const uint8_t* ptr = builder.GetBufferPointer();
+  const size_t rawSize = builder.GetSize();
+  const size_t rawMb = (rawSize + (1024 * 1024 - 1)) / (1024 * 1024);
+  report(5, "Compressing zlib level " + std::to_string(opts.zlibLevel) + " (" +
+                std::to_string(rawMb) + " MB) & writing .frag...");
+  const uint64_t compressedBytes = deflatePtrToFile(
+      ptr,
+      rawSize,
+      opts.outputPath,
+      opts.zlibLevel,
+      [&](int pct) {
+        checkCancelled();
+        report(5, "Compressing zlib level " + std::to_string(opts.zlibLevel) + " (" +
+                      std::to_string(pct) + "%)...");
+      });
+  builder.Clear();
+
+  const auto t1 = std::chrono::steady_clock::now();
+  const double elapsed = std::chrono::duration<double>(t1 - t0).count();
+
+  CompileResult res{};
+  res.elementsProcessed = geomElementsCount;
+  res.uniqueShells = uniqueShellsCount;
+  res.samplesCount = samplesCountVal;
+  res.propertySetsCount = propertySetsCount;
+  res.relationsCount = relationsCountVal;
+  res.rawFlatBufferBytes = rawSize;
+  res.compressedFragBytes = compressedBytes;
+  res.elapsedSeconds = elapsed;
+  return res;
+}
+
+}  // namespace ifc2frag

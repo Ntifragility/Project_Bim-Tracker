@@ -1,0 +1,192 @@
+// Exact FlatBuffers schema matching @thatopen/fragments v3.4.5
+
+enum AxisPartClass : byte {
+  NONE = 0,
+  WIRE = 1,
+  WIRE_SET = 2,
+  CIRCLE_CURVE = 3
+}
+
+enum RenderedFaces : byte {
+  ONE = 0,
+  TWO = 1
+}
+
+enum RepresentationClass : byte {
+  NONE = 0,
+  SHELL = 1,
+  CIRCLE_EXTRUSION = 2
+}
+
+enum ShellType : byte {
+  NONE = 0,
+  BIG = 1
+}
+
+enum Stroke : byte {
+  DEFAULT = 0
+}
+
+struct FloatVector {
+  x: float;
+  y: float;
+  z: float;
+}
+
+struct DoubleVector {
+  x: double;
+  y: double;
+  z: double;
+}
+
+struct BoundingBox {
+  min: FloatVector;
+  max: FloatVector;
+}
+
+struct Transform {
+  position: DoubleVector;
+  x_direction: FloatVector;
+  y_direction: FloatVector;
+}
+
+struct Material {
+  r: ubyte;
+  g: ubyte;
+  b: ubyte;
+  a: ubyte;
+  rendered_faces: RenderedFaces;
+  stroke: Stroke;
+}
+
+struct Representation {
+  id: uint;
+  bbox: BoundingBox;
+  representation_class: RepresentationClass;
+}
+
+struct Sample {
+  item: uint;
+  material: uint;
+  representation: uint;
+  local_transform: uint;
+}
+
+struct Wire {
+  p1: FloatVector;
+  p2: FloatVector;
+}
+
+struct CircleCurve {
+  aperture: float;
+  position: FloatVector;
+  radius: float;
+  x_direction: FloatVector;
+  y_direction: FloatVector;
+}
+
+table WireSet {
+  ps: [FloatVector];
+}
+
+table Axis {
+  wires: [Wire];
+  order: [uint];
+  parts: [AxisPartClass];
+  wire_sets: [WireSet];
+  circle_curves: [CircleCurve];
+}
+
+table CircleExtrusion {
+  radius: [double];
+  axes: [Axis];
+}
+
+table ShellProfile {
+  indices: [ushort];
+}
+
+table ShellHole {
+  indices: [ushort];
+  profile_id: ushort;
+}
+
+table BigShellProfile {
+  indices: [uint];
+}
+
+table BigShellHole {
+  indices: [uint];
+  profile_id: ushort;
+}
+
+table Shell {
+  profiles: [ShellProfile];
+  holes: [ShellHole];
+  points: [FloatVector];
+  big_profiles: [BigShellProfile];
+  big_holes: [BigShellHole];
+  type: ShellType = NONE;
+  profiles_face_ids: [ushort];
+}
+
+table Meshes {
+  coordinates: Transform;
+  meshes_items: [uint];
+  samples: [Sample];
+  representations: [Representation];
+  materials: [Material];
+  circle_extrusions: [CircleExtrusion];
+  shells: [Shell];
+  local_transforms: [Transform];
+  global_transforms: [Transform];
+  material_ids: [uint];
+  representation_ids: [uint];
+  sample_ids: [uint];
+  local_transform_ids: [uint];
+  global_transform_ids: [uint];
+}
+
+table Attribute {
+  data: [string];
+}
+
+table Relation {
+  data: [string];
+}
+
+table SpatialStructure {
+  local_id: uint = null;
+  category: string;
+  children: [SpatialStructure];
+}
+
+table ModelIndex {
+  name: string;
+  string_keys: [string];
+  number_keys: [uint];
+  string_values: [string];
+  number_values: [uint];
+  end: [uint];
+  start: [uint];
+}
+
+table Model {
+  metadata: string;
+  guids: [string];
+  guids_items: [uint];
+  max_local_id: uint;
+  local_ids: [uint];
+  categories: [string];
+  meshes: Meshes;
+  attributes: [Attribute];
+  relations: [Relation];
+  relations_items: [int];
+  guid: string;
+  spatial_structure: SpatialStructure;
+  unique_attributes: [string];
+  relation_names: [string];
+  indexes: [ModelIndex];
+}
+
+root_type Model;
