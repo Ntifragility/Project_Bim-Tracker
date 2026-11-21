@@ -5,6 +5,24 @@
 import { extractRunParts } from './centerline-builder.js';
 import { getNecBendRadiusM } from './fitting-solver.js';
 
+const METRES_TO_FEET = 1 / 0.3048;
+const STICK_LENGTH_FT = 10;
+
+function escapeStepStr(value) {
+  return String(value ?? '').replace(/'/g, "''");
+}
+
+function polylineLengthM(pts) {
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const dx = Number(pts[i].x) - Number(pts[i - 1].x);
+    const dy = Number(pts[i].y) - Number(pts[i - 1].y);
+    const dz = Number(pts[i].z) - Number(pts[i - 1].z);
+    total += Math.hypot(dx, dy, dz);
+  }
+  return total;
+}
+
 function formatIfcDate(d = new Date()) {
   return d.toISOString().replace(/[-:]/g, '').split('.')[0];
 }
@@ -121,8 +139,8 @@ export function exportOverlayIfc({
   const relProjSiteId = nextId();
   add(`#${relProjSiteId}=IFCRELAGGREGATES('${makeGuid(3)}',#${ownerHistId},$,$,#${projectId},(#${siteId}));`);
 
-  const runEntityIds = [];
-  const systemMembers = new Map(); // systemName -> string[] of '#id'
+  const assemblyEntityIds = [];
+  const systemGroups = new Map(); // systemName -> { members: string[], runCount: number, totalLengthM: number, totalSticks10Ft: number }
   let guidSeq = 10;
 
   const isIfc4 = schemaUpper === 'IFC4';
@@ -160,22 +178,74 @@ export function exportOverlayIfc({
 
     if (nodeCoords.length < 2) continue;
 
-    const runName = run.name || `Run ${run.id}`;
+    const runIdStr = String(run.id ?? `run-${guidSeq}`);
+    const runName = run.name || `Run ${runIdStr}`;
     const runSize = run.size || run.diameter || '3/4"';
     const runSystem = run.system || 'Power';
-    const runLen = Number(run.length || 0).toFixed(3);
+    const computedLenM = polylineLengthM(nodeCoords);
+    const runLenM = Number(run.length) > 0 ? Number(run.length) : computedLenM;
+    const runLenFt = runLenM * METRES_TO_FEET;
+    const sticks10Ft = runLenFt > 0 ? Math.ceil(runLenFt / STICK_LENGTH_FT) : 0;
+
     const radiusM = tradeRadiusFromLabel(runSize);
     const bendRadiusM = getNecBendRadiusM(runSize);
     const parts = extractRunParts(nodeCoords, bendRadiusM, 12);
+    const totalBendDeg = parts.reduce(
+      (sum, part) => sum + (part.kind === 'fitting' ? Number(part.bendAngle || 0) : 0),
+      0
+    );
 
+    const escRunId = escapeStepStr(runIdStr);
+    const escRunName = escapeStepStr(runName);
+    const escRunSize = escapeStepStr(runSize);
+    const escRunSystem = escapeStepStr(runSystem);
+
+    // Per-run property set (attached to assembly + every segment & elbow so clicking any piece shows total trace length)
+    const pRunId = nextId();
+    add(`#${pRunId}=IFCPROPERTYSINGLEVALUE('RunId',$,IFCLABEL('${escRunId}'),$);`);
+    const pRunNameId = nextId();
+    add(`#${pRunNameId}=IFCPROPERTYSINGLEVALUE('RunName',$,IFCLABEL('${escRunName}'),$);`);
     const pSizeId = nextId();
-    add(`#${pSizeId}=IFCPROPERTYSINGLEVALUE('Size',$,IFCLABEL('${runSize}'),$);`);
+    add(`#${pSizeId}=IFCPROPERTYSINGLEVALUE('Size',$,IFCLABEL('${escRunSize}'),$);`);
     const pSystemId = nextId();
-    add(`#${pSystemId}=IFCPROPERTYSINGLEVALUE('System',$,IFCLABEL('${runSystem}'),$);`);
+    add(`#${pSystemId}=IFCPROPERTYSINGLEVALUE('System',$,IFCLABEL('${escRunSystem}'),$);`);
     const pLenId = nextId();
-    add(`#${pLenId}=IFCPROPERTYSINGLEVALUE('Length',$,IFCLENGTHMEASURE(${runLen}),$);`);
+    add(`#${pLenId}=IFCPROPERTYSINGLEVALUE('Length',$,IFCLENGTHMEASURE(${runLenM.toFixed(3)}),$);`);
+    const pTotalLenMId = nextId();
+    add(`#${pTotalLenMId}=IFCPROPERTYSINGLEVALUE('TotalLengthM',$,IFCLENGTHMEASURE(${runLenM.toFixed(3)}),$);`);
+    const pTotalLenFtId = nextId();
+    add(`#${pTotalLenFtId}=IFCPROPERTYSINGLEVALUE('TotalLengthFt',$,IFCREAL(${runLenFt.toFixed(2)}),$);`);
+    const pSticksId = nextId();
+    add(`#${pSticksId}=IFCPROPERTYSINGLEVALUE('Sticks10Ft',$,IFCINTEGER(${sticks10Ft}),$);`);
+    const pBendDegId = nextId();
+    add(`#${pBendDegId}=IFCPROPERTYSINGLEVALUE('TotalBendDeg',$,IFCREAL(${totalBendDeg.toFixed(1)}),$);`);
+    const pPartCountId = nextId();
+    add(`#${pPartCountId}=IFCPROPERTYSINGLEVALUE('PartCount',$,IFCINTEGER(${parts.length}),$);`);
+
     const runPsetId = nextId();
-    add(`#${runPsetId}=IFCPROPERTYSET('${makeGuid(guidSeq++)}',#${ownerHistId},'Pset_ConduitRun',$,(#${pSizeId},#${pSystemId},#${pLenId}));`);
+    add(
+      `#${runPsetId}=IFCPROPERTYSET('${makeGuid(guidSeq++)}',#${ownerHistId},'Pset_ConduitRun',$,` +
+      `(#${pRunId},#${pRunNameId},#${pSizeId},#${pSystemId},#${pLenId},#${pTotalLenMId},#${pTotalLenFtId},#${pSticksId},#${pBendDegId},#${pPartCountId}));`
+    );
+
+    // Parent assembly packaging all segments & elbows of this trace from start to end
+    const assemblyId = nextId();
+    const assemblyLabel = escapeStepStr(`${runName} (${runSize} - ${runLenFt.toFixed(2)} ft)`);
+    add(
+      `#${assemblyId}=IFCELEMENTASSEMBLY('${makeGuid(guidSeq++)}',#${ownerHistId},'${assemblyLabel}',` +
+      `'Conduit Run Assembly (${escRunSystem})',$,#${wcsId},$,'${escRunId}',.NOTDEFINED.,.USERDEFINED.);`
+    );
+    const assemblyRef = `#${assemblyId}`;
+    assemblyEntityIds.push(assemblyRef);
+
+    if (!systemGroups.has(runSystem)) {
+      systemGroups.set(runSystem, { members: [], runCount: 0, totalLengthM: 0, totalSticks10Ft: 0 });
+    }
+    const sysEntry = systemGroups.get(runSystem);
+    sysEntry.members.push(assemblyRef);
+    sysEntry.runCount += 1;
+    sysEntry.totalLengthM += runLenM;
+    sysEntry.totalSticks10Ft += sticks10Ft;
 
     const partEntityRefs = [];
     let segIdx = 1;
@@ -184,54 +254,90 @@ export function exportOverlayIfc({
     for (const part of parts) {
       const prodShapeId = emitSweptPipePart(part.points, radiusM);
       const partId = nextId();
+      const partLenM = polylineLengthM(part.points);
+      const partLenFt = partLenM * METRES_TO_FEET;
+
       if (part.kind === 'fitting') {
         const angleLabel = `${Math.round(part.bendAngle || 0)}°`;
         const entityLine = isIfc4
-          ? `#${partId}=IFCCABLECARRIERFITTING('${makeGuid(guidSeq++)}',#${ownerHistId},'${runName} - Elbow ${fitIdx++}','${angleLabel} Conduit Bend (${runSize})',$,#${wcsId},#${prodShapeId},'${runSize}',.BEND.);`
-          : `#${partId}=IFCFLOWFITTING('${makeGuid(guidSeq++)}',#${ownerHistId},'${runName} - Elbow ${fitIdx++}','${angleLabel} Conduit Bend (${runSize})',$,#${wcsId},#${prodShapeId},'${runSize}');`;
+          ? `#${partId}=IFCCABLECARRIERFITTING('${makeGuid(guidSeq++)}',#${ownerHistId},'${escRunName} - Elbow ${fitIdx++}','${angleLabel} Conduit Bend (${escRunSize})',$,#${wcsId},#${prodShapeId},'${escRunSize}',.BEND.);`
+          : `#${partId}=IFCFLOWFITTING('${makeGuid(guidSeq++)}',#${ownerHistId},'${escRunName} - Elbow ${fitIdx++}','${angleLabel} Conduit Bend (${escRunSize})',$,#${wcsId},#${prodShapeId},'${escRunSize}');`;
         add(entityLine);
 
         const pAngleId = nextId();
         add(`#${pAngleId}=IFCPROPERTYSINGLEVALUE('BendAngle',$,IFCREAL(${Number(part.bendAngle || 0).toFixed(2)}),$);`);
         const pRadId = nextId();
         add(`#${pRadId}=IFCPROPERTYSINGLEVALUE('BendRadius',$,IFCLENGTHMEASURE(${Number(part.radiusM || bendRadiusM).toFixed(4)}),$);`);
+        const pArcMId = nextId();
+        add(`#${pArcMId}=IFCPROPERTYSINGLEVALUE('ArcLengthM',$,IFCLENGTHMEASURE(${partLenM.toFixed(3)}),$);`);
+        const pArcFtId = nextId();
+        add(`#${pArcFtId}=IFCPROPERTYSINGLEVALUE('ArcLengthFt',$,IFCREAL(${partLenFt.toFixed(2)}),$);`);
         const fitPsetId = nextId();
-        add(`#${fitPsetId}=IFCPROPERTYSET('${makeGuid(guidSeq++)}',#${ownerHistId},'Pset_ConduitFitting',$,(#${pAngleId},#${pRadId}));`);
+        add(`#${fitPsetId}=IFCPROPERTYSET('${makeGuid(guidSeq++)}',#${ownerHistId},'Pset_ConduitFitting',$,(#${pAngleId},#${pRadId},#${pArcMId},#${pArcFtId}));`);
         const relFitId = nextId();
         add(`#${relFitId}=IFCRELDEFINESBYPROPERTIES('${makeGuid(guidSeq++)}',#${ownerHistId},$,$,(#${partId}),#${fitPsetId});`);
       } else {
         const entityLine = isIfc4
-          ? `#${partId}=IFCCABLECARRIERSEGMENT('${makeGuid(guidSeq++)}',#${ownerHistId},'${runName} - Seg ${segIdx++}','Conduit Segment (${runSize})',$,#${wcsId},#${prodShapeId},'${runSize}',.CONDUITSEGMENT.);`
-          : `#${partId}=IFCFLOWSEGMENT('${makeGuid(guidSeq++)}',#${ownerHistId},'${runName} - Seg ${segIdx++}','Conduit Segment (${runSize})',$,#${wcsId},#${prodShapeId},'${runSize}');`;
+          ? `#${partId}=IFCCABLECARRIERSEGMENT('${makeGuid(guidSeq++)}',#${ownerHistId},'${escRunName} - Seg ${segIdx++}','Conduit Segment (${escRunSize})',$,#${wcsId},#${prodShapeId},'${escRunSize}',.CONDUITSEGMENT.);`
+          : `#${partId}=IFCFLOWSEGMENT('${makeGuid(guidSeq++)}',#${ownerHistId},'${escRunName} - Seg ${segIdx++}','Conduit Segment (${escRunSize})',$,#${wcsId},#${prodShapeId},'${escRunSize}');`;
         add(entityLine);
+
+        const pSegMId = nextId();
+        add(`#${pSegMId}=IFCPROPERTYSINGLEVALUE('SegmentLengthM',$,IFCLENGTHMEASURE(${partLenM.toFixed(3)}),$);`);
+        const pSegFtId = nextId();
+        add(`#${pSegFtId}=IFCPROPERTYSINGLEVALUE('SegmentLengthFt',$,IFCREAL(${partLenFt.toFixed(2)}),$);`);
+        const segPsetId = nextId();
+        add(`#${segPsetId}=IFCPROPERTYSET('${makeGuid(guidSeq++)}',#${ownerHistId},'Pset_ConduitSegment',$,(#${pSegMId},#${pSegFtId}));`);
+        const relSegId = nextId();
+        add(`#${relSegId}=IFCRELDEFINESBYPROPERTIES('${makeGuid(guidSeq++)}',#${ownerHistId},$,$,(#${partId}),#${segPsetId});`);
       }
 
       const ref = `#${partId}`;
-      runEntityIds.push(ref);
       partEntityRefs.push(ref);
-      if (!systemMembers.has(runSystem)) systemMembers.set(runSystem, []);
-      systemMembers.get(runSystem).push(ref);
+      sysEntry.members.push(ref);
     }
 
     if (partEntityRefs.length > 0) {
+      // Aggregate all segments & fittings under the run's IFCELEMENTASSEMBLY
+      const relAsmId = nextId();
+      add(`#${relAsmId}=IFCRELAGGREGATES('${makeGuid(guidSeq++)}',#${ownerHistId},'Conduit Run Parts',$,${assemblyRef},(${partEntityRefs.join(',')}));`);
+
+      // Attach Pset_ConduitRun to BOTH the assembly AND every child piece
       const relDefId = nextId();
-      add(`#${relDefId}=IFCRELDEFINESBYPROPERTIES('${makeGuid(guidSeq++)}',#${ownerHistId},$,$,(${partEntityRefs.join(',')}),#${runPsetId});`);
+      add(`#${relDefId}=IFCRELDEFINESBYPROPERTIES('${makeGuid(guidSeq++)}',#${ownerHistId},$,$,(${[assemblyRef, ...partEntityRefs].join(',')}),#${runPsetId});`);
     }
   }
 
-  // Group segments and fittings by electrical system (IFCSYSTEM)
-  for (const [sysName, members] of systemMembers) {
-    if (members.length === 0) continue;
+  // Group related runs & parts by electrical system (IFCSYSTEM + Pset_ConduitSystem summary)
+  for (const [sysName, info] of systemGroups) {
+    const escSysName = escapeStepStr(sysName);
+    const sysLenFt = info.totalLengthM * METRES_TO_FEET;
     const sysId = nextId();
-    add(`#${sysId}=IFCSYSTEM('${makeGuid(guidSeq++)}',#${ownerHistId},'${sysName}','Electrical Conduit System',$,$);`);
+    add(`#${sysId}=IFCSYSTEM('${makeGuid(guidSeq++)}',#${ownerHistId},'${escSysName}','Electrical Conduit System (${info.runCount} runs, ${sysLenFt.toFixed(2)} ft)',$,$);`);
+
+    const pSysNameId = nextId();
+    add(`#${pSysNameId}=IFCPROPERTYSINGLEVALUE('System',$,IFCLABEL('${escSysName}'),$);`);
+    const pSysCountId = nextId();
+    add(`#${pSysCountId}=IFCPROPERTYSINGLEVALUE('RunCount',$,IFCINTEGER(${info.runCount}),$);`);
+    const pSysLenMId = nextId();
+    add(`#${pSysLenMId}=IFCPROPERTYSINGLEVALUE('SystemTotalLengthM',$,IFCLENGTHMEASURE(${info.totalLengthM.toFixed(3)}),$);`);
+    const pSysLenFtId = nextId();
+    add(`#${pSysLenFtId}=IFCPROPERTYSINGLEVALUE('SystemTotalLengthFt',$,IFCREAL(${sysLenFt.toFixed(2)}),$);`);
+    const pSysSticksId = nextId();
+    add(`#${pSysSticksId}=IFCPROPERTYSINGLEVALUE('SystemSticks10Ft',$,IFCINTEGER(${info.totalSticks10Ft}),$);`);
+    const sysPsetId = nextId();
+    add(`#${sysPsetId}=IFCPROPERTYSET('${makeGuid(guidSeq++)}',#${ownerHistId},'Pset_ConduitSystem',$,(#${pSysNameId},#${pSysCountId},#${pSysLenMId},#${pSysLenFtId},#${pSysSticksId}));`);
+    const relSysPsetId = nextId();
+    add(`#${relSysPsetId}=IFCRELDEFINESBYPROPERTIES('${makeGuid(guidSeq++)}',#${ownerHistId},$,$,(#${sysId}),#${sysPsetId});`);
+
     const relSysId = nextId();
-    add(`#${relSysId}=IFCRELASSIGNSTOGROUP('${makeGuid(guidSeq++)}',#${ownerHistId},$,$,(${members.join(',')}),$,#${sysId});`);
+    add(`#${relSysId}=IFCRELASSIGNSTOGROUP('${makeGuid(guidSeq++)}',#${ownerHistId},$,$,(${info.members.join(',')}),$,#${sysId});`);
   }
 
-  // Relate runs to Site spatial structure
-  if (runEntityIds.length > 0) {
+  // Relate run assemblies to Site spatial structure
+  if (assemblyEntityIds.length > 0) {
     const relContainedId = nextId();
-    add(`#${relContainedId}=IFCRELCONTAINEDINSPATIALSTRUCTURE('${makeGuid(99)}',#${ownerHistId},'Spatial Container',$,(${runEntityIds.join(',')}),#${siteId});`);
+    add(`#${relContainedId}=IFCRELCONTAINEDINSPATIALSTRUCTURE('${makeGuid(99)}',#${ownerHistId},'Spatial Container',$,(${assemblyEntityIds.join(',')}),#${siteId});`);
   }
 
   add('ENDSEC;');
