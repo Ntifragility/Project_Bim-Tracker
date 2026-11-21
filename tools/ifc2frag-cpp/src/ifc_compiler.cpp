@@ -224,22 +224,39 @@ std::string toUpperAscii(std::string_view s) {
   return out;
 }
 
+std::vector<uint32_t> readRefSet(const webifc::parsing::IfcLoader* loader) {
+  std::vector<uint32_t> refs;
+  if (!loader) return refs;
+  const auto tt = loader->GetTokenType();
+  loader->StepBack();
+  if (tt != webifc::parsing::IfcTokenType::SET_BEGIN) return refs;
+  const auto offsets = loader->GetSetArgument();
+  refs.reserve(offsets.size());
+  for (const uint32_t off : offsets) {
+    if (loader->GetTokenType(off) == webifc::parsing::IfcTokenType::REF) {
+      const uint32_t refId = loader->GetRefArgument(off);
+      if (refId != 0) refs.push_back(refId);
+    }
+  }
+  return refs;
+}
+
 std::pair<std::string, std::string> readNominalValue(const webifc::parsing::IfcLoader* loader, uint32_t propId) {
   using webifc::parsing::IfcTokenType;
   if (!loader || loader->GetNoLineArguments(propId) <= 2) return {};
   loader->MoveToLineArgument(propId, 2);
   const IfcTokenType tt = loader->GetTokenType();
+  loader->StepBack();
   if (tt == IfcTokenType::EMPTY || tt == IfcTokenType::UNKNOWN) return {};
 
   std::string valType = "STRING";
   IfcTokenType inner = tt;
   if (tt == IfcTokenType::LABEL) {
     valType = std::string(loader->GetStringArgument());
-    if (loader->GetTokenType() == IfcTokenType::SET_BEGIN) {
-      // Advance past '(' token by reading next token type
-      loader->GetStringArgument();
-    }
+    const IfcTokenType nextT = loader->GetTokenType();
+    if (nextT != IfcTokenType::SET_BEGIN) return {};
     inner = loader->GetTokenType();
+    loader->StepBack();
   }
 
   switch (inner) {
@@ -674,7 +691,7 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
     loader->MoveToLineArgument(relId, 4);
     const uint32_t parentId = loader->GetOptionalRefArgument();
     loader->MoveToLineArgument(relId, 5);
-    const auto children = loader->GetSetArgument();
+    const auto children = readRefSet(loader);
     if (parentId != 0) {
       auto& vec = spatialChildren[parentId];
       vec.insert(vec.end(), children.begin(), children.end());
@@ -683,7 +700,7 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
   for (const uint32_t relId : loader->GetExpressIDsWithType(relContCode)) {
     if (loader->GetNoLineArguments(relId) < 6) continue;
     loader->MoveToLineArgument(relId, 4);
-    const auto elems = loader->GetSetArgument();
+    const auto elems = readRefSet(loader);
     loader->MoveToLineArgument(relId, 5);
     const uint32_t parentId = loader->GetOptionalRefArgument();
     if (parentId != 0) {
@@ -747,7 +764,7 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
 
       if (loader->GetNoLineArguments(psetId) > 4) {
         loader->MoveToLineArgument(psetId, 4);
-        const auto propIds = loader->GetSetArgument();
+        const auto propIds = readRefSet(loader);
         std::vector<uint32_t> validPropIds;
         validPropIds.reserve(propIds.size());
         for (const uint32_t pid : propIds) {
@@ -791,7 +808,7 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
       const uint32_t psetId = loader->GetOptionalRefArgument();
       if (psetId == 0 || !loader->IsValidExpressID(psetId) || loader->GetLineType(psetId) != psetCode) continue;
       loader->MoveToLineArgument(relId, 4);
-      const auto relatedObjs = loader->GetSetArgument();
+      const auto relatedObjs = readRefSet(loader);
       bool anyMatched = false;
       for (const uint32_t eid : relatedObjs) {
         auto it = expressIdToItemIndex.find(eid);
@@ -817,10 +834,10 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
       const uint32_t typeId = loader->GetOptionalRefArgument();
       if (typeId == 0 || !loader->IsValidExpressID(typeId) || loader->GetNoLineArguments(typeId) <= 5) continue;
       loader->MoveToLineArgument(typeId, 5);
-      const auto typePsets = loader->GetSetArgument();
+      const auto typePsets = readRefSet(loader);
       if (typePsets.empty()) continue;
       loader->MoveToLineArgument(relId, 4);
-      const auto relatedObjs = loader->GetSetArgument();
+      const auto relatedObjs = readRefSet(loader);
       std::vector<uint32_t> matchedObjs;
       for (const uint32_t eid : relatedObjs) {
         auto it = expressIdToItemIndex.find(eid);
