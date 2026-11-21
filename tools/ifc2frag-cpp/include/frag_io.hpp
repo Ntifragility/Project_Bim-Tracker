@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -31,6 +32,12 @@ void writeFileBytes(const std::string& path, const std::vector<uint8_t>& data);
 std::vector<uint8_t> inflateZlib(const std::vector<uint8_t>& compressed);
 std::vector<uint8_t> deflateZlib(const std::vector<uint8_t>& raw, int level = 6);
 std::vector<uint8_t> deflateZlibPtr(const uint8_t* data, size_t size, int level = 6);
+uint64_t deflatePtrToFile(
+    const uint8_t* data,
+    size_t size,
+    const std::string& outputPath,
+    int level = 6,
+    const std::function<void(int pct)>& onChunk = nullptr);
 
 FragStats inspectFragBytes(const std::vector<uint8_t>& compressedOrRaw);
 

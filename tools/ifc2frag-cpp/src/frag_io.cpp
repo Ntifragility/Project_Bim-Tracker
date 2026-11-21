@@ -93,6 +93,81 @@ std::vector<uint8_t> deflateZlib(const std::vector<uint8_t>& raw, int level) {
   return deflateZlibPtr(raw.data(), raw.size(), level);
 }
 
+uint64_t deflatePtrToFile(
+    const uint8_t* data,
+    size_t size,
+    const std::string& outputPath,
+    int level,
+    const std::function<void(int pct)>& onChunk) {
+  std::ofstream ofs(outputPath, std::ios::binary | std::ios::trunc);
+  if (!ofs) {
+    throw std::runtime_error("Could not open file for writing: " + outputPath);
+  }
+  if (!data || size == 0) {
+    return 0;
+  }
+
+  z_stream zs{};
+  if (deflateInit(&zs, level) != Z_OK) {
+    throw std::runtime_error("zlib deflateInit failed");
+  }
+
+  constexpr size_t CHUNK_IN = 2 * 1024 * 1024;
+  constexpr size_t CHUNK_OUT = 2 * 1024 * 1024;
+  std::vector<uint8_t> outBuf(CHUNK_OUT);
+
+  size_t offset = 0;
+  uint64_t totalWritten = 0;
+  int lastPct = -1;
+
+  try {
+    while (true) {
+      const size_t remaining = size - offset;
+      const size_t take = remaining > CHUNK_IN ? CHUNK_IN : remaining;
+      const int flush = (offset + take >= size) ? Z_FINISH : Z_NO_FLUSH;
+
+      zs.next_in = const_cast<Bytef*>(data + offset);
+      zs.avail_in = static_cast<uInt>(take);
+      offset += take;
+
+      do {
+        zs.next_out = outBuf.data();
+        zs.avail_out = static_cast<uInt>(outBuf.size());
+        const int ret = deflate(&zs, flush);
+        if (ret == Z_STREAM_ERROR) {
+          throw std::runtime_error("zlib deflate stream error");
+        }
+        const size_t have = outBuf.size() - zs.avail_out;
+        if (have > 0) {
+          ofs.write(reinterpret_cast<const char*>(outBuf.data()), static_cast<std::streamsize>(have));
+          if (!ofs) {
+            throw std::runtime_error("Failed while writing compressed .frag: " + outputPath);
+          }
+          totalWritten += have;
+        }
+      } while (zs.avail_out == 0);
+
+      if (onChunk && size > 0) {
+        const int pct = static_cast<int>((offset * 100u) / size);
+        if (pct != lastPct && (pct == 100 || pct - lastPct >= 10)) {
+          lastPct = pct;
+          onChunk(pct);
+        }
+      }
+
+      if (flush == Z_FINISH) {
+        break;
+      }
+    }
+  } catch (...) {
+    deflateEnd(&zs);
+    throw;
+  }
+
+  deflateEnd(&zs);
+  return totalWritten;
+}
+
 FragStats inspectFragBytes(const std::vector<uint8_t>& compressedOrRaw) {
   FragStats stats{};
   stats.compressedBytes = compressedOrRaw.size();

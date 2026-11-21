@@ -21,6 +21,7 @@ FetchContent_MakeAvailable(flatbuffers)
 
 # 2. zlib (RFC 1950 deflate/inflate matching pako in @thatopen/fragments)
 set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(SKIP_INSTALL_ALL ON CACHE BOOL "" FORCE)
 FetchContent_Declare(
   zlib
   GIT_REPOSITORY https://github.com/madler/zlib.git
@@ -28,6 +29,10 @@ FetchContent_Declare(
   GIT_SHALLOW    TRUE
 )
 FetchContent_MakeAvailable(zlib)
+# Exclude zlib shared DLL target (avoids MinGW windres failing on spaces in workspace path)
+if(TARGET zlib)
+  set_target_properties(zlib PROPERTIES EXCLUDE_FROM_ALL TRUE)
+endif()
 
 # 2b. web-ifc 0.77 native 64-bit C++ core (Phase 2; enable when >= 1.5 GB free space is available)
 option(IFC2FRAG_WITH_WEBIFC "Fetch and link native web-ifc 0.77 C++ core" OFF)
@@ -89,7 +94,7 @@ add_executable(ifc2frag
 )
 target_link_libraries(ifc2frag PRIVATE frag_core)
 if(WIN32)
-  target_link_libraries(ifc2frag PRIVATE comdlg32)
+  target_link_libraries(ifc2frag PRIVATE comdlg32 comctl32)
 endif()
 
 # 6. Phase 1 Schema Parity Test

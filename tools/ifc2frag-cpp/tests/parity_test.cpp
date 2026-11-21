@@ -47,7 +47,20 @@ int main() {
     REQUIRE(stats.localIdsCount == 1);
     REQUIRE(stats.categoriesCount == 1);
     REQUIRE(stats.coordX == 100.0 && stats.coordY == 200.0 && stats.coordZ == 300.0);
-    std::cout << "[PASS] Synthetic FlatBuffer + zlib roundtrip verified.\n";
+
+    // 1b. Streaming deflatePtrToFile roundtrip
+    const fs::path streamTmp = fs::temp_directory_path() / "ifc2frag_stream_test.frag";
+    int lastPct = 0;
+    const uint64_t written = ifc2frag::deflatePtrToFile(
+        raw.data(), raw.size(), streamTmp.string(), 1, [&](int pct) { lastPct = pct; });
+    REQUIRE(written > 0);
+    REQUIRE(lastPct == 100);
+    const auto streamBytes = ifc2frag::readFileBytes(streamTmp.string());
+    const auto streamStats = ifc2frag::inspectFragBytes(streamBytes);
+    REQUIRE(streamStats.verified);
+    REQUIRE(streamStats.maxLocalId == 101);
+    fs::remove(streamTmp);
+    std::cout << "[PASS] Synthetic FlatBuffer + streaming zlib roundtrip verified.\n";
   }
 
   // 2. If .cache/frag/P22114-CC-3300-06-3D-001.frag exists, verify schema parity on real 147 MB model
@@ -83,7 +96,25 @@ int main() {
     fs::remove(outFrag);
     std::cout << "[PASS] End-to-end C++ compile of survey-box.ifc verified: "
               << res.elementsProcessed << " elements, "
-              << res.uniqueShells << " shells in " << res.elapsedSeconds << " s.\n";
+              << res.uniqueShells << " shells, "
+              << res.propertySetsCount << " psets in " << res.elapsedSeconds << " s.\n";
+
+    // 4. Test --fast, --threads 2, --no-props, and --only category filtering
+    const fs::path outFragFast = fs::temp_directory_path() / "ifc2frag_survey_box_fast.frag";
+    ifc2frag::CompileOptions fastOpts{};
+    fastOpts.inputPath = sampleIfc.string();
+    fastOpts.outputPath = outFragFast.string();
+    fastOpts.zlibLevel = 1;
+    fastOpts.threads = 2;
+    fastOpts.includeProperties = false;
+    fastOpts.onlyCategories = {"IFCWALLSTANDARDCASE", "IFCWALL", "IFCSLAB", "IFCBUILDINGELEMENTPROXY"};
+    const auto fastRes = ifc2frag::compileIfcToFrag(fastOpts);
+    REQUIRE(fastRes.propertySetsCount == 0);
+    REQUIRE(fastRes.relationsCount == 0);
+    const auto fastStats = ifc2frag::inspectFragBytes(ifc2frag::readFileBytes(outFragFast.string()));
+    REQUIRE(fastStats.verified);
+    fs::remove(outFragFast);
+    std::cout << "[PASS] Fast/MT/--no-props/--only compile verified (" << fastRes.elementsProcessed << " elements).\n";
   }
 #endif
 
