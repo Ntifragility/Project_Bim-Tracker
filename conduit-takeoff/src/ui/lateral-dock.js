@@ -111,10 +111,18 @@ export function createLateralDock({ state, els, api }) {
     return api.drawingTool || (typeof window !== 'undefined' ? window.__drawingTool : null);
   }
 
+  function findRunById(runId) {
+    if (runId == null || !state.network?.runs) return null;
+    if (Array.isArray(state.network.runs)) {
+      return state.network.runs.find((r) => String(r.id) === String(runId)) || null;
+    }
+    return state.network.runs[runId] || null;
+  }
+
   if (propertiesContainer) {
     palette = createPropertiesPalette(propertiesContainer, {
       title: 'Properties',
-      categories: ['Constraints', 'Dimensions', 'Takeoff / BOM', 'Identity Data'],
+      categories: ['Constraints', 'Dimensions', 'IFC Properties', 'Takeoff / BOM', 'Identity Data'],
       onTypeChange(selectedTypeVal, currentElement) {
         // Selected trade size e.g. "3/4\"" or type id
         const cleanSize = selectedTypeVal.replace(/^EMT\s*-\s*/, '').split(' ')[0];
@@ -129,9 +137,9 @@ export function createLateralDock({ state, els, api }) {
         }
 
         // If a completed run is selected, update its size
-        if (currentElement && currentElement.id && state.network.runs[currentElement.id]) {
-          const run = state.network.runs[currentElement.id];
-          run.size = match ? match.label : selectedTypeVal;
+        const targetRun = currentElement?.id != null ? findRunById(currentElement.id) : null;
+        if (targetRun) {
+          targetRun.size = match ? match.label : selectedTypeVal;
           const tool = getDrawingTool();
           tool?.renderRuns(state.network);
           api.renderRunsList?.(tool);
@@ -144,7 +152,7 @@ export function createLateralDock({ state, els, api }) {
       onApply(committedChanges, currentElement) {
         const tool = getDrawingTool();
         const runId = currentElement?.id;
-        const run = runId && state.network.runs[runId] ? state.network.runs[runId] : null;
+        const run = runId != null ? findRunById(runId) : null;
 
         // 1. Constraints: Reference Elevation
         if (committedChanges['Reference Elevation'] !== undefined) {
@@ -222,9 +230,10 @@ export function createLateralDock({ state, els, api }) {
     const selectedDiam = state.diameterRegistry.getSelected() || allDiameters[0] || { label: '3/4"', mm: 21 };
     const typeOptions = getTypeOptions();
 
-    if (targetRunId && state.network.runs[targetRunId]) {
+    const selectedRun = targetRunId != null ? findRunById(targetRunId) : null;
+    if (selectedRun) {
       // ── A. Completed Run selected ──
-      const run = state.network.runs[targetRunId];
+      const run = selectedRun;
       const takeoff = backend.computeRunTakeoff(state.network, run.id);
       const diam = state.diameterRegistry.getByLabel(run.size) || { label: run.size, mm: 21 };
       const runNodes = (run.nodeIds || []).map((nid) => backend.nodeById(state.network, nid)).filter(Boolean);
@@ -273,6 +282,15 @@ export function createLateralDock({ state, els, api }) {
             { name: 'Stick Count', value: `${sticks} (10 ft stocks)`, readonly: true },
             { name: 'Total Field Bends', value: `${bendAnalysis.bends?.length || 0} (${bendAnalysis.totalDegrees}° total)`, readonly: true },
             { name: 'Fabrication Method', value: 'Field-Bent (No bought elbows)', readonly: true },
+          ],
+          'IFC Properties': [
+            { name: 'IFC Class', value: 'IFCCABLECARRIERSEGMENT (.CONDUITSEGMENT.)', readonly: true },
+            { name: 'IFC Assembly', value: `IFCELEMENTASSEMBLY (${run.name || `Run ${run.id}`})`, readonly: true },
+            { name: 'IFC System', value: `IFCSYSTEM (${run.system || els.topSystemSelect?.value || 'Power'})`, readonly: true },
+            { name: 'Pset_ConduitRun.TotalLengthFt', value: `${(lengthM / 0.3048).toFixed(2)} ft`, readonly: true },
+            { name: 'Pset_ConduitRun.TotalLengthM', value: `${lengthM.toFixed(3)} m`, readonly: true },
+            { name: 'Pset_ConduitRun.Sticks10Ft', value: `${sticks}`, readonly: true },
+            { name: 'Pset_ConduitRun.TotalBendDeg', value: `${bendAnalysis.totalDegrees}°`, readonly: true },
           ],
           'Takeoff / BOM': [
             { name: 'Waste Factor %', value: `${Math.round(state.settings.wasteFactor * 100)}`, type: 'number' },

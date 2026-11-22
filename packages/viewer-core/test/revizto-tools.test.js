@@ -110,6 +110,40 @@ describe("Revizto Visibility & Isolation Composer", () => {
     assert.equal(rig.hiddenSet.size, 0);
   });
 
+  it("isolates & hides external conduit runs even when toolbar passes empty {} selection and highlighter is disabled", async () => {
+    const rig = createFakeVisibilityRig();
+    rig.highlighter.enabled = false;
+    let selectedRun = "r1";
+    let lastVis = { hiddenIds: new Set(), ghostIds: new Set() };
+    rig.ctrl.visibility.registerExternalAdapter("conduit-runs", {
+      getAllIds: () => ["r1", "r2"],
+      getSelectedIds: () => (selectedRun ? [selectedRun] : []),
+      clearSelection: () => { selectedRun = null; },
+      applyVisibility: (v) => { lastVis = v; },
+    });
+
+    // Ghost Isolate with empty {} map from Revizto toolbar
+    const okGhost = await rig.ctrl.isolation.isolate({}, { mode: "ghost" });
+    assert.equal(okGhost, true);
+    assert.equal(rig.highlighter.enabled, false, "highlighter.enabled restored to false");
+    assert.ok(!lastVis.ghostIds.has("r1"), "isolated trace r1 must NOT be ghosted/blurred");
+    assert.ok(lastVis.ghostIds.has("r2"), "non-isolated trace r2 must be ghosted");
+    assert.equal(rig.ghostMap.get("m1")?.size, 4, "all 4 IFC background elements must be ghosted");
+
+    // Hard Isolate with empty {} map -> all IFC elements hidden via hider.set(false)
+    const okHard = await rig.ctrl.isolation.isolate({}, { mode: "hard" });
+    assert.equal(okHard, true);
+    assert.ok(!lastVis.hiddenIds.has("r1"), "isolated trace r1 stays visible");
+    assert.ok(lastVis.hiddenIds.has("r2"), "non-isolated trace r2 is hidden");
+    assert.equal(rig.hiddenSet.size, 4, "all 4 IFC background elements hidden");
+
+    // Reset + Hide Selection with empty {} map
+    await rig.ctrl.isolation.unisolate();
+    const hiddenN = await rig.ctrl.visibility.hideSelection({});
+    assert.equal(hiddenN, 1);
+    assert.ok(lastVis.hiddenIds.has("r1"));
+  });
+
   it("composes Hidden Elements with Hard Isolate & Ghost Isolate without un-hiding hidden elements", async () => {
     const rig = createFakeVisibilityRig();
 
