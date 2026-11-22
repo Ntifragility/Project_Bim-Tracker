@@ -138,51 +138,67 @@ export function createVisibilityController({
   async function recomputeVisibility() {
     // 1. Apply ghost highlight style on non-isolated IFC items when in 'ghost' mode
     if (highlighter) {
+      const wasEnabled = highlighter.enabled;
+      if (wasEnabled === false) {
+        try { highlighter.enabled = true; } catch { /* noop */ }
+      }
       try {
-        await highlighter.clear(GHOST_STYLE_NAME);
-      } catch { /* headless */ }
+        try {
+          await highlighter.clear(GHOST_STYLE_NAME);
+        } catch { /* headless */ }
 
-      if (isolationMode === "ghost" && fragments) {
-        const inverseMap = {};
-        if (fragments.list?.size) {
-          for (const [modelId, model] of fragments.list) {
-            const kept = isolatedIfcMap.get(modelId) || new Set();
-            const hidden = hiddenIfcMap.get(modelId) || new Set();
-            let allIds = [];
-            if (typeof model?.getItemsIdsWithGeometry === "function") {
-              try {
-                allIds = await model.getItemsIdsWithGeometry();
-              } catch { /* ignore */ }
-            }
-            const nonKept = [];
-            for (const expressId of allIds) {
-              if (!kept.has(expressId) && !hidden.has(expressId)) {
-                nonKept.push(expressId);
+        if (isolationMode === "ghost" && fragments) {
+          const inverseMap = {};
+          const modelList =
+            fragments.list?.size
+              ? fragments.list
+              : fragments.core?.models?.list?.size
+                ? fragments.core.models.list
+                : null;
+          if (modelList) {
+            for (const [modelId, model] of modelList) {
+              const kept = isolatedIfcMap.get(modelId) || new Set();
+              const hidden = hiddenIfcMap.get(modelId) || new Set();
+              let allIds = [];
+              if (typeof model?.getItemsIdsWithGeometry === "function") {
+                try {
+                  allIds = await model.getItemsIdsWithGeometry();
+                } catch { /* ignore */ }
               }
-            }
-            if (nonKept.length > 0) inverseMap[modelId] = nonKept;
-          }
-        } else if (fragments.groups) {
-          for (const [modelId, model] of fragments.groups) {
-            const kept = isolatedIfcMap.get(modelId) || new Set();
-            const hidden = hiddenIfcMap.get(modelId) || new Set();
-            const nonKept = [];
-            if (model?.data?.keys) {
-              for (const expressId of model.data.keys()) {
+              const nonKept = [];
+              for (const expressId of allIds) {
                 if (!kept.has(expressId) && !hidden.has(expressId)) {
                   nonKept.push(expressId);
                 }
               }
+              if (nonKept.length > 0) inverseMap[modelId] = nonKept;
             }
-            if (nonKept.length > 0) inverseMap[modelId] = nonKept;
+          } else if (fragments.groups) {
+            for (const [modelId, model] of fragments.groups) {
+              const kept = isolatedIfcMap.get(modelId) || new Set();
+              const hidden = hiddenIfcMap.get(modelId) || new Set();
+              const nonKept = [];
+              if (model?.data?.keys) {
+                for (const expressId of model.data.keys()) {
+                  if (!kept.has(expressId) && !hidden.has(expressId)) {
+                    nonKept.push(expressId);
+                  }
+                }
+              }
+              if (nonKept.length > 0) inverseMap[modelId] = nonKept;
+            }
+          }
+          if (Object.keys(inverseMap).length > 0) {
+            try {
+              await highlighter.highlightByID(GHOST_STYLE_NAME, inverseMap, false, false);
+            } catch (err) {
+              console.warn("[visibility] ghost highlight failed:", err);
+            }
           }
         }
-        if (Object.keys(inverseMap).length > 0) {
-          try {
-            await highlighter.highlightByID(GHOST_STYLE_NAME, inverseMap, false, false);
-          } catch (err) {
-            console.warn("[visibility] ghost highlight failed:", err);
-          }
+      } finally {
+        if (wasEnabled === false) {
+          try { highlighter.enabled = false; } catch { /* noop */ }
         }
       }
     }
@@ -201,7 +217,11 @@ export function createVisibilityController({
             }
             if (remaining.length > 0) visibleIso[modelId] = remaining;
           }
-          await hider.isolate(visibleIso);
+          if (Object.keys(visibleIso).length > 0) {
+            await hider.isolate(visibleIso);
+          } else {
+            await hider.set(false);
+          }
         } else {
           await hider.set(true);
           const hiddenObj = toPlainObjectMap(hiddenIfcMap);
@@ -286,7 +306,7 @@ export function createVisibilityController({
       );
 
       let extToHide = [];
-      if (!targetMap) {
+      if (!targetMap || ifcCount === 0) {
         for (const [adapterId, adapter] of externalAdapters) {
           const selIds = adapter.getSelectedIds?.() || [];
           if (selIds.length > 0) extToHide.push({ adapterId, adapter, selIds });
@@ -424,7 +444,7 @@ export function createVisibilityController({
 
       const nextExt = new Map();
       let extCount = 0;
-      if (!targetMap) {
+      if (!targetMap || countMapItems(nextIfc) === 0) {
         for (const [adapterId, adapter] of externalAdapters) {
           const selIds = adapter.getSelectedIds?.() || [];
           if (selIds.length > 0) {

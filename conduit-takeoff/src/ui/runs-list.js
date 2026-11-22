@@ -53,16 +53,20 @@ export function createRunsList({ state, els, api }) {
         </div>
       `;
 
-      // Click to select
+      // Click to select & frame in 3D viewer
       card.addEventListener('click', (e) => {
         if (e.target.closest('.run-item-del-btn')) return;
         state.selectedRunId = isSelected ? null : run.id;
         drawingTool.selectedRunId = state.selectedRunId;
         drawingTool.renderRuns(state.network);
         renderRunsList(drawingTool);
-        if (state.selectedRunId) {
+        if (state.selectedRunId != null) {
           api.showContextual?.('modify-run');
           api.switchDockTab?.('properties');
+          const box = drawingTool.getRunBounds?.(state.selectedRunId);
+          if (box && api.engine?.focusOnBox) {
+            api.engine.focusOnBox(box);
+          }
         } else if (!drawingTool.isDrawingMode && (!drawingTool.activePoints || drawingTool.activePoints.length === 0)) {
           api.hideContextual?.();
         }
