@@ -166,6 +166,27 @@ int main() {
     fs::remove_all(spatialDir, ec);
     std::cout << "[PASS] SVF2-Lite --split-spatial bundle verified: "
               << spRes.chunks.size() << " chunks (first: " << spRes.chunks[0].name << "), " << spSum << " elements.\n";
+
+    // 7. Test AutoBundle (<50 MB IFC -> 1-chunk .fragbundle) + --skip-fasteners
+    const fs::path autoDir = fs::temp_directory_path() / "ifc2frag_survey_box_auto.fragbundle";
+    fs::remove_all(autoDir, ec);
+    ifc2frag::CompileOptions autoOpts{};
+    autoOpts.inputPath = sampleIfc.string();
+    autoOpts.outDir = autoDir.string();
+    autoOpts.splitMode = ifc2frag::SplitMode::AutoBundle;
+    autoOpts.skipFasteners = true;
+    autoOpts.circleSegments = 8;
+    autoOpts.zlibLevel = 1;
+    const auto autoRes = ifc2frag::compileIfcToFrag(autoOpts);
+    REQUIRE(autoRes.chunks.size() == 1);
+    REQUIRE(autoRes.chunks[0].id == "principal");
+    REQUIRE(fs::exists(autoRes.manifestPath));
+    const auto autoStats = ifc2frag::inspectFragBytes(ifc2frag::readFileBytes((autoDir / autoRes.chunks[0].file).string()));
+    REQUIRE(autoStats.verified);
+    REQUIRE(autoStats.globalTransformsCount == autoRes.elementsProcessed);
+    fs::remove_all(autoDir, ec);
+    std::cout << "[PASS] AutoBundle (<50 MB 1-chunk) + --skip-fasteners verified: "
+              << autoRes.elementsProcessed << " elements.\n";
   }
 #endif
 

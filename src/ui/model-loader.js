@@ -590,13 +590,30 @@ export function initModelLoader(ctx, dom, hooks, api = {}) {
 
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
+        const lowerName = file.name.toLowerCase();
+        if (lowerName === 'manifest.json') {
+          window.alert(
+            'You selected manifest.json inside a .fragbundle folder.\n\n' +
+            'To open a chunked bundle, click "Open Chunked Bundle" and select the .fragbundle folder itself.'
+          );
+          continue;
+        }
+        if (!lowerName.endsWith('.frag') && file.size > 200 * 1024 * 1024) {
+          const proceed = window.confirm(
+            `${file.name} (${formatBytes(file.size)}) is over 200 MB.\n\n` +
+            'For large reference/background models, compile it locally with ifc2frag.exe and open via "Open Chunked Bundle" for 60 FPS.\n' +
+            '(Only load Native IFC directly if you need to tag & Safe-Export this file.)\n\n' +
+            'Click OK to try loading in the browser anyway, or Cancel to abort.'
+          );
+          if (!proceed) continue;
+        }
         const progressLabel = files.length > 1 ? ` (${i + 1}/${files.length})` : '';
 
         showLoader(dom, `Uploading Native IFC${progressLabel}`, `Reading ${file.name}...`, 10);
         try {
           const data = await file.arrayBuffer();
           const buffer = new Uint8Array(data);
-          if (file.name.toLowerCase().endsWith('.frag')) {
+          if (lowerName.endsWith('.frag')) {
             await loadFrag(buffer, file.name, formatBytes(file.size));
           } else {
             await loadModel(buffer, file.name, formatBytes(file.size));

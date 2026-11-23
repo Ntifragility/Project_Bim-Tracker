@@ -5,6 +5,8 @@
 //
 // Maps each command id to its existing handler directly (no DOM proxies, no synthetic forwarding).
 
+import { showDesktopCompilerModal } from 'viewer-core';
+
 /**
  * Builds the RibbonDef for Conduit Takeoff.
  *
@@ -87,13 +89,15 @@ export function createConduitRibbonDef(ctx) {
                 },
                 {
                   id: 'conduit.convert-frag',
-                  label: 'Compile IFC → .frag',
+                  label: 'Desktop Compiler',
                   icon: 'export',
                   size: 'small',
                   keytip: 'MFX',
-                  tooltip: 'Compile an IFC file via 64-bit processor into .frag cache and load it',
+                  tooltip: 'Download standalone 64-bit ifc2frag.exe to compile large 200 MB–4 GB IFCs into .fragbundle folders',
                   run(c) {
-                    c.api?.openConvertFragFile?.();
+                    showDesktopCompilerModal({
+                      onOpenBundle: () => c.api?.chunkedPanel?.openPicker?.(),
+                    });
                   },
                 },
                 {

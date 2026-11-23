@@ -261,3 +261,68 @@ export function mountChunkedBundlePanel(container, { engine, onStatus = null } =
     },
   };
 }
+
+/**
+ * Shared modal explaining the hybrid Small-IFC (in-browser) / Large-IFC (ifc2frag.exe) workflow.
+ * Works on any static host with zero backend dependency.
+ */
+export function showDesktopCompilerModal({
+  onOpenBundle = null,
+  downloadUrl = "",
+} = {}) {
+  if (typeof document === "undefined") return null;
+  const existing = document.getElementById("svf2-compiler-modal-backdrop");
+  if (existing) existing.remove();
+
+  const resolvedUrl =
+    downloadUrl ||
+    (typeof import.meta !== "undefined" && import.meta.env?.VITE_COMPILER_DOWNLOAD_URL) ||
+    "https://github.com/covillaf/Project_Bim_Tracker/releases/latest";
+
+  const backdrop = document.createElement("div");
+  backdrop.id = "svf2-compiler-modal-backdrop";
+  backdrop.style.cssText =
+    "position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;" +
+    "background:rgba(2,6,23,0.72);backdrop-filter:blur(4px);font:13px/1.45 system-ui,sans-serif;color:#e2e8f0;";
+
+  const card = document.createElement("div");
+  card.style.cssText =
+    "width:min(480px,92vw);background:#0f172a;border:1px solid rgba(148,163,184,0.35);" +
+    "border-radius:12px;padding:18px 20px;box-shadow:0 20px 50px rgba(0,0,0,0.55);";
+
+  card.innerHTML =
+    `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">` +
+      `<div style="font-size:15px;font-weight:700;color:#f8fafc;">⚡ Desktop IFC Compiler (ifc2frag.exe)</div>` +
+      `<button type="button" data-action="close" style="background:transparent;border:none;color:#94a3b8;font-size:16px;cursor:pointer;">✕</button>` +
+    `</div>` +
+    `<p style="margin:0 0 10px;color:#cbd5e1;">Use our native 64-bit Windows compiler to turn large <strong>200 MB – 4 GB</strong> IFC models into fast <strong>.fragbundle</strong> folders that stream at 60 FPS in your browser.</p>` +
+    `<div style="background:rgba(30,41,59,0.75);border:1px solid rgba(148,163,184,0.2);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:12px;color:#cbd5e1;">` +
+      `<div style="margin-bottom:6px;"><strong>• Small IFCs (&lt; 200 MB):</strong> Open directly via <em>Open Native IFC</em> — no compiler needed.</div>` +
+      `<div style="margin-bottom:6px;"><strong>• Large IFCs (≥ 200 MB):</strong> Double-click <code>ifc2frag.exe</code>, select your <code>.ifc</code>, and it builds a <code>.fragbundle/</code> folder (Principal Structure + Spatial Zones, optional bolt/fastener skip).</div>` +
+      `<div><strong>• View in Browser:</strong> Click <em>Open Chunked Bundle</em> and select the generated <code>.fragbundle</code> folder.</div>` +
+    `</div>` +
+    `<div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;">` +
+      `<a href="${resolvedUrl}" target="_blank" rel="noopener noreferrer" style="text-decoration:none;background:#0ea5e9;color:#082f49;font-weight:700;padding:7px 12px;border-radius:6px;font-size:12px;">⬇ Download ifc2frag.exe</a>` +
+      (typeof onOpenBundle === "function"
+        ? `<button type="button" data-action="open-bundle" style="background:#1e293b;color:#38bdf8;border:1px solid #38bdf8;font-weight:600;padding:7px 12px;border-radius:6px;font-size:12px;cursor:pointer;">📂 Open Chunked Bundle</button>`
+        : "") +
+      `<button type="button" data-action="close" style="background:#1e293b;color:#cbd5e1;border:1px solid #334155;padding:7px 12px;border-radius:6px;font-size:12px;cursor:pointer;">Close</button>` +
+    `</div>`;
+
+  const close = () => backdrop.remove();
+  backdrop.addEventListener("click", (e) => {
+    if (e.target === backdrop) close();
+  });
+  card.querySelectorAll('[data-action="close"]').forEach((btn) => btn.addEventListener("click", close));
+  const openBtn = card.querySelector('[data-action="open-bundle"]');
+  if (openBtn && typeof onOpenBundle === "function") {
+    openBtn.addEventListener("click", () => {
+      close();
+      onOpenBundle();
+    });
+  }
+
+  backdrop.appendChild(card);
+  document.body.appendChild(backdrop);
+  return { close };
+}

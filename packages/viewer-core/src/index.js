@@ -41,5 +41,5 @@ export {
   selectChunksForCamera,
   createChunkedModelManager,
 } from "./chunked-loader.js";
-export { mountChunkedBundlePanel } from "./chunked-panel.js";
+export { mountChunkedBundlePanel, showDesktopCompilerModal } from "./chunked-panel.js";
 export { mountPerfHud } from "./perf-hud.js";
