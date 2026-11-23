@@ -16,14 +16,42 @@ class CompileCancelledError : public std::runtime_error {
   CompileCancelledError() : std::runtime_error("Compilation cancelled by user.") {}
 };
 
+enum class SplitMode {
+  None = 0,
+  ByStorey = 1,
+  ByCategory = 2,
+  Spatial = 3,       // Tier 0: Principal Elements + Tier 1: Spatial Detail Grid
+  SingleBundle = 4,  // 1-chunk .fragbundle (manifest.json + 00_Model.frag) for small IFCs
+  AutoBundle = 5,    // <50 MB IFC -> SingleBundle; >=50 MB IFC -> Spatial
+};
+
+struct ChunkSummary {
+  std::string id;
+  std::string name;
+  std::string file;
+  double elevationM = 0.0;
+  uint32_t elements = 0;
+  uint32_t shells = 0;
+  uint32_t samples = 0;
+  uint64_t compressedBytes = 0;
+  uint64_t uncompressedBytes = 0;
+  float minX = 0.0f, minY = 0.0f, minZ = 0.0f;
+  float maxX = 0.0f, maxY = 0.0f, maxZ = 0.0f;
+};
+
 struct CompileOptions {
   std::string inputPath;
   std::string outputPath;
+  std::string outDir;
+  SplitMode splitMode = SplitMode::None;
   bool coordinateToOrigin = true;
   bool rawShells = true;
   bool includeProperties = true;
+  bool forceProperties = false;  // If true, extract Pset_* even on >250 MB IFCs
+  bool skipFasteners = false;    // If true, skip IFCFASTENER & IFCMECHANICALFASTENER before tessellation
   double distanceThresholdM = 100000.0;
   int zlibLevel = 6;
+  int circleSegments = 12;
   uint32_t threads = 0;  // 0 = auto hardware_concurrency
   std::vector<std::string> excludeCategories;
   std::vector<std::string> onlyCategories;
@@ -40,6 +68,8 @@ struct CompileResult {
   uint64_t rawFlatBufferBytes = 0;
   uint64_t compressedFragBytes = 0;
   double elapsedSeconds = 0.0;
+  std::string manifestPath;
+  std::vector<ChunkSummary> chunks;
 };
 
 CompileResult compileIfcToFrag(const CompileOptions& opts);

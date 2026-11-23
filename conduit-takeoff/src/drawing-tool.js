@@ -813,13 +813,16 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
           if (m.userData.__origOpacity === undefined) {
             m.userData.__origOpacity = m.opacity ?? 1;
             m.userData.__origTransparent = Boolean(m.transparent);
+            m.userData.__origDepthWrite = m.depthWrite !== undefined ? Boolean(m.depthWrite) : true;
           }
           if (ghost) {
             m.opacity = 0.15;
             m.transparent = true;
+            m.depthWrite = false;
           } else {
             m.opacity = m.userData.__origOpacity;
             m.transparent = m.userData.__origTransparent;
+            m.depthWrite = m.userData.__origDepthWrite;
           }
           m.needsUpdate = true;
         }

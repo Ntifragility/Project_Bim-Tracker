@@ -115,6 +115,78 @@ int main() {
     REQUIRE(fastStats.verified);
     fs::remove(outFragFast);
     std::cout << "[PASS] Fast/MT/--no-props/--only compile verified (" << fastRes.elementsProcessed << " elements).\n";
+
+    // 5. Test SVF2-Lite --split-by-storey chunked bundle + manifest.json
+    const fs::path bundleDir = fs::temp_directory_path() / "ifc2frag_survey_box_test.fragbundle";
+    std::error_code ec;
+    fs::remove_all(bundleDir, ec);
+    ifc2frag::CompileOptions splitOpts{};
+    splitOpts.inputPath = sampleIfc.string();
+    splitOpts.outDir = bundleDir.string();
+    splitOpts.splitMode = ifc2frag::SplitMode::ByStorey;
+    splitOpts.circleSegments = 8;
+    splitOpts.zlibLevel = 1;
+    const auto splitRes = ifc2frag::compileIfcToFrag(splitOpts);
+    REQUIRE(!splitRes.chunks.empty());
+    REQUIRE(fs::exists(splitRes.manifestPath));
+    uint32_t sumElems = 0;
+    for (const auto& ch : splitRes.chunks) {
+      const fs::path chPath = bundleDir / ch.file;
+      REQUIRE(fs::exists(chPath));
+      const auto chStats = ifc2frag::inspectFragBytes(ifc2frag::readFileBytes(chPath.string()));
+      REQUIRE(chStats.verified);
+      REQUIRE(chStats.globalTransformsCount == ch.elements);
+      sumElems += ch.elements;
+    }
+    REQUIRE(sumElems == splitRes.elementsProcessed);
+    fs::remove_all(bundleDir, ec);
+    std::cout << "[PASS] SVF2-Lite --split-by-storey bundle verified: "
+              << splitRes.chunks.size() << " chunks, " << sumElems << " elements.\n";
+
+    // 6. Test SVF2-Lite --split-spatial (Principal Structure + Spatial Detail Grid)
+    const fs::path spatialDir = fs::temp_directory_path() / "ifc2frag_survey_box_spatial.fragbundle";
+    fs::remove_all(spatialDir, ec);
+    ifc2frag::CompileOptions spOpts{};
+    spOpts.inputPath = sampleIfc.string();
+    spOpts.outDir = spatialDir.string();
+    spOpts.splitMode = ifc2frag::SplitMode::Spatial;
+    spOpts.circleSegments = 8;
+    spOpts.zlibLevel = 1;
+    const auto spRes = ifc2frag::compileIfcToFrag(spOpts);
+    REQUIRE(spRes.chunks.size() >= 1);
+    REQUIRE(spRes.chunks[0].id == "principal");
+    REQUIRE(fs::exists(spRes.manifestPath));
+    uint32_t spSum = 0;
+    for (const auto& ch : spRes.chunks) {
+      const auto chStats = ifc2frag::inspectFragBytes(ifc2frag::readFileBytes((spatialDir / ch.file).string()));
+      REQUIRE(chStats.verified);
+      spSum += ch.elements;
+    }
+    REQUIRE(spSum == spRes.elementsProcessed);
+    fs::remove_all(spatialDir, ec);
+    std::cout << "[PASS] SVF2-Lite --split-spatial bundle verified: "
+              << spRes.chunks.size() << " chunks (first: " << spRes.chunks[0].name << "), " << spSum << " elements.\n";
+
+    // 7. Test AutoBundle (<50 MB IFC -> 1-chunk .fragbundle) + --skip-fasteners
+    const fs::path autoDir = fs::temp_directory_path() / "ifc2frag_survey_box_auto.fragbundle";
+    fs::remove_all(autoDir, ec);
+    ifc2frag::CompileOptions autoOpts{};
+    autoOpts.inputPath = sampleIfc.string();
+    autoOpts.outDir = autoDir.string();
+    autoOpts.splitMode = ifc2frag::SplitMode::AutoBundle;
+    autoOpts.skipFasteners = true;
+    autoOpts.circleSegments = 8;
+    autoOpts.zlibLevel = 1;
+    const auto autoRes = ifc2frag::compileIfcToFrag(autoOpts);
+    REQUIRE(autoRes.chunks.size() == 1);
+    REQUIRE(autoRes.chunks[0].id == "principal");
+    REQUIRE(fs::exists(autoRes.manifestPath));
+    const auto autoStats = ifc2frag::inspectFragBytes(ifc2frag::readFileBytes((autoDir / autoRes.chunks[0].file).string()));
+    REQUIRE(autoStats.verified);
+    REQUIRE(autoStats.globalTransformsCount == autoRes.elementsProcessed);
+    fs::remove_all(autoDir, ec);
+    std::cout << "[PASS] AutoBundle (<50 MB 1-chunk) + --skip-fasteners verified: "
+              << autoRes.elementsProcessed << " elements.\n";
   }
 #endif
 

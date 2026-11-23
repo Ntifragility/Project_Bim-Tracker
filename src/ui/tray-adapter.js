@@ -7,6 +7,7 @@
 // No DOM-move hacks. No synthetic click forwarding.
 
 import * as THREE from 'three';
+import { showDesktopCompilerModal } from 'viewer-core';
 import * as dom from './dom.js';
 
 /**
@@ -83,18 +84,27 @@ export function createTrayRibbonDef(ctx) {
                   },
                 },
                 {
+                  id: 'tray.open-bundle',
+                  label: 'Open Chunked Bundle',
+                  icon: 'open',
+                  size: 'small',
+                  keytip: 'MB',
+                  tooltip: 'Open SVF2-Lite .fragbundle folder to load floors on demand',
+                  run: () => {
+                    api.chunkedPanel?.openPicker?.();
+                  },
+                },
+                {
                   id: 'tray.convert-frag',
-                  label: 'Compile IFC → .frag',
+                  label: 'Desktop Compiler',
                   icon: 'export',
                   size: 'small',
                   keytip: 'MX',
-                  tooltip: 'Compile a large IFC file via 64-bit processor into .frag cache and load it',
+                  tooltip: 'Download standalone 64-bit ifc2frag.exe to compile large reference IFCs into .fragbundle folders',
                   run: () => {
-                    if (typeof api.openConvertFragFile === 'function') {
-                      api.openConvertFragFile();
-                    } else if (dom.convertFragInput) {
-                      dom.convertFragInput.click();
-                    }
+                    showDesktopCompilerModal({
+                      onOpenBundle: () => api.chunkedPanel?.openPicker?.(),
+                    });
                   },
                 },
                 {

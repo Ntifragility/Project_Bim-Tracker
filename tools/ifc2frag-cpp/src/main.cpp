@@ -30,6 +30,14 @@ static void printUsage() {
             << "  ifc2frag <a.ifc> <b.ifc> ... [options]       (batch files or folders)\n"
             << "  ifc2frag --inspect <model.frag>\n"
             << "Options:\n"
+            << "  --bundle                 Output SVF2-Lite .fragbundle/ (auto: 1 chunk <50 MB, spatial zones >=50 MB)\n"
+            << "  --single                 Output a single standalone .frag file instead of a .fragbundle/\n"
+            << "  --split-spatial          Output SVF2-Lite .fragbundle/ (Principal Structure + Spatial Detail Grid)\n"
+            << "  --split-by-storey        Output SVF2-Lite .fragbundle/ (one .frag per floor + manifest.json)\n"
+            << "  --split-by-category      Output SVF2-Lite .fragbundle/ (one .frag per discipline + manifest.json)\n"
+            << "  --skip-fasteners         Skip IFCFASTENER & IFCMECHANICALFASTENER before tessellation (faster + smaller)\n"
+            << "  --out-dir <folder>       Custom output directory for .fragbundle/\n"
+            << "  --circle-segments <4-32> Pipe/conduit tessellation segments (default: 12; 8 for split bundles)\n"
             << "  --fast                   Use zlib level 1 (faster, slightly larger)\n"
             << "  --zlib-level <1-9>       Set zlib compression level (default: 6)\n"
             << "  --threads <N>            Worker threads for shell building (default: auto)\n"
@@ -282,14 +290,24 @@ static int runBatchWithDialog(const std::vector<CompileJob>& jobs, const ifc2fra
         };
 
         const auto res = ifc2frag::compileIfcToFrag(runOpts);
-        summary << std::filesystem::path(jobs[i].outputPath).filename().string() << "\n"
-                << "  Elements:    " << res.elementsProcessed << "\n"
-                << "  Shells:      " << res.uniqueShells << " (Samples: " << res.samplesCount << ")\n"
-                << "  Psets:       " << res.propertySetsCount << " (Relations: " << res.relationsCount << ")\n"
-                << "  Size:        " << std::fixed << std::setprecision(2)
-                << (res.compressedFragBytes / (1024.0 * 1024.0)) << " MB (from "
-                << (res.rawFlatBufferBytes / (1024.0 * 1024.0)) << " MB FB)\n"
-                << "  Time:        " << res.elapsedSeconds << " s\n\n";
+        if (!res.chunks.empty()) {
+          const auto bundleFolder = std::filesystem::path(res.manifestPath).parent_path().string();
+          summary << bundleFolder << "\n"
+                  << "  Chunks:      " << res.chunks.size() << " floor files + manifest.json\n"
+                  << "  Elements:    " << res.elementsProcessed << "\n"
+                  << "  Total Size:  " << std::fixed << std::setprecision(2)
+                  << (res.compressedFragBytes / (1024.0 * 1024.0)) << " MB\n"
+                  << "  Time:        " << res.elapsedSeconds << " s\n\n";
+        } else {
+          summary << std::filesystem::path(jobs[i].outputPath).filename().string() << "\n"
+                  << "  Elements:    " << res.elementsProcessed << "\n"
+                  << "  Shells:      " << res.uniqueShells << " (Samples: " << res.samplesCount << ")\n"
+                  << "  Psets:       " << res.propertySetsCount << " (Relations: " << res.relationsCount << ")\n"
+                  << "  Size:        " << std::fixed << std::setprecision(2)
+                  << (res.compressedFragBytes / (1024.0 * 1024.0)) << " MB (from "
+                  << (res.rawFlatBufferBytes / (1024.0 * 1024.0)) << " MB FB)\n"
+                  << "  Time:        " << res.elapsedSeconds << " s\n\n";
+        }
       }
       st.summaryText = summary.str();
     } catch (const ifc2frag::CompileCancelledError&) {
@@ -343,15 +361,23 @@ static int runBatchConsole(const std::vector<CompileJob>& jobs, const ifc2frag::
       }
       std::cout << "Compiling " << runOpts.inputPath << " -> " << runOpts.outputPath << " ...\n";
       const auto res = ifc2frag::compileIfcToFrag(runOpts);
-      std::cout << "Compiled " << runOpts.inputPath << " -> " << runOpts.outputPath << "\n"
-                << "  Elements:    " << res.elementsProcessed << "\n"
-                << "  Shells:      " << res.uniqueShells << "\n"
-                << "  Samples:     " << res.samplesCount << "\n"
-                << "  Psets:       " << res.propertySetsCount << "\n"
-                << "  Relations:   " << res.relationsCount << "\n"
-                << "  FlatBuffer:  " << (res.rawFlatBufferBytes / (1024.0 * 1024.0)) << " MB\n"
-                << "  Compressed:  " << (res.compressedFragBytes / (1024.0 * 1024.0)) << " MB\n"
-                << "  Time:        " << res.elapsedSeconds << " s\n";
+      if (!res.chunks.empty()) {
+        std::cout << "Compiled chunked bundle: " << res.manifestPath << "\n"
+                  << "  Chunks:      " << res.chunks.size() << "\n"
+                  << "  Elements:    " << res.elementsProcessed << "\n"
+                  << "  Compressed:  " << (res.compressedFragBytes / (1024.0 * 1024.0)) << " MB total\n"
+                  << "  Time:        " << res.elapsedSeconds << " s\n";
+      } else {
+        std::cout << "Compiled " << runOpts.inputPath << " -> " << runOpts.outputPath << "\n"
+                  << "  Elements:    " << res.elementsProcessed << "\n"
+                  << "  Shells:      " << res.uniqueShells << "\n"
+                  << "  Samples:     " << res.samplesCount << "\n"
+                  << "  Psets:       " << res.propertySetsCount << "\n"
+                  << "  Relations:   " << res.relationsCount << "\n"
+                  << "  FlatBuffer:  " << (res.rawFlatBufferBytes / (1024.0 * 1024.0)) << " MB\n"
+                  << "  Compressed:  " << (res.compressedFragBytes / (1024.0 * 1024.0)) << " MB\n"
+                  << "  Time:        " << res.elapsedSeconds << " s\n";
+      }
     } catch (const std::exception& ex) {
       std::cerr << "ERROR (" << runOpts.inputPath << "): " << ex.what() << "\n";
       ++failures;
@@ -376,23 +402,32 @@ int main(int argc, char** argv) {
     if (!pickIfcInputFiles(inputPaths)) {
       return 0;  // User cancelled
     }
-    std::vector<CompileJob> jobs;
-    if (inputPaths.size() == 1) {
-      fs::path defaultOut = fs::path(inputPaths[0]);
-      defaultOut.replace_extension(".frag");
-      std::string outputPath;
-      if (!pickFragOutputFile(defaultOut.string(), outputPath)) {
-        return 0;  // User cancelled
-      }
-      jobs.push_back({inputPaths[0], outputPath});
-    } else {
-      for (const auto& inPath : inputPaths) {
-        fs::path outP(inPath);
-        outP.replace_extension(".frag");
-        jobs.push_back({inPath, outP.string()});
-      }
+    const int boltChoice = MessageBoxW(
+        nullptr,
+        L"Output format: SVF2-Lite .fragbundle folder (auto 1-chunk for <50 MB IFC, Principal + Spatial Zones for >=50 MB).\n\n"
+        L"Skip tiny bolts & fasteners (IFCFASTENER / IFCMECHANICALFASTENER) for faster compile & cleaner conduit tracing?\n\n"
+        L"  • YES    = Skip bolts/fasteners (fastest, recommended for conduit takeoff)\n"
+        L"  • NO     = Keep 100% of bolts/fasteners\n"
+        L"  • CANCEL = Abort",
+        L"ifc2frag - Compile to .fragbundle",
+        MB_YESNOCANCEL | MB_ICONQUESTION);
+    if (boltChoice == IDCANCEL) {
+      return 0;
     }
+
     ifc2frag::CompileOptions opts{};
+    opts.splitMode = ifc2frag::SplitMode::AutoBundle;
+    opts.skipFasteners = (boltChoice == IDYES);
+    opts.circleSegments = 8;
+    opts.zlibLevel = 1;
+    std::vector<CompileJob> jobs;
+    for (const auto& inPath : inputPaths) {
+      fs::path outDir = fs::path(inPath).parent_path() / (fs::path(inPath).stem().string() + ".fragbundle");
+      jobs.push_back({inPath, outDir.string()});
+    }
+    if (jobs.size() == 1) {
+      opts.outDir = jobs[0].outputPath;
+    }
     return runBatchWithDialog(jobs, opts);
 #else
     printUsage();
@@ -440,15 +475,36 @@ int main(int argc, char** argv) {
 
   // Parse CLI positional paths and flags
   ifc2frag::CompileOptions opts{};
+  bool circleSegsExplicit = false;
   std::vector<std::string> positional;
   for (int i = 1; i < argc; ++i) {
     const std::string flag = argv[i];
     if (flag == "--no-origin") {
       opts.coordinateToOrigin = false;
+    } else if (flag == "--bundle") {
+      opts.splitMode = ifc2frag::SplitMode::AutoBundle;
+    } else if (flag == "--single") {
+      opts.splitMode = ifc2frag::SplitMode::None;
+    } else if (flag == "--skip-fasteners") {
+      opts.skipFasteners = true;
+    } else if (flag == "--split-spatial") {
+      opts.splitMode = ifc2frag::SplitMode::Spatial;
+    } else if (flag == "--split-by-storey") {
+      opts.splitMode = ifc2frag::SplitMode::ByStorey;
+    } else if (flag == "--split-by-category") {
+      opts.splitMode = ifc2frag::SplitMode::ByCategory;
+    } else if (flag == "--out-dir" && i + 1 < argc) {
+      opts.outDir = argv[++i];
+    } else if (flag == "--circle-segments" && i + 1 < argc) {
+      opts.circleSegments = std::atoi(argv[++i]);
+      circleSegsExplicit = true;
     } else if (flag == "--fast") {
       opts.zlibLevel = 1;
     } else if (flag == "--no-props") {
       opts.includeProperties = false;
+    } else if (flag == "--with-props") {
+      opts.includeProperties = true;
+      opts.forceProperties = true;
     } else if (flag == "--zlib-level" && i + 1 < argc) {
       opts.zlibLevel = std::atoi(argv[++i]);
     } else if (flag == "--threads" && i + 1 < argc) {
@@ -466,6 +522,9 @@ int main(int argc, char** argv) {
     } else {
       positional.push_back(flag);
     }
+  }
+  if (opts.splitMode != ifc2frag::SplitMode::None && !circleSegsExplicit) {
+    opts.circleSegments = 8;
   }
 
   if (positional.empty()) {

@@ -51,6 +51,13 @@ export function createModelLoad({ state, els, engine, api }) {
   const getModel = () => activeLoadedModel;
 
   async function loadIfcFile(file, { convertToFrag = false } = {}) {
+    if (file?.name?.toLowerCase() === 'manifest.json') {
+      window.alert(
+        'You selected manifest.json inside a .fragbundle folder.\n\n' +
+        'To open a chunked bundle, click "Open Chunked Bundle" and select the .fragbundle folder itself.'
+      );
+      return null;
+    }
     if (file?.name?.toLowerCase().endsWith('.frag')) {
       return loadFragFile(file);
     }
@@ -69,7 +76,7 @@ export function createModelLoad({ state, els, engine, api }) {
       const proceed = window.confirm(
         `${file.name} (${formatFileSize(file.size)}) is over 200 MB.\n\n` +
         'Browsers may run out of memory loading large Native IFCs directly.\n' +
-        'For best results, compile it first with ifc2frag.exe and open the .frag via "Open Cache (.frag)".\n\n' +
+        'For smooth 60 FPS performance, compile it locally with ifc2frag.exe (creates a .fragbundle folder) and open it via "Open Chunked Bundle".\n\n' +
         'Click OK to try loading in the browser anyway, or Cancel to abort.'
       );
       if (!proceed) return null;

@@ -7,7 +7,7 @@
 // Bootstraps universal Revit-style ribbon via ribbon-chrome and conduit-adapter.
 
 import * as THREE from 'three';
-import { createCovillafEngine } from 'viewer-core';
+import { createCovillafEngine, mountChunkedBundlePanel, mountPerfHud } from 'viewer-core';
 import { createRibbon, createReviztoToolbar } from 'ribbon-chrome';
 import { createConduitRibbonDef } from './conduit-adapter.js';
 import { createLateralDock } from './lateral-dock.js';
@@ -413,6 +413,53 @@ export function createViewerChrome({ state, els, api }) {
 
     // Drag-guarded right-click Revizto viewport context menu
     initConduitContextMenu({ state, els, engine, drawingTool });
+
+    // Experimental opt-in LOD streaming test selector (defaults to 'default' — zero effect until switched)
+    if (els.viewerContainer && engine.lodTuning && !els.viewerContainer.querySelector('#lod-test-pill')) {
+      const pill = document.createElement('div');
+      pill.id = 'lod-test-pill';
+      pill.style.cssText =
+        'position:absolute;right:12px;bottom:12px;z-index:25;display:flex;align-items:center;gap:6px;' +
+        'background:rgba(15,23,42,0.82);color:#e2e8f0;padding:4px 8px;border-radius:6px;' +
+        'border:1px solid rgba(148,163,184,0.28);font:11px/1.2 system-ui,sans-serif;backdrop-filter:blur(6px);';
+      pill.innerHTML =
+        '<label for="lod-test-select" style="opacity:0.8;white-space:nowrap;">LOD Test:</label>' +
+        '<select id="lod-test-select" style="background:#0f172a;color:#f8fafc;border:1px solid #334155;' +
+        'border-radius:4px;padding:2px 6px;font-size:11px;cursor:pointer;">' +
+        '<option value="default" selected>Default (Original)</option>' +
+        '<option value="fast-stream">Fast Stream (Live Zoom)</option>' +
+        '<option value="high-detail">High Detail (GPU)</option>' +
+        '</select>';
+      const sel = pill.querySelector('#lod-test-select');
+      sel.addEventListener('change', () => {
+        const mode = engine.lodTuning.setMode(sel.value);
+        if (els.statusText) {
+          els.statusText.textContent =
+            mode === 'fast-stream'
+              ? 'LOD Test: Fast Stream active (live tile streaming while zooming)'
+              : mode === 'high-detail'
+                ? 'LOD Test: High Detail active (graphicsQuality=1)'
+                : 'LOD Test: Default (original behavior restored)';
+        }
+      });
+      els.viewerContainer.appendChild(pill);
+    }
+
+    // SVF2-Lite Chunked Bundle Panel (local / OneDrive-synced .fragbundle folder)
+    if (els.viewerContainer && engine) {
+      api.chunkedPanel = mountChunkedBundlePanel(els.viewerContainer, {
+        engine,
+        onStatus: (msg) => {
+          if (els.statusText) els.statusText.textContent = msg;
+          ribbonApi?.setStatus?.('status-text', msg);
+        },
+      });
+      api.perfHud = mountPerfHud(els.viewerContainer, {
+        engine,
+        chunkedManager: api.chunkedPanel?.manager,
+        defaultOpen: true,
+      });
+    }
 
     // Initial render of lateral dock components
     api.updatePropertiesPalette?.();

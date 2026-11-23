@@ -68,6 +68,57 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
     fragments.init();
   }
   fragments.core.settings.graphicsQuality = 1;
+  const defaultMaxUpdateRate = fragments.core.settings.maxUpdateRate;
+  let defaultGraphicsQuality = 1;
+  let lastLoadStats = { name: "", bytes: 0, elapsedMs: 0, lastChunkMs: 0 };
+  let lodMode = "default";
+  let lodUpdateTimer = null;
+  let lodLastTick = 0;
+
+  function onLodCameraUpdate() {
+    if (lodMode === "default") return;
+    const now = performance.now();
+    if (now - lodLastTick >= 80) {
+      lodLastTick = now;
+      try { fragments.core?.update?.(false); } catch { /* headless */ }
+    } else if (!lodUpdateTimer) {
+      lodUpdateTimer = setTimeout(() => {
+        lodUpdateTimer = null;
+        lodLastTick = performance.now();
+        try { fragments.core?.update?.(false); } catch { /* headless */ }
+      }, 80);
+    }
+  }
+
+  function applyLodMode(mode) {
+    const next = (mode === "fast-stream" || mode === "high-detail") ? mode : "default";
+    const controls = world.camera?.controls;
+    if (lodMode !== "default") {
+      controls?.removeEventListener?.("update", onLodCameraUpdate);
+    }
+    clearTimeout(lodUpdateTimer);
+    lodUpdateTimer = null;
+    lodMode = next;
+
+    if (next === "default") {
+      fragments.core.settings.graphicsQuality = defaultGraphicsQuality;
+      if (defaultMaxUpdateRate !== undefined) {
+        fragments.core.settings.maxUpdateRate = defaultMaxUpdateRate;
+      }
+      try { fragments.core?.update?.(true); } catch { /* headless */ }
+    } else if (next === "fast-stream") {
+      fragments.core.settings.graphicsQuality = 0;
+      fragments.core.settings.maxUpdateRate = 60;
+      controls?.addEventListener?.("update", onLodCameraUpdate);
+      try { fragments.core?.update?.(true); } catch { /* headless */ }
+    } else if (next === "high-detail") {
+      fragments.core.settings.graphicsQuality = 1;
+      fragments.core.settings.maxUpdateRate = 100;
+      controls?.addEventListener?.("update", onLodCameraUpdate);
+      try { fragments.core?.update?.(true); } catch { /* headless */ }
+    }
+    return lodMode;
+  }
 
   try {
     fragments.core.models.materials.list.onItemSet.add(({ value: material }) => {
@@ -93,10 +144,9 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
   await ifcLoader.setup();
 
   const highlighter = components.get(OBF.Highlighter);
-  if (enableHighlighting) {
-    highlighter.setup({ world });
-    highlighter.mouseMoveThreshold = 10;
-  } else {
+  highlighter.setup({ world });
+  highlighter.mouseMoveThreshold = 10;
+  if (!enableHighlighting) {
     highlighter.enabled = false;
   }
   const hider = components.get(OBC.Hider);
@@ -765,16 +815,34 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
     },
 
     async loadFrag(buffer, name = "model.frag") {
+      const t0 = performance.now();
       const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
       // Heavy .frag files (> 30 MB compressed) can OOM Chrome's WebGL/worker heap at full detail;
-      // switch to LOD culling mode (graphicsQuality = 0) before loading them.
-      fragments.core.settings.graphicsQuality = bytes.byteLength > 30 * 1024 * 1024 ? 0 : 1;
+      // switch to LOD culling mode (graphicsQuality = 0) before loading them unless overridden by lodTuning.
+      defaultGraphicsQuality = bytes.byteLength > 30 * 1024 * 1024 ? 0 : 1;
+      if (lodMode === "default") {
+        fragments.core.settings.graphicsQuality = defaultGraphicsQuality;
+      } else if (lodMode === "fast-stream") {
+        fragments.core.settings.graphicsQuality = 0;
+      } else if (lodMode === "high-detail") {
+        fragments.core.settings.graphicsQuality = 1;
+      }
       const model = await fragments.core.load(bytes, {
         modelId: name,
         camera: world.camera.three,
       });
       await applyDynamicModelBounds(model);
+      const elapsedMs = performance.now() - t0;
+      if (String(name).startsWith("chunk::")) {
+        lastLoadStats.lastChunkMs = elapsedMs;
+      } else {
+        lastLoadStats = { name, bytes: bytes.byteLength, elapsedMs, lastChunkMs: 0 };
+      }
       return model;
+    },
+
+    getLastLoadStats() {
+      return { ...lastLoadStats };
     },
 
     async exportFrag(modelOrId) {
@@ -939,7 +1007,14 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
       },
     },
 
+    lodTuning: {
+      get mode() { return lodMode; },
+      setMode(mode) { return applyLodMode(mode); },
+    },
+
     dispose() {
+      world.camera?.controls?.removeEventListener?.("update", onLodCameraUpdate);
+      clearTimeout(lodUpdateTimer);
       cameraNav.dispose();
       ruler.dispose();
       section.dispose();
