@@ -30,6 +30,7 @@ static void printUsage() {
             << "  ifc2frag <a.ifc> <b.ifc> ... [options]       (batch files or folders)\n"
             << "  ifc2frag --inspect <model.frag>\n"
             << "Options:\n"
+            << "  --split-spatial          Output SVF2-Lite .fragbundle/ (Principal Structure + Spatial Detail Grid)\n"
             << "  --split-by-storey        Output SVF2-Lite .fragbundle/ (one .frag per floor + manifest.json)\n"
             << "  --split-by-category      Output SVF2-Lite .fragbundle/ (one .frag per discipline + manifest.json)\n"
             << "  --out-dir <folder>       Custom output directory for --split-by-* bundle\n"
@@ -400,7 +401,7 @@ int main(int argc, char** argv) {
     }
     const int modeChoice = MessageBoxW(
         nullptr,
-        L"Create a Chunked .fragbundle folder (split by floor, recommended for large models)?\n\n"
+        L"Create a Chunked .fragbundle folder (Principal Structure + Spatial Zones, recommended for large models)?\n\n"
         L"  • YES  = Chunked .fragbundle folder (saved next to your .ifc)\n"
         L"  • NO   = Single .frag file\n"
         L"  • CANCEL = Abort",
@@ -413,7 +414,7 @@ int main(int argc, char** argv) {
     ifc2frag::CompileOptions opts{};
     std::vector<CompileJob> jobs;
     if (modeChoice == IDYES) {
-      opts.splitMode = ifc2frag::SplitMode::ByStorey;
+      opts.splitMode = ifc2frag::SplitMode::Spatial;
       opts.circleSegments = 8;
       opts.zlibLevel = 1;
       for (const auto& inPath : inputPaths) {
@@ -491,6 +492,8 @@ int main(int argc, char** argv) {
     const std::string flag = argv[i];
     if (flag == "--no-origin") {
       opts.coordinateToOrigin = false;
+    } else if (flag == "--split-spatial") {
+      opts.splitMode = ifc2frag::SplitMode::Spatial;
     } else if (flag == "--split-by-storey") {
       opts.splitMode = ifc2frag::SplitMode::ByStorey;
     } else if (flag == "--split-by-category") {

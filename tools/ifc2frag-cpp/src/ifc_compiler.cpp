@@ -983,7 +983,116 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
     };
     std::map<std::string, ChunkBucket> bucketMap;
 
-    if (opts.splitMode == SplitMode::ByStorey) {
+    // Index samples by itemIndex for O(1) slicing per chunk (needed by Spatial mode & per-chunk packing)
+    std::vector<std::vector<size_t>> samplesByItem(geomElementsCount);
+    for (size_t si = 0; si < samples.size(); ++si) {
+      const uint32_t ii = samples[si].item();
+      if (ii < geomElementsCount) samplesByItem[ii].push_back(si);
+    }
+
+    if (opts.splitMode == SplitMode::Spatial) {
+      // Tier 0: Principal Elements (largest ~12% of triangles across entire model)
+      // Tier 1: Remaining detail elements partitioned into balanced X-Z spatial zones
+      struct ElemMetric {
+        uint32_t itemIdx;
+        float extent;
+        uint64_t tris;
+        double gx, gz;
+      };
+      std::vector<ElemMetric> metrics;
+      metrics.reserve(geomElementsCount);
+      uint64_t totalTris = 0;
+      for (uint32_t itemIdx = 0; itemIdx < geomElementsCount; ++itemIdx) {
+        float maxExt = 0.0f;
+        uint64_t tris = 0;
+        for (const size_t si : samplesByItem[itemIdx]) {
+          const auto& sh = shells[samples[si].representation()];
+          const float dx = sh.maxX - sh.minX;
+          const float dy = sh.maxY - sh.minY;
+          const float dz = sh.maxZ - sh.minZ;
+          const float diag = std::sqrt(dx * dx + dy * dy + dz * dz);
+          if (diag > maxExt) maxExt = diag;
+          tris += sh.triangles.size();
+        }
+        const auto& gt = globalTransforms[itemIdx];
+        metrics.push_back({itemIdx, maxExt, tris, gt.position().x(), gt.position().z()});
+        totalTris += tris;
+      }
+
+      std::sort(metrics.begin(), metrics.end(), [](const ElemMetric& a, const ElemMetric& b) {
+        return a.extent > b.extent;
+      });
+
+      const uint64_t principalTriBudget = std::max<uint64_t>(1, totalTris / 8u);  // ~12.5% of triangles
+      const size_t maxPrincipalElems = std::max<size_t>(1, geomElementsCount / 5u);  // cap at 20% of elements
+      uint64_t principalTris = 0;
+
+      ChunkBucket principalBucket{};
+      principalBucket.id = "principal";
+      principalBucket.name = "Principal Structure";
+      principalBucket.elevationM = -1e9;
+
+      std::vector<ElemMetric> detailMetrics;
+      detailMetrics.reserve(geomElementsCount);
+
+      for (const auto& m : metrics) {
+        if (principalBucket.itemIndices.empty() ||
+            (principalTris < principalTriBudget && principalBucket.itemIndices.size() < maxPrincipalElems)) {
+          principalBucket.itemIndices.push_back(m.itemIdx);
+          principalTris += m.tris;
+        } else {
+          detailMetrics.push_back(m);
+        }
+      }
+      bucketMap.emplace("00_principal", std::move(principalBucket));
+
+      if (!detailMetrics.empty()) {
+        double minX = std::numeric_limits<double>::infinity();
+        double maxX = -std::numeric_limits<double>::infinity();
+        double minZ = std::numeric_limits<double>::infinity();
+        double maxZ = -std::numeric_limits<double>::infinity();
+        for (const auto& m : detailMetrics) {
+          minX = std::min(minX, m.gx);
+          maxX = std::max(maxX, m.gx);
+          minZ = std::min(minZ, m.gz);
+          maxZ = std::max(maxZ, m.gz);
+        }
+        const double spanX = std::max(1e-3, maxX - minX);
+        const double spanZ = std::max(1e-3, maxZ - minZ);
+
+        // Pick grid dimensions targeting ~8-12 zones on large models, 1x1 on tiny fixtures
+        int nx = 1, nz = 1;
+        if (detailMetrics.size() >= 1000) {
+          const double aspect = spanX / spanZ;
+          if (aspect >= 1.5) { nx = 4; nz = 2; }
+          else if (aspect <= 0.67) { nx = 2; nz = 4; }
+          else { nx = 3; nz = 3; }
+          if (detailMetrics.size() >= 25000) {
+            nx = aspect >= 1.2 ? 4 : 3;
+            nz = aspect <= 0.8 ? 4 : 3;
+          }
+        } else if (detailMetrics.size() >= 100) {
+          nx = 2; nz = 2;
+        }
+
+        for (const auto& m : detailMetrics) {
+          int ix = static_cast<int>(((m.gx - minX) / spanX) * nx);
+          int iz = static_cast<int>(((m.gz - minZ) / spanZ) * nz);
+          ix = std::clamp(ix, 0, nx - 1);
+          iz = std::clamp(iz, 0, nz - 1);
+          const char rowChar = static_cast<char>('A' + iz);
+          const std::string zoneLabel = std::string("Zone ") + rowChar + std::to_string(ix + 1);
+          const std::string key = std::string("zone-") + rowChar + std::to_string(ix + 1);
+          auto& b = bucketMap[key];
+          if (b.id.empty()) {
+            b.id = key;
+            b.name = zoneLabel;
+            b.elevationM = static_cast<double>(iz * nx + ix + 1);
+          }
+          b.itemIndices.push_back(m.itemIdx);
+        }
+      }
+    } else if (opts.splitMode == SplitMode::ByStorey) {
       std::unordered_map<uint32_t, uint32_t> parentOf;
       for (const auto& [pid, children] : spatialChildren) {
         for (const uint32_t cid : children) {
@@ -1047,12 +1156,6 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
       return a.name < b.name;
     });
 
-    // Index samples by itemIndex for O(1) slicing per chunk
-    std::vector<std::vector<size_t>> samplesByItem(geomElementsCount);
-    for (size_t si = 0; si < samples.size(); ++si) {
-      const uint32_t ii = samples[si].item();
-      if (ii < geomElementsCount) samplesByItem[ii].push_back(si);
-    }
     std::unordered_map<uint32_t, std::string> guidByItem;
     for (size_t gi = 0; gi < guidsItems.size() && gi < guids.size(); ++gi) {
       guidByItem.emplace(guidsItems[gi], guids[gi]);
@@ -1381,7 +1484,11 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
         << "  \"version\": 1,\n"
         << "  \"format\": \"fragbundle\",\n"
         << "  \"sourceName\": \"" << jsonEscape(fs::path(opts.inputPath).filename().string()) << "\",\n"
-        << "  \"splitMode\": \"" << (opts.splitMode == SplitMode::ByStorey ? "storey" : "category") << "\",\n"
+        << "  \"splitMode\": \""
+        << (opts.splitMode == SplitMode::Spatial
+                ? "spatial"
+                : (opts.splitMode == SplitMode::ByStorey ? "storey" : "category"))
+        << "\",\n"
         << "  \"circleSegments\": " << opts.circleSegments << ",\n"
         << "  \"coordinationMatrix\": {\n"
         << "    \"position\": [" << fbCoords.position().x() << ", " << fbCoords.position().y() << ", " << fbCoords.position().z() << "],\n"
