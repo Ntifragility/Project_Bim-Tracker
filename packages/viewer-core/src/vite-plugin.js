@@ -83,6 +83,24 @@ export function covillafWebIfc(options = {}) {
         fs.createReadStream(fragmentsWorker).pipe(res);
       });
 
+      // Serve locally built native ifc2frag.exe directly in dev mode (zero 404 on Download button)
+      server.middlewares.use("/covillaf/downloads/ifc2frag.exe", (_req, res) => {
+        const foundExe =
+          findProjectFile(path.join("tools", "ifc2frag-cpp", "build", "ifc2frag.exe"), projectRoot) ||
+          findProjectFile(path.join("tools", "ifc2frag-cpp", "build", "ifc2frag.exe"), process.cwd());
+        if (!foundExe) {
+          res.statusCode = 404;
+          res.setHeader("Content-Type", "text/plain");
+          res.end("ifc2frag.exe not built yet (expected tools/ifc2frag-cpp/build/ifc2frag.exe).");
+          return;
+        }
+        const stat = fs.statSync(foundExe.filePath);
+        res.setHeader("Content-Type", "application/octet-stream");
+        res.setHeader("Content-Length", String(stat.size));
+        res.setHeader("Content-Disposition", 'attachment; filename="ifc2frag.exe"');
+        fs.createReadStream(foundExe.filePath).pipe(res);
+      });
+
       const jobs = new Map();
 
       server.middlewares.use("/covillaf/convert-frag", (req, res, next) => {
