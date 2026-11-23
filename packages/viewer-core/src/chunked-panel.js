@@ -287,26 +287,26 @@ export function showDesktopCompilerModal({
 
   const card = document.createElement("div");
   card.style.cssText =
-    "width:min(480px,92vw);background:#0f172a;border:1px solid rgba(148,163,184,0.35);" +
-    "border-radius:12px;padding:18px 20px;box-shadow:0 20px 50px rgba(0,0,0,0.55);";
+    "width:min(420px,92vw);background:#0f172a;border:1px solid #334155;" +
+    "border-radius:8px;padding:16px 18px;box-shadow:0 16px 40px rgba(0,0,0,0.5);";
 
   card.innerHTML =
-    `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">` +
-      `<div style="font-size:15px;font-weight:700;color:#f8fafc;">⚡ Desktop IFC Compiler (ifc2frag.exe)</div>` +
-      `<button type="button" data-action="close" style="background:transparent;border:none;color:#94a3b8;font-size:16px;cursor:pointer;">✕</button>` +
+    `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">` +
+      `<div style="font-size:14px;font-weight:600;color:#f8fafc;">IFC Desktop Compiler</div>` +
+      `<button type="button" data-action="close" aria-label="Close" style="background:transparent;border:none;color:#94a3b8;font-size:15px;cursor:pointer;padding:2px 4px;">✕</button>` +
     `</div>` +
-    `<p style="margin:0 0 10px;color:#cbd5e1;">Use our native 64-bit Windows compiler to turn large <strong>200 MB – 4 GB</strong> IFC models into fast <strong>.fragbundle</strong> folders that stream at 60 FPS in your browser.</p>` +
-    `<div style="background:rgba(30,41,59,0.75);border:1px solid rgba(148,163,184,0.2);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:12px;color:#cbd5e1;">` +
-      `<div style="margin-bottom:6px;"><strong>• Small IFCs (&lt; 200 MB):</strong> Open directly via <em>Open Native IFC</em> — no compiler needed.</div>` +
-      `<div style="margin-bottom:6px;"><strong>• Large IFCs (≥ 200 MB):</strong> Double-click <code>ifc2frag.exe</code>, select your <code>.ifc</code>, and it builds a <code>.fragbundle/</code> folder (Principal Structure + Spatial Zones, optional bolt/fastener skip).</div>` +
-      `<div><strong>• View in Browser:</strong> Click <em>Open Chunked Bundle</em> and select the generated <code>.fragbundle</code> folder.</div>` +
+    `<p style="margin:0 0 12px;font-size:12px;color:#94a3b8;">Convert IFC files over 200 MB into <code>.fragbundle</code> folders before loading.</p>` +
+    `<div style="background:#1e293b;border:1px solid #334155;border-radius:6px;padding:10px 12px;margin-bottom:14px;font-size:12px;color:#cbd5e1;display:flex;flex-direction:column;gap:6px;">` +
+      `<div><strong style="color:#f1f5f9;">&lt; 200 MB:</strong> Load directly with <em>Open Native IFC</em>.</div>` +
+      `<div><strong style="color:#f1f5f9;">&ge; 200 MB:</strong> Run <code>ifc2frag.exe</code> on your <code>.ifc</code> file.</div>` +
+      `<div><strong style="color:#f1f5f9;">Open:</strong> Select the output <code>.fragbundle</code> folder via <em>Open Chunked Bundle</em>.</div>` +
     `</div>` +
-    `<div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;">` +
-      `<a href="${resolvedUrl}" target="_blank" rel="noopener noreferrer" style="text-decoration:none;background:#0ea5e9;color:#082f49;font-weight:700;padding:7px 12px;border-radius:6px;font-size:12px;">⬇ Download ifc2frag.exe</a>` +
+    `<div style="display:flex;gap:8px;justify-content:flex-end;">` +
+      `<a href="${resolvedUrl}" target="_blank" rel="noopener noreferrer" style="text-decoration:none;background:#0284c7;color:#f8fafc;font-weight:600;padding:6px 12px;border-radius:5px;font-size:12px;">Download ifc2frag.exe</a>` +
       (typeof onOpenBundle === "function"
-        ? `<button type="button" data-action="open-bundle" style="background:#1e293b;color:#38bdf8;border:1px solid #38bdf8;font-weight:600;padding:7px 12px;border-radius:6px;font-size:12px;cursor:pointer;">📂 Open Chunked Bundle</button>`
+        ? `<button type="button" data-action="open-bundle" style="background:#1e293b;color:#e2e8f0;border:1px solid #475569;font-weight:500;padding:6px 12px;border-radius:5px;font-size:12px;cursor:pointer;">Open Bundle</button>`
         : "") +
-      `<button type="button" data-action="close" style="background:#1e293b;color:#cbd5e1;border:1px solid #334155;padding:7px 12px;border-radius:6px;font-size:12px;cursor:pointer;">Close</button>` +
+      `<button type="button" data-action="close" style="background:transparent;color:#94a3b8;border:1px solid #334155;padding:6px 10px;border-radius:5px;font-size:12px;cursor:pointer;">Close</button>` +
     `</div>`;
 
   const close = () => backdrop.remove();
