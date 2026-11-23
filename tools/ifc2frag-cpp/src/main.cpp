@@ -286,14 +286,24 @@ static int runBatchWithDialog(const std::vector<CompileJob>& jobs, const ifc2fra
         };
 
         const auto res = ifc2frag::compileIfcToFrag(runOpts);
-        summary << std::filesystem::path(jobs[i].outputPath).filename().string() << "\n"
-                << "  Elements:    " << res.elementsProcessed << "\n"
-                << "  Shells:      " << res.uniqueShells << " (Samples: " << res.samplesCount << ")\n"
-                << "  Psets:       " << res.propertySetsCount << " (Relations: " << res.relationsCount << ")\n"
-                << "  Size:        " << std::fixed << std::setprecision(2)
-                << (res.compressedFragBytes / (1024.0 * 1024.0)) << " MB (from "
-                << (res.rawFlatBufferBytes / (1024.0 * 1024.0)) << " MB FB)\n"
-                << "  Time:        " << res.elapsedSeconds << " s\n\n";
+        if (!res.chunks.empty()) {
+          const auto bundleFolder = std::filesystem::path(res.manifestPath).parent_path().string();
+          summary << bundleFolder << "\n"
+                  << "  Chunks:      " << res.chunks.size() << " floor files + manifest.json\n"
+                  << "  Elements:    " << res.elementsProcessed << "\n"
+                  << "  Total Size:  " << std::fixed << std::setprecision(2)
+                  << (res.compressedFragBytes / (1024.0 * 1024.0)) << " MB\n"
+                  << "  Time:        " << res.elapsedSeconds << " s\n\n";
+        } else {
+          summary << std::filesystem::path(jobs[i].outputPath).filename().string() << "\n"
+                  << "  Elements:    " << res.elementsProcessed << "\n"
+                  << "  Shells:      " << res.uniqueShells << " (Samples: " << res.samplesCount << ")\n"
+                  << "  Psets:       " << res.propertySetsCount << " (Relations: " << res.relationsCount << ")\n"
+                  << "  Size:        " << std::fixed << std::setprecision(2)
+                  << (res.compressedFragBytes / (1024.0 * 1024.0)) << " MB (from "
+                  << (res.rawFlatBufferBytes / (1024.0 * 1024.0)) << " MB FB)\n"
+                  << "  Time:        " << res.elapsedSeconds << " s\n\n";
+        }
       }
       st.summaryText = summary.str();
     } catch (const ifc2frag::CompileCancelledError&) {
@@ -388,8 +398,32 @@ int main(int argc, char** argv) {
     if (!pickIfcInputFiles(inputPaths)) {
       return 0;  // User cancelled
     }
+    const int modeChoice = MessageBoxW(
+        nullptr,
+        L"Create a Chunked .fragbundle folder (split by floor, recommended for large models)?\n\n"
+        L"  • YES  = Chunked .fragbundle folder (saved next to your .ifc)\n"
+        L"  • NO   = Single .frag file\n"
+        L"  • CANCEL = Abort",
+        L"ifc2frag - Choose Output Format",
+        MB_YESNOCANCEL | MB_ICONQUESTION);
+    if (modeChoice == IDCANCEL) {
+      return 0;
+    }
+
+    ifc2frag::CompileOptions opts{};
     std::vector<CompileJob> jobs;
-    if (inputPaths.size() == 1) {
+    if (modeChoice == IDYES) {
+      opts.splitMode = ifc2frag::SplitMode::ByStorey;
+      opts.circleSegments = 8;
+      opts.zlibLevel = 1;
+      for (const auto& inPath : inputPaths) {
+        fs::path outDir = fs::path(inPath).parent_path() / (fs::path(inPath).stem().string() + ".fragbundle");
+        jobs.push_back({inPath, outDir.string()});
+      }
+      if (jobs.size() == 1) {
+        opts.outDir = jobs[0].outputPath;
+      }
+    } else if (inputPaths.size() == 1) {
       fs::path defaultOut = fs::path(inputPaths[0]);
       defaultOut.replace_extension(".frag");
       std::string outputPath;
@@ -404,7 +438,6 @@ int main(int argc, char** argv) {
         jobs.push_back({inPath, outP.string()});
       }
     }
-    ifc2frag::CompileOptions opts{};
     return runBatchWithDialog(jobs, opts);
 #else
     printUsage();
