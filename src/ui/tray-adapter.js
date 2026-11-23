@@ -83,6 +83,17 @@ export function createTrayRibbonDef(ctx) {
                   },
                 },
                 {
+                  id: 'tray.open-bundle',
+                  label: 'Open Chunked Bundle',
+                  icon: 'open',
+                  size: 'small',
+                  keytip: 'MB',
+                  tooltip: 'Open SVF2-Lite .fragbundle folder to load floors on demand',
+                  run: () => {
+                    api.chunkedPanel?.openPicker?.();
+                  },
+                },
+                {
                   id: 'tray.convert-frag',
                   label: 'Compile IFC → .frag',
                   icon: 'export',

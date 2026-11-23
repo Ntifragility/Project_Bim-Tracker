@@ -75,6 +75,17 @@ export function createConduitRibbonDef(ctx) {
                   },
                 },
                 {
+                  id: 'conduit.open-bundle',
+                  label: 'Open Chunked Bundle',
+                  icon: 'open',
+                  size: 'small',
+                  keytip: 'MFB',
+                  tooltip: 'Open SVF2-Lite .fragbundle folder to load floors on demand',
+                  run(c) {
+                    c.api?.chunkedPanel?.openPicker?.();
+                  },
+                },
+                {
                   id: 'conduit.convert-frag',
                   label: 'Compile IFC → .frag',
                   icon: 'export',
