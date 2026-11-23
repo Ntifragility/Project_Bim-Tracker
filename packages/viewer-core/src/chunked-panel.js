@@ -158,14 +158,18 @@ export function mountChunkedBundlePanel(container, { engine, onStatus = null } =
   }
 
   folderInput.addEventListener("change", async (e) => {
-    const files = e.target.files;
+    const files = Array.from(e.target.files || []);
     e.target.value = "";
-    if (!files || files.length === 0) return;
+    if (files.length === 0) return;
     try {
       const transport = createLocalFolderTransport(files);
       const { manifest } = await manager.openBundle(transport);
       collapsed = false;
-      onStatus?.(`Opened chunked bundle '${manifest.sourceName}' (${manifest.chunks.length} chunks). Check any floor to load.`);
+      onStatus?.(`Opened chunked bundle '${manifest.sourceName}' (${manifest.chunks.length} chunks). Loading first chunk…`);
+      if (manifest.chunks.length > 0) {
+        await manager.loadChunk(manifest.chunks[0].id);
+        onStatus?.(`Loaded '${manifest.chunks[0].name}'. Use the bottom-left panel to load/unload more floors.`);
+      }
     } catch (err) {
       console.error("[chunked-panel] openBundle error:", err);
       onStatus?.(`Bundle error: ${err?.message || err}`);
