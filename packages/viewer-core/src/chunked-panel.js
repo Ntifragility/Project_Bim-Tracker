@@ -274,10 +274,16 @@ export function showDesktopCompilerModal({
   const existing = document.getElementById("svf2-compiler-modal-backdrop");
   if (existing) existing.remove();
 
+  const isLocalHost =
+    typeof window !== "undefined" &&
+    /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(window.location?.hostname || "");
   const resolvedUrl =
     downloadUrl ||
     (typeof import.meta !== "undefined" && import.meta.env?.VITE_COMPILER_DOWNLOAD_URL) ||
-    "https://github.com/covillaf/Project_Bim_Tracker/releases/latest";
+    (isLocalHost
+      ? "/covillaf/downloads/ifc2frag.exe"
+      : "https://github.com/Ntifragility/Project_Bim-Tracker/releases/latest");
+  const isDirectDownload = resolvedUrl.endsWith(".exe");
 
   const backdrop = document.createElement("div");
   backdrop.id = "svf2-compiler-modal-backdrop";
@@ -302,7 +308,7 @@ export function showDesktopCompilerModal({
       `<div><strong style="color:#f1f5f9;">Open:</strong> Select the output <code>.fragbundle</code> folder via <em>Open Chunked Bundle</em>.</div>` +
     `</div>` +
     `<div style="display:flex;gap:8px;justify-content:flex-end;">` +
-      `<a href="${resolvedUrl}" target="_blank" rel="noopener noreferrer" style="text-decoration:none;background:#0284c7;color:#f8fafc;font-weight:600;padding:6px 12px;border-radius:5px;font-size:12px;">Download ifc2frag.exe</a>` +
+      `<a href="${resolvedUrl}" ${isDirectDownload ? 'download="ifc2frag.exe"' : 'target="_blank" rel="noopener noreferrer"'} style="text-decoration:none;background:#0284c7;color:#f8fafc;font-weight:600;padding:6px 12px;border-radius:5px;font-size:12px;">Download ifc2frag.exe</a>` +
       (typeof onOpenBundle === "function"
         ? `<button type="button" data-action="open-bundle" style="background:#1e293b;color:#e2e8f0;border:1px solid #475569;font-weight:500;padding:6px 12px;border-radius:5px;font-size:12px;cursor:pointer;">Open Bundle</button>`
         : "") +
