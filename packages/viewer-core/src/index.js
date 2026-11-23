@@ -40,3 +40,4 @@ export {
   createChunkedModelManager,
 } from "./chunked-loader.js";
 export { mountChunkedBundlePanel } from "./chunked-panel.js";
+export { mountPerfHud } from "./perf-hud.js";

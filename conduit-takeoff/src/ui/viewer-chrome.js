@@ -7,7 +7,7 @@
 // Bootstraps universal Revit-style ribbon via ribbon-chrome and conduit-adapter.
 
 import * as THREE from 'three';
-import { createCovillafEngine, mountChunkedBundlePanel } from 'viewer-core';
+import { createCovillafEngine, mountChunkedBundlePanel, mountPerfHud } from 'viewer-core';
 import { createRibbon, createReviztoToolbar } from 'ribbon-chrome';
 import { createConduitRibbonDef } from './conduit-adapter.js';
 import { createLateralDock } from './lateral-dock.js';
@@ -453,6 +453,11 @@ export function createViewerChrome({ state, els, api }) {
           if (els.statusText) els.statusText.textContent = msg;
           ribbonApi?.setStatus?.('status-text', msg);
         },
+      });
+      api.perfHud = mountPerfHud(els.viewerContainer, {
+        engine,
+        chunkedManager: api.chunkedPanel?.manager,
+        defaultOpen: true,
       });
     }
 

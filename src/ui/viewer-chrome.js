@@ -16,7 +16,7 @@
 import * as OBC from '@thatopen/components';
 import * as THREE from 'three';
 import { createRibbon, createXyzTriad, createReviztoToolbar } from 'ribbon-chrome';
-import { mountChunkedBundlePanel } from 'viewer-core';
+import { mountChunkedBundlePanel, mountPerfHud } from 'viewer-core';
 import { createTrayRibbonDef } from './tray-adapter.js';
 
 /**
@@ -159,6 +159,11 @@ export function initViewerChrome(ctx, dom, api) {
       // SVF2-Lite Chunked Bundle Panel (local / OneDrive-synced .fragbundle folder)
       api.chunkedPanel = mountChunkedBundlePanel(dom.container, {
         engine: ctx.engine,
+      });
+      api.perfHud = mountPerfHud(dom.container, {
+        engine: ctx.engine,
+        chunkedManager: api.chunkedPanel?.manager,
+        defaultOpen: true,
       });
 
       const syncSelectPolicy = () => {
