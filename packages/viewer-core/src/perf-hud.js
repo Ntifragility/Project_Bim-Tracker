@@ -57,13 +57,27 @@ export function mountPerfHud(container, { engine, chunkedManager = null, default
   titleEl.style.cssText = "font-weight:700;color:#38bdf8;";
   titleEl.textContent = "📊 Perf & Resources";
 
+  const rightWrap = document.createElement("div");
+  rightWrap.style.cssText = "display:flex;align-items:center;gap:5px;";
+
   const modeBadge = document.createElement("span");
   modeBadge.style.cssText =
     "font-size:10px;padding:1px 5px;border-radius:4px;background:#1e293b;color:#94a3b8;border:1px solid #334155;";
   modeBadge.textContent = "IDLE";
 
+  const minBtn = document.createElement("button");
+  minBtn.type = "button";
+  minBtn.title = defaultOpen ? "Minimize Perf & Resources" : "Expand Perf & Resources";
+  minBtn.textContent = defaultOpen ? "−" : "+";
+  minBtn.style.cssText =
+    "background:#1e293b;color:#cbd5e1;border:1px solid #334155;border-radius:4px;" +
+    "width:18px;height:18px;line-height:14px;text-align:center;cursor:pointer;font-weight:700;padding:0;";
+
+  rightWrap.appendChild(modeBadge);
+  rightWrap.appendChild(minBtn);
+
   header.appendChild(titleEl);
-  header.appendChild(modeBadge);
+  header.appendChild(rightWrap);
   host.appendChild(header);
 
   const body = document.createElement("div");
@@ -71,10 +85,19 @@ export function mountPerfHud(container, { engine, chunkedManager = null, default
   host.appendChild(body);
 
   let open = Boolean(defaultOpen);
-  header.addEventListener("click", () => {
+  function toggleOpen() {
     open = !open;
     body.style.display = open ? "block" : "none";
+    minBtn.textContent = open ? "−" : "+";
+    minBtn.title = open ? "Minimize Perf & Resources" : "Expand Perf & Resources";
+    host.style.minWidth = open ? "225px" : "auto";
+    if (open) updateHud();
+  }
+  minBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleOpen();
   });
+  header.addEventListener("click", toggleOpen);
 
   // Rolling FPS tracker (independent rAF, zero interference with engine)
   const frameTimes = [];
