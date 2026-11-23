@@ -74,21 +74,178 @@ export function chunkBboxToBox3(bbox) {
 }
 
 /**
- * Creates a reactive on-demand chunk loader/unloader bound to a viewer-core engine.
+ * Identifies whether a manifest chunk is the always-on Tier 0 Principal Structure
+ * (or base overview chunk) that Auto-Stream should never auto-unload.
  */
-export function createChunkedModelManager({ engine, onChange = null } = {}) {
+export function isPrincipalChunk(chunk, index = 0, manifest = null) {
+  if (!chunk) return false;
+  if (chunk.tier === 0 || chunk.isPrincipal === true) return true;
+  const id = String(chunk.id || "").toLowerCase();
+  const name = String(chunk.name || "").toLowerCase();
+  if (id === "principal-structure" || id.startsWith("principal") || name.startsWith("principal")) {
+    return true;
+  }
+  if (index === 0 && manifest?.splitMode === "spatial") return true;
+  return false;
+}
+
+/**
+ * Pure spatial selector for Auto-Stream by Camera.
+ * Given manifest chunks and the current camera position + look-at target,
+ * returns which detail chunk IDs should be loaded (up to `maxActiveDetailChunks`).
+ *
+ * - Never includes the Principal Structure (Tier 0 stays on independently).
+ * - When zoomed far out looking at the whole plant, returns an empty set so overview stays 60 fps.
+ * - Uses hysteresis so panning along a zone border doesn't thrash load/unload.
+ */
+export function selectChunksForCamera(
+  chunks,
+  cameraPos,
+  cameraTarget = null,
+  {
+    manifest = null,
+    maxActiveDetailChunks = 2,
+    currentlyLoadedIds = new Set(),
+    zoomOutThresholdFactor = 1.65,
+    hysteresisMargin = 0.25,
+    minActivationRadiusM = 25,
+  } = {},
+) {
+  const desiredIds = new Set();
+  if (!Array.isArray(chunks) || chunks.length === 0 || !cameraPos) {
+    return { desiredIds, zoomedOut: false, nearestChunk: null, viewDistance: 0 };
+  }
+
+  const camVec = new THREE.Vector3(
+    Number(cameraPos.x) || 0,
+    Number(cameraPos.y) || 0,
+    Number(cameraPos.z) || 0,
+  );
+  const tgtVec = cameraTarget
+    ? new THREE.Vector3(
+        Number(cameraTarget.x) || 0,
+        Number(cameraTarget.y) || 0,
+        Number(cameraTarget.z) || 0,
+      )
+    : camVec.clone();
+
+  const candidates = [];
+  const diags = [];
+
+  for (let i = 0; i < chunks.length; i++) {
+    const ch = chunks[i];
+    if (isPrincipalChunk(ch, i, manifest)) continue;
+    const box = chunkBboxToBox3(ch.bbox);
+    if (!box) continue;
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const diag = Math.max(size.length(), 1);
+    diags.push(diag);
+
+    const distTarget = box.distanceToPoint(tgtVec);
+    const distCam = box.distanceToPoint(camVec);
+    const effectiveDist = Math.min(distTarget, distCam);
+    const isLoaded = currentlyLoadedIds.has(ch.id);
+    // Hysteresis: already-loaded zones get a distance bonus so border panning doesn't thrash
+    const score = isLoaded ? effectiveDist * (1 - hysteresisMargin) : effectiveDist;
+
+    candidates.push({ chunk: ch, box, diag, distTarget, distCam, effectiveDist, score });
+  }
+
+  if (candidates.length === 0) {
+    return { desiredIds, zoomedOut: false, nearestChunk: null, viewDistance: camVec.distanceTo(tgtVec) };
+  }
+
+  diags.sort((a, b) => a - b);
+  const medianDiag = diags[Math.floor(diags.length / 2)] || 20;
+  const viewDistance = camVec.distanceTo(tgtVec);
+
+  candidates.sort((a, b) => a.score - b.score);
+  const nearest = candidates[0];
+
+  // Zoomed-out overview guard: if looking from far away at the whole site, skip detail chunks
+  if (
+    cameraTarget &&
+    viewDistance > medianDiag * zoomOutThresholdFactor &&
+    nearest.distCam > medianDiag * 0.85
+  ) {
+    return { desiredIds, zoomedOut: true, nearestChunk: nearest.chunk, viewDistance };
+  }
+
+  const maxRange = Math.max(medianDiag * 0.9, minActivationRadiusM);
+  const limit = Math.max(1, Number(maxActiveDetailChunks) || 2);
+
+  for (const c of candidates) {
+    if (desiredIds.size >= limit) break;
+    if (c.effectiveDist <= maxRange) {
+      desiredIds.add(c.chunk.id);
+    }
+  }
+
+  return { desiredIds, zoomedOut: false, nearestChunk: nearest.chunk, viewDistance };
+}
+
+/**
+ * Reads the current camera position & look-at target from a viewer-core engine.
+ */
+function readEngineCameraPose(engine) {
+  const cam = engine?.world?.camera?.three;
+  if (!cam?.position) return null;
+  const pos = { x: cam.position.x, y: cam.position.y, z: cam.position.z };
+
+  const controls = engine?.world?.camera?.controls;
+  let target = null;
+  if (controls) {
+    try {
+      if (typeof controls.getTarget === "function") {
+        const tmp = new THREE.Vector3();
+        controls.getTarget(tmp);
+        if (Number.isFinite(tmp.x) && Number.isFinite(tmp.y) && Number.isFinite(tmp.z)) {
+          target = { x: tmp.x, y: tmp.y, z: tmp.z };
+        }
+      } else if (controls.target) {
+        target = { x: controls.target.x, y: controls.target.y, z: controls.target.z };
+      }
+    } catch { /* fallback to camera pos */ }
+  }
+  return { pos, target };
+}
+
+/**
+ * Creates a reactive on-demand chunk loader/unloader bound to a viewer-core engine,
+ * with optional Auto-Stream by Camera (defaults to OFF for pure Principal Structure tracing).
+ */
+export function createChunkedModelManager({
+  engine,
+  onChange = null,
+  autoStreamDebounceMs = 350,
+  maxActiveDetailChunks = 2,
+} = {}) {
   let activeTransport = null;
   let activeManifest = null;
   const loadedChunks = new Map(); // chunkId -> { model, modelId, chunk }
   const loadingChunks = new Set(); // chunkId
+  const pinnedChunks = new Set(); // chunkId manually checked by user (never auto-unloaded)
+  const autoLoadedChunks = new Set(); // chunkId loaded automatically by camera streamer
   const listeners = new Set();
   if (typeof onChange === "function") listeners.add(onChange);
 
+  // Auto-Stream state
+  let autoStreamEnabled = false;
+  let autoStreamZoomedOut = false;
+  let autoStreamTimer = null;
+  let autoStreamBoundControls = null;
+  let reconciling = false;
+  let reconcileQueued = false;
+
   function getState() {
-    const chunks = (activeManifest?.chunks || []).map((ch) => ({
+    const chunks = (activeManifest?.chunks || []).map((ch, idx) => ({
       ...ch,
+      isPrincipal: isPrincipalChunk(ch, idx, activeManifest),
       loaded: loadedChunks.has(ch.id),
       loading: loadingChunks.has(ch.id),
+      pinned: pinnedChunks.has(ch.id),
+      autoLoaded: autoLoadedChunks.has(ch.id),
     }));
     let loadedCompressedBytes = 0;
     let totalCompressedBytes = 0;
@@ -97,6 +254,9 @@ export function createChunkedModelManager({ engine, onChange = null } = {}) {
       totalCompressedBytes += b;
       if (ch.loaded) loadedCompressedBytes += b;
     }
+    const autoActiveNames = chunks
+      .filter((c) => c.autoLoaded && c.loaded)
+      .map((c) => c.name);
     return {
       active: Boolean(activeManifest),
       manifest: activeManifest,
@@ -105,6 +265,10 @@ export function createChunkedModelManager({ engine, onChange = null } = {}) {
       totalCount: chunks.length,
       loadedCompressedBytes,
       totalCompressedBytes,
+      autoStreamEnabled,
+      autoStreamZoomedOut,
+      autoActiveNames,
+      maxActiveDetailChunks,
     };
   }
 
@@ -132,12 +296,135 @@ export function createChunkedModelManager({ engine, onChange = null } = {}) {
     }
   }
 
+  function detachAutoStreamListeners() {
+    if (autoStreamTimer) {
+      clearTimeout(autoStreamTimer);
+      autoStreamTimer = null;
+    }
+    if (autoStreamBoundControls) {
+      try {
+        autoStreamBoundControls.removeEventListener?.("rest", onCameraMoved);
+        autoStreamBoundControls.removeEventListener?.("controlend", onCameraMoved);
+        autoStreamBoundControls.removeEventListener?.("update", onCameraMoved);
+      } catch { /* noop */ }
+      autoStreamBoundControls = null;
+    }
+  }
+
+  function onCameraMoved() {
+    if (!autoStreamEnabled || !activeManifest) return;
+    if (autoStreamTimer) clearTimeout(autoStreamTimer);
+    autoStreamTimer = setTimeout(() => {
+      autoStreamTimer = null;
+      reconcileCameraChunks();
+    }, autoStreamDebounceMs);
+  }
+
+  function attachAutoStreamListeners() {
+    detachAutoStreamListeners();
+    const controls = engine?.world?.camera?.controls;
+    if (!controls || typeof controls.addEventListener !== "function") return;
+    autoStreamBoundControls = controls;
+    controls.addEventListener("rest", onCameraMoved);
+    controls.addEventListener("controlend", onCameraMoved);
+    controls.addEventListener("update", onCameraMoved);
+  }
+
+  async function reconcileCameraChunks(overridePose = null) {
+    if (!autoStreamEnabled || !activeManifest || !activeTransport) return;
+    if (reconciling) {
+      reconcileQueued = true;
+      return;
+    }
+    reconciling = true;
+    try {
+      const pose = overridePose || readEngineCameraPose(engine);
+      if (!pose) return;
+
+      const { desiredIds, zoomedOut } = selectChunksForCamera(
+        activeManifest.chunks,
+        pose.pos,
+        pose.target,
+        {
+          manifest: activeManifest,
+          maxActiveDetailChunks,
+          currentlyLoadedIds: new Set(loadedChunks.keys()),
+        },
+      );
+      autoStreamZoomedOut = zoomedOut;
+
+      // 1. Unload auto-loaded (unpinned, non-principal) chunks that are no longer desired FIRST to free RAM
+      const toUnload = [];
+      for (const chunkId of Array.from(autoLoadedChunks)) {
+        if (pinnedChunks.has(chunkId)) continue;
+        const idx = activeManifest.chunks.findIndex((c) => c.id === chunkId);
+        if (idx >= 0 && isPrincipalChunk(activeManifest.chunks[idx], idx, activeManifest)) continue;
+        if (!desiredIds.has(chunkId)) {
+          toUnload.push(chunkId);
+        }
+      }
+      for (const chunkId of toUnload) {
+        autoLoadedChunks.delete(chunkId);
+        await unloadChunk(chunkId);
+      }
+
+      // 2. Load newly desired chunks near camera
+      for (const chunkId of desiredIds) {
+        if (!autoStreamEnabled) break; // user turned it off mid-load
+        if (loadedChunks.has(chunkId)) continue;
+        try {
+          await loadChunk(chunkId, { source: "auto" });
+        } catch (err) {
+          console.warn(`[chunked-loader] auto-stream load('${chunkId}') failed:`, err);
+        }
+      }
+
+      notify();
+    } finally {
+      reconciling = false;
+      if (reconcileQueued && autoStreamEnabled) {
+        reconcileQueued = false;
+        reconcileCameraChunks();
+      }
+    }
+  }
+
+  async function setAutoStream(enabled, { unloadAutoOnDisable = true } = {}) {
+    const next = Boolean(enabled);
+    if (next === autoStreamEnabled) return autoStreamEnabled;
+    autoStreamEnabled = next;
+    autoStreamZoomedOut = false;
+
+    if (autoStreamEnabled) {
+      attachAutoStreamListeners();
+      notify();
+      await reconcileCameraChunks();
+    } else {
+      detachAutoStreamListeners();
+      if (unloadAutoOnDisable) {
+        for (const chunkId of Array.from(autoLoadedChunks)) {
+          autoLoadedChunks.delete(chunkId);
+          if (!pinnedChunks.has(chunkId)) {
+            await unloadChunk(chunkId);
+          }
+        }
+      }
+      notify();
+    }
+    return autoStreamEnabled;
+  }
+
   async function closeBundle() {
+    autoStreamEnabled = false;
+    autoStreamZoomedOut = false;
+    detachAutoStreamListeners();
     for (const entry of loadedChunks.values()) {
       await disposeLoadedChunk(entry);
     }
     loadedChunks.clear();
     loadingChunks.clear();
+    pinnedChunks.clear();
+    autoLoadedChunks.clear();
     activeTransport = null;
     activeManifest = null;
     notify();
@@ -166,9 +453,16 @@ export function createChunkedModelManager({ engine, onChange = null } = {}) {
     return { manifest, unionBox: unionBox.isEmpty() ? null : unionBox };
   }
 
-  async function loadChunk(chunkId) {
+  async function loadChunk(chunkId, { source = "manual" } = {}) {
     if (!activeManifest || !activeTransport) return null;
-    if (loadedChunks.has(chunkId)) return loadedChunks.get(chunkId).model;
+    if (loadedChunks.has(chunkId)) {
+      if (source === "manual") {
+        pinnedChunks.add(chunkId);
+        autoLoadedChunks.delete(chunkId);
+        notify();
+      }
+      return loadedChunks.get(chunkId).model;
+    }
     if (loadingChunks.has(chunkId)) return null;
 
     const chunk = activeManifest.chunks.find((c) => c.id === chunkId);
@@ -186,6 +480,12 @@ export function createChunkedModelManager({ engine, onChange = null } = {}) {
         engine.world.scene.three.add(obj);
       }
       loadedChunks.set(chunkId, { model, modelId, chunk });
+      if (source === "auto") {
+        autoLoadedChunks.add(chunkId);
+      } else {
+        pinnedChunks.add(chunkId);
+        autoLoadedChunks.delete(chunkId);
+      }
       loadingChunks.delete(chunkId);
       notify();
       return model;
@@ -198,6 +498,8 @@ export function createChunkedModelManager({ engine, onChange = null } = {}) {
 
   async function unloadChunk(chunkId) {
     const entry = loadedChunks.get(chunkId);
+    pinnedChunks.delete(chunkId);
+    autoLoadedChunks.delete(chunkId);
     if (!entry) return false;
     loadedChunks.delete(chunkId);
     await disposeLoadedChunk(entry);
@@ -210,7 +512,7 @@ export function createChunkedModelManager({ engine, onChange = null } = {}) {
       await unloadChunk(chunkId);
       return false;
     }
-    await loadChunk(chunkId);
+    await loadChunk(chunkId, { source: "manual" });
     return true;
   }
 
@@ -236,6 +538,8 @@ export function createChunkedModelManager({ engine, onChange = null } = {}) {
     unloadChunk,
     toggleChunk,
     focusChunk,
+    setAutoStream,
+    reconcileCameraChunks,
     getState,
     subscribe,
   };
