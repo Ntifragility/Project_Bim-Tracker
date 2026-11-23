@@ -70,6 +70,7 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
   fragments.core.settings.graphicsQuality = 1;
   const defaultMaxUpdateRate = fragments.core.settings.maxUpdateRate;
   let defaultGraphicsQuality = 1;
+  let lastLoadStats = { name: "", bytes: 0, elapsedMs: 0, lastChunkMs: 0 };
   let lodMode = "default";
   let lodUpdateTimer = null;
   let lodLastTick = 0;
@@ -814,6 +815,7 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
     },
 
     async loadFrag(buffer, name = "model.frag") {
+      const t0 = performance.now();
       const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
       // Heavy .frag files (> 30 MB compressed) can OOM Chrome's WebGL/worker heap at full detail;
       // switch to LOD culling mode (graphicsQuality = 0) before loading them unless overridden by lodTuning.
@@ -830,7 +832,17 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
         camera: world.camera.three,
       });
       await applyDynamicModelBounds(model);
+      const elapsedMs = performance.now() - t0;
+      if (String(name).startsWith("chunk::")) {
+        lastLoadStats.lastChunkMs = elapsedMs;
+      } else {
+        lastLoadStats = { name, bytes: bytes.byteLength, elapsedMs, lastChunkMs: 0 };
+      }
       return model;
+    },
+
+    getLastLoadStats() {
+      return { ...lastLoadStats };
     },
 
     async exportFrag(modelOrId) {
