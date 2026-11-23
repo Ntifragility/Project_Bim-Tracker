@@ -179,6 +179,9 @@ export function mountChunkedBundlePanel(container, { engine, onStatus = null } =
 
   return {
     manager,
+    openPicker() {
+      folderInput.click();
+    },
     dispose() {
       manager.closeBundle();
       host.remove();
