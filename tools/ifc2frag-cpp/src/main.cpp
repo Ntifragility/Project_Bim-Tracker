@@ -30,6 +30,10 @@ static void printUsage() {
             << "  ifc2frag <a.ifc> <b.ifc> ... [options]       (batch files or folders)\n"
             << "  ifc2frag --inspect <model.frag>\n"
             << "Options:\n"
+            << "  --split-by-storey        Output SVF2-Lite .fragbundle/ (one .frag per floor + manifest.json)\n"
+            << "  --split-by-category      Output SVF2-Lite .fragbundle/ (one .frag per discipline + manifest.json)\n"
+            << "  --out-dir <folder>       Custom output directory for --split-by-* bundle\n"
+            << "  --circle-segments <4-32> Pipe/conduit tessellation segments (default: 12; 8 for split bundles)\n"
             << "  --fast                   Use zlib level 1 (faster, slightly larger)\n"
             << "  --zlib-level <1-9>       Set zlib compression level (default: 6)\n"
             << "  --threads <N>            Worker threads for shell building (default: auto)\n"
@@ -343,15 +347,23 @@ static int runBatchConsole(const std::vector<CompileJob>& jobs, const ifc2frag::
       }
       std::cout << "Compiling " << runOpts.inputPath << " -> " << runOpts.outputPath << " ...\n";
       const auto res = ifc2frag::compileIfcToFrag(runOpts);
-      std::cout << "Compiled " << runOpts.inputPath << " -> " << runOpts.outputPath << "\n"
-                << "  Elements:    " << res.elementsProcessed << "\n"
-                << "  Shells:      " << res.uniqueShells << "\n"
-                << "  Samples:     " << res.samplesCount << "\n"
-                << "  Psets:       " << res.propertySetsCount << "\n"
-                << "  Relations:   " << res.relationsCount << "\n"
-                << "  FlatBuffer:  " << (res.rawFlatBufferBytes / (1024.0 * 1024.0)) << " MB\n"
-                << "  Compressed:  " << (res.compressedFragBytes / (1024.0 * 1024.0)) << " MB\n"
-                << "  Time:        " << res.elapsedSeconds << " s\n";
+      if (!res.chunks.empty()) {
+        std::cout << "Compiled chunked bundle: " << res.manifestPath << "\n"
+                  << "  Chunks:      " << res.chunks.size() << "\n"
+                  << "  Elements:    " << res.elementsProcessed << "\n"
+                  << "  Compressed:  " << (res.compressedFragBytes / (1024.0 * 1024.0)) << " MB total\n"
+                  << "  Time:        " << res.elapsedSeconds << " s\n";
+      } else {
+        std::cout << "Compiled " << runOpts.inputPath << " -> " << runOpts.outputPath << "\n"
+                  << "  Elements:    " << res.elementsProcessed << "\n"
+                  << "  Shells:      " << res.uniqueShells << "\n"
+                  << "  Samples:     " << res.samplesCount << "\n"
+                  << "  Psets:       " << res.propertySetsCount << "\n"
+                  << "  Relations:   " << res.relationsCount << "\n"
+                  << "  FlatBuffer:  " << (res.rawFlatBufferBytes / (1024.0 * 1024.0)) << " MB\n"
+                  << "  Compressed:  " << (res.compressedFragBytes / (1024.0 * 1024.0)) << " MB\n"
+                  << "  Time:        " << res.elapsedSeconds << " s\n";
+      }
     } catch (const std::exception& ex) {
       std::cerr << "ERROR (" << runOpts.inputPath << "): " << ex.what() << "\n";
       ++failures;
@@ -440,11 +452,21 @@ int main(int argc, char** argv) {
 
   // Parse CLI positional paths and flags
   ifc2frag::CompileOptions opts{};
+  bool circleSegsExplicit = false;
   std::vector<std::string> positional;
   for (int i = 1; i < argc; ++i) {
     const std::string flag = argv[i];
     if (flag == "--no-origin") {
       opts.coordinateToOrigin = false;
+    } else if (flag == "--split-by-storey") {
+      opts.splitMode = ifc2frag::SplitMode::ByStorey;
+    } else if (flag == "--split-by-category") {
+      opts.splitMode = ifc2frag::SplitMode::ByCategory;
+    } else if (flag == "--out-dir" && i + 1 < argc) {
+      opts.outDir = argv[++i];
+    } else if (flag == "--circle-segments" && i + 1 < argc) {
+      opts.circleSegments = std::atoi(argv[++i]);
+      circleSegsExplicit = true;
     } else if (flag == "--fast") {
       opts.zlibLevel = 1;
     } else if (flag == "--no-props") {
@@ -466,6 +488,9 @@ int main(int argc, char** argv) {
     } else {
       positional.push_back(flag);
     }
+  }
+  if (opts.splitMode != ifc2frag::SplitMode::None && !circleSegsExplicit) {
+    opts.circleSegments = 8;
   }
 
   if (positional.empty()) {

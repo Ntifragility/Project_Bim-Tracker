@@ -33,3 +33,10 @@ export {
   collectWorldTrianglesFromObject,
   extractItemWorldTriangles,
 } from "./min-distance-solver.js";
+export {
+  createLocalFolderTransport,
+  validateBundleManifest,
+  chunkBboxToBox3,
+  createChunkedModelManager,
+} from "./chunked-loader.js";
+export { mountChunkedBundlePanel } from "./chunked-panel.js";

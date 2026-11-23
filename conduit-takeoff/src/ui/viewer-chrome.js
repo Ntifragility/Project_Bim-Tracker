@@ -7,7 +7,7 @@
 // Bootstraps universal Revit-style ribbon via ribbon-chrome and conduit-adapter.
 
 import * as THREE from 'three';
-import { createCovillafEngine } from 'viewer-core';
+import { createCovillafEngine, mountChunkedBundlePanel } from 'viewer-core';
 import { createRibbon, createReviztoToolbar } from 'ribbon-chrome';
 import { createConduitRibbonDef } from './conduit-adapter.js';
 import { createLateralDock } from './lateral-dock.js';
@@ -443,6 +443,17 @@ export function createViewerChrome({ state, els, api }) {
         }
       });
       els.viewerContainer.appendChild(pill);
+    }
+
+    // SVF2-Lite Chunked Bundle Panel (local / OneDrive-synced .fragbundle folder)
+    if (els.viewerContainer && engine) {
+      api.chunkedPanel = mountChunkedBundlePanel(els.viewerContainer, {
+        engine,
+        onStatus: (msg) => {
+          if (els.statusText) els.statusText.textContent = msg;
+          ribbonApi?.setStatus?.('status-text', msg);
+        },
+      });
     }
 
     // Initial render of lateral dock components

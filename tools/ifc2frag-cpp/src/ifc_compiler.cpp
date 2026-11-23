@@ -18,7 +18,9 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <map>
 #include <set>
@@ -296,6 +298,72 @@ std::string jsonEscape(std::string_view s) {
   return out;
 }
 
+std::string sanitizeChunkFilename(std::string_view name) {
+  std::string out;
+  out.reserve(name.size());
+  for (unsigned char c : name) {
+    if (std::isalnum(c) || c == '-' || c == '_') {
+      out += static_cast<char>(c);
+    } else if (c == ' ' || c == '.' || c == '/') {
+      if (!out.empty() && out.back() != '_') out += '_';
+    }
+  }
+  while (!out.empty() && out.back() == '_') out.pop_back();
+  if (out.empty()) out = "Chunk";
+  if (out.size() > 48) out.resize(48);
+  return out;
+}
+
+std::string disciplineBucketForCategory(const std::string& upperCat) {
+  if (upperCat.find("CABLE") != std::string::npos ||
+      upperCat.find("ELECTRIC") != std::string::npos ||
+      upperCat.find("LIGHT") != std::string::npos ||
+      upperCat.find("JUNCTIONBOX") != std::string::npos ||
+      upperCat.find("SWITCH") != std::string::npos ||
+      upperCat.find("OUTLET") != std::string::npos ||
+      upperCat.find("TRANSFORMER") != std::string::npos) {
+    return "Electrical";
+  }
+  if (upperCat.find("DUCT") != std::string::npos ||
+      upperCat.find("AIR") != std::string::npos ||
+      upperCat.find("FAN") != std::string::npos ||
+      upperCat.find("CHILLER") != std::string::npos ||
+      upperCat.find("BOILER") != std::string::npos ||
+      upperCat.find("COIL") != std::string::npos ||
+      upperCat.find("DAMPER") != std::string::npos) {
+    return "Mechanical";
+  }
+  if (upperCat.find("PIPE") != std::string::npos ||
+      upperCat.find("PUMP") != std::string::npos ||
+      upperCat.find("VALVE") != std::string::npos ||
+      upperCat.find("SANITARY") != std::string::npos ||
+      upperCat.find("FIRE") != std::string::npos ||
+      upperCat.find("TANK") != std::string::npos) {
+    return "Plumbing";
+  }
+  if (upperCat.find("BEAM") != std::string::npos ||
+      upperCat.find("COLUMN") != std::string::npos ||
+      upperCat.find("SLAB") != std::string::npos ||
+      upperCat.find("FOOTING") != std::string::npos ||
+      upperCat.find("PILE") != std::string::npos ||
+      upperCat.find("MEMBER") != std::string::npos ||
+      upperCat.find("PLATE") != std::string::npos ||
+      upperCat.find("REINFORCING") != std::string::npos) {
+    return "Structure";
+  }
+  if (upperCat.find("WALL") != std::string::npos ||
+      upperCat.find("DOOR") != std::string::npos ||
+      upperCat.find("WINDOW") != std::string::npos ||
+      upperCat.find("ROOF") != std::string::npos ||
+      upperCat.find("STAIR") != std::string::npos ||
+      upperCat.find("RAILING") != std::string::npos ||
+      upperCat.find("CURTAINWALL") != std::string::npos ||
+      upperCat.find("COVERING") != std::string::npos) {
+    return "Architecture";
+  }
+  return "Other";
+}
+
 }  // namespace
 
 CompileResult compileIfcToFrag(const CompileOptions& opts) {
@@ -325,7 +393,7 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
 
   webifc::manager::LoaderSettings settings{};
   settings.COORDINATE_TO_ORIGIN = opts.coordinateToOrigin;
-  settings.CIRCLE_SEGMENTS = 12;
+  settings.CIRCLE_SEGMENTS = static_cast<uint16_t>(std::clamp(opts.circleSegments, 4, 32));
   settings.TAPE_SIZE = 134217728;       // 128 MB STEP token tape
   settings.MEMORY_LIMIT = 0xFFFFFFFFu;  // 4 GB tape limit on 64-bit host
   const uint32_t modelID = manager.CreateModel(settings);
@@ -855,11 +923,493 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
     }
   }
 
+  // Pre-capture storey metadata if splitting by storey (before closing web-ifc)
+  struct StoreyMeta {
+    uint32_t id = 0;
+    std::string name;
+    double elevationM = 0.0;
+  };
+  std::unordered_map<uint32_t, StoreyMeta> storeyMetaMap;
+  if (opts.splitMode == SplitMode::ByStorey) {
+    const uint32_t storeyCode = schemaMgr.IfcTypeToTypeCode("IFCBUILDINGSTOREY");
+    for (const uint32_t sid : loader->GetExpressIDsWithType(storeyCode)) {
+      if (!loader->IsValidExpressID(sid)) continue;
+      StoreyMeta sm{};
+      sm.id = sid;
+      if (loader->GetNoLineArguments(sid) > 2) {
+        loader->MoveToLineArgument(sid, 2);
+        sm.name = loader->GetDecodedStringArgument();
+      }
+      if (sm.name.empty()) sm.name = "Storey_" + std::to_string(sid);
+      if (loader->GetNoLineArguments(sid) > 9) {
+        loader->MoveToLineArgument(sid, 9);
+        const auto tt = loader->GetTokenType();
+        loader->StepBack();
+        if (tt == webifc::parsing::IfcTokenType::REAL) {
+          sm.elevationM = loader->GetDoubleArgument();
+        }
+      }
+      storeyMetaMap.emplace(sid, std::move(sm));
+    }
+  }
+
   // Release all web-ifc STEP tape & geometry caches BEFORE FlatBuffer allocation!
   geomProc->Clear();
   manager.CloseAllModels();
   ifs.close();
   checkCancelled();
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // SVF2-Lite Chunked Bundle Writer (--split-by-storey / --split-by-category)
+  // ───────────────────────────────────────────────────────────────────────────
+  if (opts.splitMode != SplitMode::None) {
+    namespace fs = std::filesystem;
+    fs::path bundleDir = opts.outDir.empty()
+        ? (fs::path(opts.inputPath).parent_path() / (fs::path(opts.inputPath).stem().string() + ".fragbundle"))
+        : fs::path(opts.outDir);
+    fs::create_directories(bundleDir);
+
+    struct ChunkBucket {
+      std::string id;
+      std::string name;
+      double elevationM = 0.0;
+      std::vector<uint32_t> itemIndices;  // indices in [0, geomElementsCount)
+    };
+    std::map<std::string, ChunkBucket> bucketMap;
+
+    if (opts.splitMode == SplitMode::ByStorey) {
+      std::unordered_map<uint32_t, uint32_t> parentOf;
+      for (const auto& [pid, children] : spatialChildren) {
+        for (const uint32_t cid : children) {
+          if (!parentOf.count(cid)) parentOf.emplace(cid, pid);
+        }
+      }
+      for (uint32_t itemIdx = 0; itemIdx < geomElementsCount; ++itemIdx) {
+        const uint32_t eid = localIds[itemIdx];
+        uint32_t cur = eid;
+        uint32_t foundStorey = 0;
+        for (int depth = 0; depth < 16; ++depth) {
+          if (storeyMetaMap.count(cur)) {
+            foundStorey = cur;
+            break;
+          }
+          auto pit = parentOf.find(cur);
+          if (pit == parentOf.end() || pit->second == cur) break;
+          cur = pit->second;
+        }
+        if (foundStorey != 0) {
+          const auto& sm = storeyMetaMap[foundStorey];
+          const std::string key = "storey-" + std::to_string(foundStorey);
+          auto& b = bucketMap[key];
+          if (b.id.empty()) {
+            b.id = key;
+            b.name = sm.name;
+            b.elevationM = sm.elevationM;
+          }
+          b.itemIndices.push_back(itemIdx);
+        } else {
+          auto& b = bucketMap["unassigned"];
+          if (b.id.empty()) {
+            b.id = "unassigned";
+            b.name = "Unassigned";
+            b.elevationM = 1e9;
+          }
+          b.itemIndices.push_back(itemIdx);
+        }
+      }
+    } else {
+      for (uint32_t itemIdx = 0; itemIdx < geomElementsCount; ++itemIdx) {
+        const std::string disc = disciplineBucketForCategory(toUpperAscii(categories[itemIdx]));
+        const std::string key = "disc-" + toUpperAscii(disc);
+        auto& b = bucketMap[key];
+        if (b.id.empty()) {
+          b.id = key;
+          b.name = disc;
+          b.elevationM = 0.0;
+        }
+        b.itemIndices.push_back(itemIdx);
+      }
+    }
+
+    std::vector<ChunkBucket> orderedBuckets;
+    orderedBuckets.reserve(bucketMap.size());
+    for (auto& [k, b] : bucketMap) {
+      if (!b.itemIndices.empty()) orderedBuckets.push_back(std::move(b));
+    }
+    std::sort(orderedBuckets.begin(), orderedBuckets.end(), [](const ChunkBucket& a, const ChunkBucket& b) {
+      if (a.elevationM != b.elevationM) return a.elevationM < b.elevationM;
+      return a.name < b.name;
+    });
+
+    // Index samples by itemIndex for O(1) slicing per chunk
+    std::vector<std::vector<size_t>> samplesByItem(geomElementsCount);
+    for (size_t si = 0; si < samples.size(); ++si) {
+      const uint32_t ii = samples[si].item();
+      if (ii < geomElementsCount) samplesByItem[ii].push_back(si);
+    }
+    std::unordered_map<uint32_t, std::string> guidByItem;
+    for (size_t gi = 0; gi < guidsItems.size() && gi < guids.size(); ++gi) {
+      guidByItem.emplace(guidsItems[gi], guids[gi]);
+    }
+
+    CompileResult res{};
+    res.elementsProcessed = geomElementsCount;
+    res.uniqueShells = static_cast<uint32_t>(shells.size());
+    res.samplesCount = static_cast<uint32_t>(samples.size());
+    res.propertySetsCount = propertySetsCount;
+
+    for (size_t ci = 0; ci < orderedBuckets.size(); ++ci) {
+      checkCancelled();
+      const auto& bucket = orderedBuckets[ci];
+      char prefix[8];
+      std::snprintf(prefix, sizeof(prefix), "%02zu_", ci);
+      const std::string chunkFile = std::string(prefix) + sanitizeChunkFilename(bucket.name) + ".frag";
+      const fs::path chunkPath = bundleDir / chunkFile;
+
+      report(4, "Packing chunk [" + std::to_string(ci + 1) + "/" + std::to_string(orderedBuckets.size()) + "] " +
+                    bucket.name + " (" + std::to_string(bucket.itemIndices.size()) + " elements)...");
+
+      // Remap chunk-local mesh arrays
+      std::vector<uint32_t> cMeshesItems;
+      std::vector<Transform> cGlobalTransforms;
+      std::vector<uint32_t> cGlobalTransformIds;
+      std::vector<Transform> cLocalTransforms;
+      std::vector<uint32_t> cLocalTransformIds;
+      std::unordered_map<uint32_t, uint32_t> ltRemap;
+      cLocalTransforms.push_back(localTransforms[0]);
+      cLocalTransformIds.push_back(localTransformIds[0]);
+      ltRemap.emplace(0, 0);
+
+      std::vector<Material> cMaterials;
+      std::vector<uint32_t> cMaterialIds;
+      std::unordered_map<uint32_t, uint32_t> matRemap;
+
+      std::vector<uint32_t> cShellOrigIndices;
+      std::vector<Representation> cReprs;
+      std::vector<uint32_t> cReprIds;
+      std::unordered_map<uint32_t, uint32_t> reprRemap;
+
+      std::vector<Sample> cSamples;
+      std::vector<uint32_t> cSampleIds;
+
+      std::vector<uint32_t> cLocalIds;
+      std::vector<std::string> cCategories;
+      std::vector<std::string> cGuids;
+      std::vector<uint32_t> cGuidsItems;
+
+      float cMinX = std::numeric_limits<float>::infinity();
+      float cMinY = std::numeric_limits<float>::infinity();
+      float cMinZ = std::numeric_limits<float>::infinity();
+      float cMaxX = -std::numeric_limits<float>::infinity();
+      float cMaxY = -std::numeric_limits<float>::infinity();
+      float cMaxZ = -std::numeric_limits<float>::infinity();
+
+      std::unordered_set<uint32_t> cOwnerIds;
+      for (const uint32_t origItemIdx : bucket.itemIndices) {
+        const uint32_t newItemIdx = static_cast<uint32_t>(cLocalIds.size());
+        const uint32_t eid = localIds[origItemIdx];
+        cOwnerIds.insert(eid);
+
+        cMeshesItems.push_back(newItemIdx);
+        cGlobalTransforms.push_back(globalTransforms[origItemIdx]);
+        cGlobalTransformIds.push_back(globalTransformIds[origItemIdx]);
+        cLocalIds.push_back(eid);
+        cCategories.push_back(categories[origItemIdx]);
+        auto git = guidByItem.find(origItemIdx);
+        if (git != guidByItem.end()) {
+          cGuids.push_back(git->second);
+          cGuidsItems.push_back(newItemIdx);
+        }
+
+        const auto& gt = globalTransforms[origItemIdx];
+        const float gx = static_cast<float>(gt.position().x());
+        const float gy = static_cast<float>(gt.position().y());
+        const float gz = static_cast<float>(gt.position().z());
+
+        for (const size_t si : samplesByItem[origItemIdx]) {
+          const Sample& s = samples[si];
+          // Remap material
+          uint32_t newMat = 0;
+          auto mit = matRemap.find(s.material());
+          if (mit != matRemap.end()) {
+            newMat = mit->second;
+          } else {
+            newMat = static_cast<uint32_t>(cMaterials.size());
+            matRemap.emplace(s.material(), newMat);
+            cMaterials.push_back(materials[s.material()]);
+            cMaterialIds.push_back(materialIds[s.material()]);
+          }
+          // Remap representation & shell
+          uint32_t newRepr = 0;
+          auto rit = reprRemap.find(s.representation());
+          if (rit != reprRemap.end()) {
+            newRepr = rit->second;
+          } else {
+            newRepr = static_cast<uint32_t>(cReprs.size());
+            reprRemap.emplace(s.representation(), newRepr);
+            const auto& origR = representations[s.representation()];
+            cReprs.emplace_back(newRepr, origR.bbox(), origR.representation_class());
+            cReprIds.push_back(representationIds[s.representation()]);
+            cShellOrigIndices.push_back(s.representation());
+          }
+          // Remap local transform
+          uint32_t newLt = 0;
+          auto lit = ltRemap.find(s.local_transform());
+          if (lit != ltRemap.end()) {
+            newLt = lit->second;
+          } else {
+            newLt = static_cast<uint32_t>(cLocalTransforms.size());
+            ltRemap.emplace(s.local_transform(), newLt);
+            cLocalTransforms.push_back(localTransforms[s.local_transform()]);
+            cLocalTransformIds.push_back(localTransformIds[s.local_transform()]);
+          }
+
+          cSamples.emplace_back(newItemIdx, newMat, newRepr, newLt);
+          cSampleIds.push_back(sampleIds[si]);
+
+          const auto& sh = shells[s.representation()];
+          const float ext = std::max({
+              std::abs(sh.maxX - sh.minX),
+              std::abs(sh.maxY - sh.minY),
+              std::abs(sh.maxZ - sh.minZ)}) * 0.5f;
+          cMinX = std::min(cMinX, gx - ext);
+          cMinY = std::min(cMinY, gy - ext);
+          cMinZ = std::min(cMinZ, gz - ext);
+          cMaxX = std::max(cMaxX, gx + ext);
+          cMaxY = std::max(cMaxY, gy + ext);
+          cMaxZ = std::max(cMaxZ, gz + ext);
+        }
+      }
+
+      // Include Pset & PropertySingleValue items referenced by this chunk's elements
+      std::map<uint32_t, std::map<std::string, std::vector<uint32_t>>> cRelsMap;
+      std::unordered_set<uint32_t> addedPsets;
+      std::unordered_set<uint32_t> addedProps;
+      for (const uint32_t eid : cOwnerIds) {
+        auto relIt = relationsMap.find(eid);
+        if (relIt == relationsMap.end()) continue;
+        cRelsMap[eid] = relIt->second;
+        auto psetIt = relIt->second.find("IsDefinedBy");
+        if (psetIt == relIt->second.end()) continue;
+        for (const uint32_t psetId : psetIt->second) {
+          if (addedPsets.insert(psetId).second) {
+            cLocalIds.push_back(psetId);
+            cCategories.push_back("IFCPROPERTYSET");
+            auto pRelIt = relationsMap.find(psetId);
+            if (pRelIt != relationsMap.end()) {
+              cRelsMap[psetId] = pRelIt->second;
+              auto hpIt = pRelIt->second.find("HasProperties");
+              if (hpIt != pRelIt->second.end()) {
+                for (const uint32_t pid : hpIt->second) {
+                  if (addedProps.insert(pid).second) {
+                    cLocalIds.push_back(pid);
+                    cCategories.push_back("IFCPROPERTYSINGLEVALUE");
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Pre-size chunk FlatBufferBuilder
+      size_t cEst = 512 * 1024;
+      for (const uint32_t origShellIdx : cShellOrigIndices) {
+        const auto& sh = shells[origShellIdx];
+        cEst += sh.points.size() * 16u + sh.triangles.size() * 28u + 64u;
+      }
+      cEst += cSamples.size() * 32u + cLocalIds.size() * 64u + cRelsMap.size() * 64u;
+      cEst += cEst / 6u;
+      constexpr size_t MAX_CHUNK_PRESIZE = 1024ULL * 1024ULL * 1024ULL;
+      if (cEst > MAX_CHUNK_PRESIZE) cEst = MAX_CHUNK_PRESIZE;
+
+      flatbuffers::FlatBufferBuilder cBuilder(cEst);
+      std::vector<flatbuffers::Offset<Shell>> cShellOffsets;
+      cShellOffsets.reserve(cShellOrigIndices.size());
+      for (const uint32_t origShellIdx : cShellOrigIndices) {
+        const auto& sh = shells[origShellIdx];
+        const auto pointsOffset = cBuilder.CreateVectorOfStructs(sh.points);
+        const bool isBig = sh.points.size() > USHORT_MAX_POINTS;
+        std::vector<uint16_t> faceIds(sh.triangles.size(), 0);
+        const auto faceIdsOffset = cBuilder.CreateVector(faceIds);
+        if (isBig) {
+          std::vector<flatbuffers::Offset<BigShellProfile>> bigProfiles;
+          bigProfiles.reserve(sh.triangles.size());
+          for (const auto& tri : sh.triangles) {
+            const uint32_t arr[3] = {tri[0], tri[1], tri[2]};
+            bigProfiles.push_back(CreateBigShellProfile(cBuilder, cBuilder.CreateVector(arr, 3)));
+          }
+          cShellOffsets.push_back(CreateShell(
+              cBuilder,
+              cBuilder.CreateVector(std::vector<flatbuffers::Offset<ShellProfile>>{}),
+              cBuilder.CreateVector(std::vector<flatbuffers::Offset<ShellHole>>{}),
+              pointsOffset,
+              cBuilder.CreateVector(bigProfiles),
+              cBuilder.CreateVector(std::vector<flatbuffers::Offset<BigShellHole>>{}),
+              ShellType_BIG,
+              faceIdsOffset));
+        } else {
+          std::vector<flatbuffers::Offset<ShellProfile>> profiles;
+          profiles.reserve(sh.triangles.size());
+          for (const auto& tri : sh.triangles) {
+            const uint16_t arr[3] = {
+                static_cast<uint16_t>(tri[0]),
+                static_cast<uint16_t>(tri[1]),
+                static_cast<uint16_t>(tri[2])};
+            profiles.push_back(CreateShellProfile(cBuilder, cBuilder.CreateVector(arr, 3)));
+          }
+          cShellOffsets.push_back(CreateShell(
+              cBuilder,
+              cBuilder.CreateVector(profiles),
+              cBuilder.CreateVector(std::vector<flatbuffers::Offset<ShellHole>>{}),
+              pointsOffset,
+              cBuilder.CreateVector(std::vector<flatbuffers::Offset<BigShellProfile>>{}),
+              cBuilder.CreateVector(std::vector<flatbuffers::Offset<BigShellHole>>{}),
+              ShellType_NONE,
+              faceIdsOffset));
+        }
+      }
+
+      const auto cMeshesOff = CreateMeshes(
+          cBuilder,
+          &fbCoords,
+          cBuilder.CreateVector(cMeshesItems),
+          cBuilder.CreateVectorOfStructs(cSamples),
+          cBuilder.CreateVectorOfStructs(cReprs),
+          cBuilder.CreateVectorOfStructs(cMaterials),
+          cBuilder.CreateVector(std::vector<flatbuffers::Offset<CircleExtrusion>>{}),
+          cBuilder.CreateVector(cShellOffsets),
+          cBuilder.CreateVectorOfStructs(cLocalTransforms),
+          cBuilder.CreateVectorOfStructs(cGlobalTransforms),
+          cBuilder.CreateVector(cMaterialIds),
+          cBuilder.CreateVector(cReprIds),
+          cBuilder.CreateVector(cSampleIds),
+          cBuilder.CreateVector(cLocalTransformIds),
+          cBuilder.CreateVector(cGlobalTransformIds));
+
+      std::vector<flatbuffers::Offset<Attribute>> cAttrOffsets;
+      cAttrOffsets.reserve(cLocalIds.size());
+      for (const uint32_t eid : cLocalIds) {
+        auto extraIt = extraAttrEntries.find(eid);
+        if (extraIt != extraAttrEntries.end() && !extraIt->second.empty()) {
+          std::vector<flatbuffers::Offset<flatbuffers::String>> strOffs;
+          strOffs.reserve(extraIt->second.size());
+          for (const auto& entry : extraIt->second) strOffs.push_back(cBuilder.CreateString(entry));
+          cAttrOffsets.push_back(CreateAttribute(cBuilder, cBuilder.CreateVector(strOffs)));
+          continue;
+        }
+        auto nmIt = itemAttributes.find(eid);
+        if (nmIt == itemAttributes.end() || nmIt->second.empty()) {
+          cAttrOffsets.push_back(CreateAttribute(
+              cBuilder, cBuilder.CreateVector(std::vector<flatbuffers::Offset<flatbuffers::String>>{})));
+        } else {
+          auto sOff = cBuilder.CreateString("[\"Name\",\"" + jsonEscape(nmIt->second) + "\",\"STRING\"]");
+          cAttrOffsets.push_back(CreateAttribute(cBuilder, cBuilder.CreateVector(&sOff, 1)));
+        }
+      }
+
+      std::vector<flatbuffers::Offset<Relation>> cRelOffsets;
+      std::vector<int32_t> cRelItems;
+      for (const auto& [ownerId, relByName] : cRelsMap) {
+        std::vector<flatbuffers::Offset<flatbuffers::String>> dataOffs;
+        for (const auto& [relName, targets] : relByName) {
+          if (targets.empty()) continue;
+          std::string json = "[\"" + jsonEscape(relName) + "\"";
+          for (const uint32_t tid : targets) json += "," + std::to_string(tid);
+          json += "]";
+          dataOffs.push_back(cBuilder.CreateString(json));
+        }
+        if (!dataOffs.empty()) {
+          cRelItems.push_back(static_cast<int32_t>(ownerId));
+          cRelOffsets.push_back(CreateRelation(cBuilder, cBuilder.CreateVector(dataOffs)));
+        }
+      }
+
+      const auto cModelOff = CreateModel(
+          cBuilder,
+          cBuilder.CreateString("{\"schema\":\"IFC\",\"compiler\":\"ifc2frag-cpp\",\"chunk\":\"" + jsonEscape(bucket.name) + "\"}"),
+          cBuilder.CreateVectorOfStrings(cGuids),
+          cBuilder.CreateVector(cGuidsItems),
+          nextSyntheticId,
+          cBuilder.CreateVector(cLocalIds),
+          cBuilder.CreateVectorOfStrings(cCategories),
+          cMeshesOff,
+          cBuilder.CreateVector(cAttrOffsets),
+          cBuilder.CreateVector(cRelOffsets),
+          cBuilder.CreateVector(cRelItems),
+          cBuilder.CreateString(makeUuidV4(maxExpressId + ci + 1)),
+          0);
+      cBuilder.Finish(cModelOff);
+
+      const uint8_t* cPtr = cBuilder.GetBufferPointer();
+      const size_t cRawSize = cBuilder.GetSize();
+      const uint64_t cCompBytes = deflatePtrToFile(cPtr, cRawSize, chunkPath.string(), opts.zlibLevel);
+      cBuilder.Clear();
+
+      ChunkSummary cs{};
+      cs.id = bucket.id;
+      cs.name = bucket.name;
+      cs.file = chunkFile;
+      cs.elevationM = bucket.elevationM == 1e9 ? 0.0 : bucket.elevationM;
+      cs.elements = static_cast<uint32_t>(bucket.itemIndices.size());
+      cs.shells = static_cast<uint32_t>(cShellOrigIndices.size());
+      cs.samples = static_cast<uint32_t>(cSamples.size());
+      cs.compressedBytes = cCompBytes;
+      cs.uncompressedBytes = cRawSize;
+      if (std::isfinite(cMinX)) {
+        cs.minX = cMinX; cs.minY = cMinY; cs.minZ = cMinZ;
+        cs.maxX = cMaxX; cs.maxY = cMaxY; cs.maxZ = cMaxZ;
+      }
+      res.rawFlatBufferBytes += cRawSize;
+      res.compressedFragBytes += cCompBytes;
+      res.relationsCount += static_cast<uint32_t>(cRelOffsets.size());
+      res.chunks.push_back(std::move(cs));
+    }
+
+    // Write manifest.json
+    const fs::path manifestPath = bundleDir / "manifest.json";
+    std::ofstream mfs(manifestPath, std::ios::binary | std::ios::trunc);
+    if (!mfs) throw std::runtime_error("Cannot write manifest.json: " + manifestPath.string());
+    mfs << std::fixed << std::setprecision(4);
+    mfs << "{\n"
+        << "  \"version\": 1,\n"
+        << "  \"format\": \"fragbundle\",\n"
+        << "  \"sourceName\": \"" << jsonEscape(fs::path(opts.inputPath).filename().string()) << "\",\n"
+        << "  \"splitMode\": \"" << (opts.splitMode == SplitMode::ByStorey ? "storey" : "category") << "\",\n"
+        << "  \"circleSegments\": " << opts.circleSegments << ",\n"
+        << "  \"coordinationMatrix\": {\n"
+        << "    \"position\": [" << fbCoords.position().x() << ", " << fbCoords.position().y() << ", " << fbCoords.position().z() << "],\n"
+        << "    \"xDirection\": [" << fbCoords.x_direction().x() << ", " << fbCoords.x_direction().y() << ", " << fbCoords.x_direction().z() << "],\n"
+        << "    \"yDirection\": [" << fbCoords.y_direction().x() << ", " << fbCoords.y_direction().y() << ", " << fbCoords.y_direction().z() << "]\n"
+        << "  },\n"
+        << "  \"totalElements\": " << res.elementsProcessed << ",\n"
+        << "  \"totalCompressedBytes\": " << res.compressedFragBytes << ",\n"
+        << "  \"totalUncompressedBytes\": " << res.rawFlatBufferBytes << ",\n"
+        << "  \"chunks\": [\n";
+    for (size_t i = 0; i < res.chunks.size(); ++i) {
+      const auto& ch = res.chunks[i];
+      mfs << "    {\n"
+          << "      \"id\": \"" << jsonEscape(ch.id) << "\",\n"
+          << "      \"name\": \"" << jsonEscape(ch.name) << "\",\n"
+          << "      \"file\": \"" << jsonEscape(ch.file) << "\",\n"
+          << "      \"elevationM\": " << ch.elevationM << ",\n"
+          << "      \"elements\": " << ch.elements << ",\n"
+          << "      \"shells\": " << ch.shells << ",\n"
+          << "      \"samples\": " << ch.samples << ",\n"
+          << "      \"compressedBytes\": " << ch.compressedBytes << ",\n"
+          << "      \"uncompressedBytes\": " << ch.uncompressedBytes << ",\n"
+          << "      \"bbox\": { \"min\": [" << ch.minX << ", " << ch.minY << ", " << ch.minZ << "], \"max\": [" << ch.maxX << ", " << ch.maxY << ", " << ch.maxZ << "] }\n"
+          << "    }" << (i + 1 < res.chunks.size() ? "," : "") << "\n";
+    }
+    mfs << "  ]\n}\n";
+    mfs.close();
+
+    res.manifestPath = manifestPath.string();
+    const auto t1 = std::chrono::steady_clock::now();
+    res.elapsedSeconds = std::chrono::duration<double>(t1 - t0).count();
+    report(5, "Wrote " + std::to_string(res.chunks.size()) + " chunks + manifest.json");
+    return res;
+  }
 
   // Pre-size FlatBufferBuilder to avoid 2x doubling spikes during serialization
   size_t estimatedBytes = 1024 * 1024;
