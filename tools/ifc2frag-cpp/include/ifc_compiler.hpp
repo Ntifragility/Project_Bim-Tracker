@@ -20,6 +20,7 @@ enum class SplitMode {
   None = 0,
   ByStorey = 1,
   ByCategory = 2,
+  Spatial = 3,  // Tier 0: Principal Elements + Tier 1: Spatial Detail Grid
 };
 
 struct ChunkSummary {
