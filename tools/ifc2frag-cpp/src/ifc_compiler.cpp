@@ -379,7 +379,13 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
     }
   };
   const uint32_t hwThreads = std::thread::hardware_concurrency();
-  const uint32_t workerCount = opts.threads > 0 ? opts.threads : (hwThreads > 0 ? hwThreads : 1u);
+  std::error_code fsEc;
+  const uint64_t inputFileBytes = std::filesystem::file_size(opts.inputPath, fsEc);
+  const bool isLargeIfc = !fsEc && inputFileBytes > (250ULL * 1024ULL * 1024ULL);
+  // On >250 MB IFCs, default to zero-copy inline shell building (1 thread) to prevent commit-RAM spikes
+  const uint32_t defaultThreads = isLargeIfc ? 1u : std::min<uint32_t>(4u, hwThreads > 0 ? hwThreads : 1u);
+  const uint32_t workerCount = opts.threads > 0 ? opts.threads : defaultThreads;
+  const bool extractProps = opts.includeProperties && (!isLargeIfc || opts.forceProperties);
 
   checkCancelled();
 
@@ -481,7 +487,7 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
   size_t processedCandidates = 0;
   auto lastProgressAt = std::chrono::steady_clock::now();
 
-  constexpr size_t SHELL_BATCH_SIZE = 1024;
+  constexpr size_t SHELL_BATCH_SIZE = 64;
   std::vector<RawShellJob> shellJobs;
   shellJobs.reserve(SHELL_BATCH_SIZE);
 
@@ -800,7 +806,7 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
   std::map<uint32_t, std::map<std::string, std::vector<uint32_t>>> relationsMap;
   uint32_t propertySetsCount = 0;
 
-  if (opts.includeProperties) {
+  if (extractProps) {
     checkCancelled();
     const uint32_t relDefPropsCode = schemaMgr.IfcTypeToTypeCode("IFCRELDEFINESBYPROPERTIES");
     const uint32_t relDefTypeCode = schemaMgr.IfcTypeToTypeCode("IFCRELDEFINESBYTYPE");
@@ -1220,7 +1226,7 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
       }
       cEst += cSamples.size() * 32u + cLocalIds.size() * 64u + cRelsMap.size() * 64u;
       cEst += cEst / 6u;
-      constexpr size_t MAX_CHUNK_PRESIZE = 1024ULL * 1024ULL * 1024ULL;
+      constexpr size_t MAX_CHUNK_PRESIZE = 64ULL * 1024ULL * 1024ULL;
       if (cEst > MAX_CHUNK_PRESIZE) cEst = MAX_CHUNK_PRESIZE;
 
       flatbuffers::FlatBufferBuilder cBuilder(cEst);
@@ -1418,7 +1424,7 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
   }
   estimatedBytes += samples.size() * 32u + localIds.size() * 64u + relationsMap.size() * 64u;
   estimatedBytes = estimatedBytes + (estimatedBytes / 6u);  // +~16% headroom
-  constexpr size_t MAX_PRESIZE = 1536ULL * 1024ULL * 1024ULL;
+  constexpr size_t MAX_PRESIZE = 128ULL * 1024ULL * 1024ULL;
   if (estimatedBytes > MAX_PRESIZE) estimatedBytes = MAX_PRESIZE;
 
   // Assemble FlatBuffers Model

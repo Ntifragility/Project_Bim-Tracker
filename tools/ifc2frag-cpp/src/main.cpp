@@ -471,6 +471,9 @@ int main(int argc, char** argv) {
       opts.zlibLevel = 1;
     } else if (flag == "--no-props") {
       opts.includeProperties = false;
+    } else if (flag == "--with-props") {
+      opts.includeProperties = true;
+      opts.forceProperties = true;
     } else if (flag == "--zlib-level" && i + 1 < argc) {
       opts.zlibLevel = std::atoi(argv[++i]);
     } else if (flag == "--threads" && i + 1 < argc) {

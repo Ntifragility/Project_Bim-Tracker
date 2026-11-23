@@ -44,6 +44,7 @@ struct CompileOptions {
   bool coordinateToOrigin = true;
   bool rawShells = true;
   bool includeProperties = true;
+  bool forceProperties = false;  // If true, extract Pset_* even on >250 MB IFCs
   double distanceThresholdM = 100000.0;
   int zlibLevel = 6;
   int circleSegments = 12;
