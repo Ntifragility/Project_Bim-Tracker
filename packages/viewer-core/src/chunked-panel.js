@@ -114,7 +114,7 @@ export function mountChunkedBundlePanel(container, { engine, onStatus = null } =
 
       const autoLabel = document.createElement("span");
       autoLabel.style.cssText = "font-size:11px;font-weight:600;color:#e2e8f0;";
-      autoLabel.textContent = "🔦 Auto-Stream (Camera)";
+      autoLabel.textContent = "Auto-Stream (Camera)";
       autoLabel.title =
         "Automatically loads up to 2 detail zones closest to your camera when zoomed in, " +
         "and unloads far zones to save RAM. OFF = Principal Structure only.";
@@ -237,7 +237,12 @@ export function mountChunkedBundlePanel(container, { engine, onStatus = null } =
       onStatus?.(`Opened chunked bundle '${manifest.sourceName}' (${manifest.chunks.length} chunks). Loading first chunk…`);
       if (manifest.chunks.length > 0) {
         await manager.loadChunk(manifest.chunks[0].id);
-        onStatus?.(`Loaded '${manifest.chunks[0].name}'. Use the bottom-left panel to load/unload more floors.`);
+        if (manifest.chunks.length > 1) {
+          await manager.setAutoStream(true);
+          onStatus?.(`Loaded '${manifest.chunks[0].name}' with Auto-Stream ON (nearest zones load automatically).`);
+        } else {
+          onStatus?.(`Loaded '${manifest.chunks[0].name}'.`);
+        }
       }
     } catch (err) {
       console.error("[chunked-panel] openBundle error:", err);
