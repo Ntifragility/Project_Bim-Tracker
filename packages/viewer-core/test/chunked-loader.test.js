@@ -141,10 +141,20 @@ describe("SVF2-Lite Chunked .frag Bundle Loader", () => {
     assert.equal(closeRes.desiredIds.has("zone-a2"), true);
     assert.equal(closeRes.desiredIds.has("zone-a3"), false);
 
-    // 2. Zoomed far out overlooking the whole plant -> 0 detail chunks (Principal only)
+    // 2. Normal working distance (~50 m away from Zone A1) -> still streams nearest zones
+    const midRes = selectChunksForCamera(
+      manifest.chunks,
+      { x: 15, y: 35, z: 65 },
+      { x: 15, y: 10, z: 15 },
+      { manifest, maxActiveDetailChunks: 2 },
+    );
+    assert.equal(midRes.zoomedOut, false);
+    assert.equal(midRes.desiredIds.has("zone-a1"), true);
+
+    // 3. Zoomed far out overlooking the whole plant -> 0 detail chunks (Principal only)
     const farRes = selectChunksForCamera(
       manifest.chunks,
-      { x: 45, y: 120, z: 180 },
+      { x: 45, y: 220, z: 260 },
       { x: 45, y: 10, z: 45 },
       { manifest, maxActiveDetailChunks: 2 },
     );

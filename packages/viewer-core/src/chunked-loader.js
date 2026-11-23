@@ -106,9 +106,9 @@ export function selectChunksForCamera(
     manifest = null,
     maxActiveDetailChunks = 2,
     currentlyLoadedIds = new Set(),
-    zoomOutThresholdFactor = 1.65,
+    zoomOutThresholdFactor = 3.2,
     hysteresisMargin = 0.25,
-    minActivationRadiusM = 25,
+    minActivationRadiusM = 60,
   } = {},
 ) {
   const desiredIds = new Set();
@@ -163,16 +163,16 @@ export function selectChunksForCamera(
   candidates.sort((a, b) => a.score - b.score);
   const nearest = candidates[0];
 
-  // Zoomed-out overview guard: if looking from far away at the whole site, skip detail chunks
+  // Zoomed-out overview guard: only skip detail chunks when zoomed far out overlooking the entire plant
   if (
     cameraTarget &&
     viewDistance > medianDiag * zoomOutThresholdFactor &&
-    nearest.distCam > medianDiag * 0.85
+    nearest.distCam > medianDiag * 2.0
   ) {
     return { desiredIds, zoomedOut: true, nearestChunk: nearest.chunk, viewDistance };
   }
 
-  const maxRange = Math.max(medianDiag * 0.9, minActivationRadiusM);
+  const maxRange = Math.max(medianDiag * 2.5, minActivationRadiusM);
   const limit = Math.max(1, Number(maxActiveDetailChunks) || 2);
 
   for (const c of candidates) {
@@ -218,7 +218,7 @@ function readEngineCameraPose(engine) {
 export function createChunkedModelManager({
   engine,
   onChange = null,
-  autoStreamDebounceMs = 350,
+  autoStreamDebounceMs = 150,
   maxActiveDetailChunks = 2,
 } = {}) {
   let activeTransport = null;
