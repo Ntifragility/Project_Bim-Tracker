@@ -102,6 +102,59 @@ export function mountChunkedBundlePanel(container, { engine, onStatus = null } =
     body.style.display = collapsed ? "none" : "block";
     body.innerHTML = "";
 
+    // Auto-Stream by Camera bar (only shown when bundle has > 1 chunk)
+    if (st.totalCount > 1) {
+      const autoBar = document.createElement("div");
+      autoBar.style.cssText =
+        "display:flex;flex-direction:column;gap:3px;padding:5px 6px;margin-bottom:5px;" +
+        "border-radius:6px;background:rgba(30,41,59,0.75);border:1px solid rgba(148,163,184,0.18);";
+
+      const topRow = document.createElement("div");
+      topRow.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;";
+
+      const autoLabel = document.createElement("span");
+      autoLabel.style.cssText = "font-size:11px;font-weight:600;color:#e2e8f0;";
+      autoLabel.textContent = "🔦 Auto-Stream (Camera)";
+      autoLabel.title =
+        "Automatically loads up to 2 detail zones closest to your camera when zoomed in, " +
+        "and unloads far zones to save RAM. OFF = Principal Structure only.";
+
+      const autoBtn = document.createElement("button");
+      autoBtn.type = "button";
+      autoBtn.dataset.testid = "svf2-autostream-toggle";
+      autoBtn.textContent = st.autoStreamEnabled ? "ON" : "OFF";
+      autoBtn.style.cssText = st.autoStreamEnabled
+        ? "background:#0ea5e9;color:#082f49;border:1px solid #38bdf8;border-radius:999px;padding:1px 10px;font-size:10px;font-weight:700;cursor:pointer;"
+        : "background:#1e293b;color:#94a3b8;border:1px solid #475569;border-radius:999px;padding:1px 10px;font-size:10px;font-weight:700;cursor:pointer;";
+      autoBtn.addEventListener("click", async () => {
+        const next = !st.autoStreamEnabled;
+        onStatus?.(
+          next
+            ? "Auto-Stream ON — detail zones near camera will load automatically."
+            : "Auto-Stream OFF — unloaded auto-streamed detail zones.",
+        );
+        await manager.setAutoStream(next);
+      });
+
+      topRow.appendChild(autoLabel);
+      topRow.appendChild(autoBtn);
+      autoBar.appendChild(topRow);
+
+      const hint = document.createElement("div");
+      hint.style.cssText = "font-size:10px;color:#94a3b8;line-height:1.25;";
+      if (!st.autoStreamEnabled) {
+        hint.textContent = "OFF — Principal Structure only (fastest for conduit tracing)";
+      } else if (st.autoStreamZoomedOut) {
+        hint.textContent = "Zoomed out — Principal only (zoom in to stream bay details)";
+      } else if (st.autoActiveNames.length > 0) {
+        hint.textContent = `Streaming near camera: ${st.autoActiveNames.join(", ")}`;
+      } else {
+        hint.textContent = `Watching camera (max ${st.maxActiveDetailChunks} detail zones)`;
+      }
+      autoBar.appendChild(hint);
+      body.appendChild(autoBar);
+    }
+
     for (const ch of st.chunks) {
       const row = document.createElement("div");
       row.style.cssText =
@@ -136,6 +189,22 @@ export function mountChunkedBundlePanel(container, { engine, onStatus = null } =
 
       const right = document.createElement("div");
       right.style.cssText = "display:flex;align-items:center;gap:4px;flex-shrink:0;";
+
+      if (ch.autoLoaded && ch.loaded) {
+        const autoTag = document.createElement("span");
+        autoTag.textContent = "AUTO";
+        autoTag.title = "Auto-loaded by camera proximity (unloads automatically when you fly away)";
+        autoTag.style.cssText =
+          "font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;" +
+          "background:rgba(14,165,233,0.22);color:#38bdf8;border:1px solid rgba(56,189,248,0.4);";
+        right.appendChild(autoTag);
+      } else if (st.autoStreamEnabled && ch.pinned && ch.loaded && !ch.isPrincipal) {
+        const pinTag = document.createElement("span");
+        pinTag.textContent = "📌";
+        pinTag.title = "Pinned manually (won't be auto-unloaded by camera)";
+        pinTag.style.cssText = "font-size:10px;";
+        right.appendChild(pinTag);
+      }
 
       const sizeBadge = document.createElement("span");
       sizeBadge.style.cssText = "font-size:10px;opacity:0.75;font-variant-numeric:tabular-nums;";

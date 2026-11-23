@@ -37,6 +37,8 @@ export {
   createLocalFolderTransport,
   validateBundleManifest,
   chunkBboxToBox3,
+  isPrincipalChunk,
+  selectChunksForCamera,
   createChunkedModelManager,
 } from "./chunked-loader.js";
 export { mountChunkedBundlePanel } from "./chunked-panel.js";
