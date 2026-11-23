@@ -30,10 +30,13 @@ static void printUsage() {
             << "  ifc2frag <a.ifc> <b.ifc> ... [options]       (batch files or folders)\n"
             << "  ifc2frag --inspect <model.frag>\n"
             << "Options:\n"
+            << "  --bundle                 Output SVF2-Lite .fragbundle/ (auto: 1 chunk <50 MB, spatial zones >=50 MB)\n"
+            << "  --single                 Output a single standalone .frag file instead of a .fragbundle/\n"
             << "  --split-spatial          Output SVF2-Lite .fragbundle/ (Principal Structure + Spatial Detail Grid)\n"
             << "  --split-by-storey        Output SVF2-Lite .fragbundle/ (one .frag per floor + manifest.json)\n"
             << "  --split-by-category      Output SVF2-Lite .fragbundle/ (one .frag per discipline + manifest.json)\n"
-            << "  --out-dir <folder>       Custom output directory for --split-by-* bundle\n"
+            << "  --skip-fasteners         Skip IFCFASTENER & IFCMECHANICALFASTENER before tessellation (faster + smaller)\n"
+            << "  --out-dir <folder>       Custom output directory for .fragbundle/\n"
             << "  --circle-segments <4-32> Pipe/conduit tessellation segments (default: 12; 8 for split bundles)\n"
             << "  --fast                   Use zlib level 1 (faster, slightly larger)\n"
             << "  --zlib-level <1-9>       Set zlib compression level (default: 6)\n"
@@ -399,45 +402,31 @@ int main(int argc, char** argv) {
     if (!pickIfcInputFiles(inputPaths)) {
       return 0;  // User cancelled
     }
-    const int modeChoice = MessageBoxW(
+    const int boltChoice = MessageBoxW(
         nullptr,
-        L"Create a Chunked .fragbundle folder (Principal Structure + Spatial Zones, recommended for large models)?\n\n"
-        L"  • YES  = Chunked .fragbundle folder (saved next to your .ifc)\n"
-        L"  • NO   = Single .frag file\n"
+        L"Output format: SVF2-Lite .fragbundle folder (auto 1-chunk for <50 MB IFC, Principal + Spatial Zones for >=50 MB).\n\n"
+        L"Skip tiny bolts & fasteners (IFCFASTENER / IFCMECHANICALFASTENER) for faster compile & cleaner conduit tracing?\n\n"
+        L"  • YES    = Skip bolts/fasteners (fastest, recommended for conduit takeoff)\n"
+        L"  • NO     = Keep 100% of bolts/fasteners\n"
         L"  • CANCEL = Abort",
-        L"ifc2frag - Choose Output Format",
+        L"ifc2frag - Compile to .fragbundle",
         MB_YESNOCANCEL | MB_ICONQUESTION);
-    if (modeChoice == IDCANCEL) {
+    if (boltChoice == IDCANCEL) {
       return 0;
     }
 
     ifc2frag::CompileOptions opts{};
+    opts.splitMode = ifc2frag::SplitMode::AutoBundle;
+    opts.skipFasteners = (boltChoice == IDYES);
+    opts.circleSegments = 8;
+    opts.zlibLevel = 1;
     std::vector<CompileJob> jobs;
-    if (modeChoice == IDYES) {
-      opts.splitMode = ifc2frag::SplitMode::Spatial;
-      opts.circleSegments = 8;
-      opts.zlibLevel = 1;
-      for (const auto& inPath : inputPaths) {
-        fs::path outDir = fs::path(inPath).parent_path() / (fs::path(inPath).stem().string() + ".fragbundle");
-        jobs.push_back({inPath, outDir.string()});
-      }
-      if (jobs.size() == 1) {
-        opts.outDir = jobs[0].outputPath;
-      }
-    } else if (inputPaths.size() == 1) {
-      fs::path defaultOut = fs::path(inputPaths[0]);
-      defaultOut.replace_extension(".frag");
-      std::string outputPath;
-      if (!pickFragOutputFile(defaultOut.string(), outputPath)) {
-        return 0;  // User cancelled
-      }
-      jobs.push_back({inputPaths[0], outputPath});
-    } else {
-      for (const auto& inPath : inputPaths) {
-        fs::path outP(inPath);
-        outP.replace_extension(".frag");
-        jobs.push_back({inPath, outP.string()});
-      }
+    for (const auto& inPath : inputPaths) {
+      fs::path outDir = fs::path(inPath).parent_path() / (fs::path(inPath).stem().string() + ".fragbundle");
+      jobs.push_back({inPath, outDir.string()});
+    }
+    if (jobs.size() == 1) {
+      opts.outDir = jobs[0].outputPath;
     }
     return runBatchWithDialog(jobs, opts);
 #else
@@ -492,6 +481,12 @@ int main(int argc, char** argv) {
     const std::string flag = argv[i];
     if (flag == "--no-origin") {
       opts.coordinateToOrigin = false;
+    } else if (flag == "--bundle") {
+      opts.splitMode = ifc2frag::SplitMode::AutoBundle;
+    } else if (flag == "--single") {
+      opts.splitMode = ifc2frag::SplitMode::None;
+    } else if (flag == "--skip-fasteners") {
+      opts.skipFasteners = true;
     } else if (flag == "--split-spatial") {
       opts.splitMode = ifc2frag::SplitMode::Spatial;
     } else if (flag == "--split-by-storey") {

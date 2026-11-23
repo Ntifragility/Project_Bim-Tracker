@@ -364,6 +364,43 @@ std::string disciplineBucketForCategory(const std::string& upperCat) {
   return "Other";
 }
 
+// Fast zero-allocation quantized transform key (replaces snprintf + std::string hashing)
+struct QuantizedTransformKey {
+  int32_t v[9];
+  bool operator==(const QuantizedTransformKey& o) const noexcept {
+    for (int i = 0; i < 9; ++i) {
+      if (v[i] != o.v[i]) return false;
+    }
+    return true;
+  }
+};
+
+struct QuantizedTransformKeyHash {
+  size_t operator()(const QuantizedTransformKey& k) const noexcept {
+    uint64_t h = 1469598103934665603ULL;
+    for (int i = 0; i < 9; ++i) {
+      h ^= static_cast<uint64_t>(static_cast<uint32_t>(k.v[i]));
+      h *= 1099511628211ULL;
+    }
+    return static_cast<size_t>(h);
+  }
+};
+
+inline QuantizedTransformKey makeTransformKey(const DecomposedTransform& d) noexcept {
+  auto q4 = [](double x) -> int32_t {
+    const double s = std::round(x * 10000.0);
+    return static_cast<int32_t>(std::clamp(s, -2.0e9, 2.0e9));
+  };
+  auto q3 = [](float x) -> int32_t {
+    return static_cast<int32_t>(std::round(static_cast<double>(x) * 1000.0));
+  };
+  return QuantizedTransformKey{{
+      q4(d.px), q4(d.py), q4(d.pz),
+      q3(d.dxx), q3(d.dxy), q3(d.dxz),
+      q4(d.dyx), q4(d.dyy), q4(d.dyz),
+  }};
+}
+
 }  // namespace
 
 CompileResult compileIfcToFrag(const CompileOptions& opts) {
@@ -373,8 +410,10 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
       throw CompileCancelledError();
     }
   };
+  std::mutex progressMtx;
   const auto report = [&](int stage, const std::string& msg) {
     if (opts.onProgress) {
+      std::lock_guard<std::mutex> lk(progressMtx);
       opts.onProgress(stage, 5, msg);
     }
   };
@@ -382,9 +421,18 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
   std::error_code fsEc;
   const uint64_t inputFileBytes = std::filesystem::file_size(opts.inputPath, fsEc);
   const bool isLargeIfc = !fsEc && inputFileBytes > (250ULL * 1024ULL * 1024ULL);
-  // On >250 MB IFCs, default to zero-copy inline shell building (1 thread) to prevent commit-RAM spikes
-  const uint32_t defaultThreads = isLargeIfc ? 1u : std::min<uint32_t>(4u, hwThreads > 0 ? hwThreads : 1u);
+  // Resolve AutoBundle: <50 MB IFC -> 1-chunk .fragbundle; >=50 MB IFC -> Spatial .fragbundle
+  SplitMode effectiveSplitMode = opts.splitMode;
+  if (effectiveSplitMode == SplitMode::AutoBundle) {
+    constexpr uint64_t SMALL_BUNDLE_THRESHOLD = 50ULL * 1024ULL * 1024ULL;
+    effectiveSplitMode = (!fsEc && inputFileBytes < SMALL_BUNDLE_THRESHOLD)
+        ? SplitMode::SingleBundle
+        : SplitMode::Spatial;
+  }
+  // Low-RAM multi-threaded welding: up to 4 threads with compact 16-shell batches on >250 MB IFCs
+  const uint32_t defaultThreads = std::min<uint32_t>(4u, hwThreads > 0 ? hwThreads : 1u);
   const uint32_t workerCount = opts.threads > 0 ? opts.threads : defaultThreads;
+  const size_t shellBatchSize = isLargeIfc ? 16u : 64u;
   const bool extractProps = opts.includeProperties && (!isLargeIfc || opts.forceProperties);
 
   checkCancelled();
@@ -426,7 +474,7 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
 
   std::vector<Transform> localTransforms;
   std::vector<uint32_t> localTransformIds;
-  std::unordered_map<std::string, uint32_t> localTransformMap;
+  std::unordered_map<QuantizedTransformKey, uint32_t, QuantizedTransformKeyHash> localTransformMap;
   // Identity local transform at index 0
   localTransforms.emplace_back(DoubleVector(0, 0, 0), FloatVector(1, 0, 0), FloatVector(0, 1, 0));
   localTransformIds.push_back(0);
@@ -466,6 +514,10 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
 
   std::unordered_set<std::string> excludeSet;
   for (const auto& c : opts.excludeCategories) excludeSet.insert(toUpperAscii(c));
+  if (opts.skipFasteners) {
+    excludeSet.insert("IFCFASTENER");
+    excludeSet.insert("IFCMECHANICALFASTENER");
+  }
   std::unordered_set<std::string> onlySet;
   for (const auto& c : opts.onlyCategories) onlySet.insert(toUpperAscii(c));
 
@@ -487,9 +539,8 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
   size_t processedCandidates = 0;
   auto lastProgressAt = std::chrono::steady_clock::now();
 
-  constexpr size_t SHELL_BATCH_SIZE = 64;
   std::vector<RawShellJob> shellJobs;
-  shellJobs.reserve(SHELL_BATCH_SIZE);
+  shellJobs.reserve(shellBatchSize);
 
   auto flushShellBatch = [&]() {
     if (shellJobs.empty()) return;
@@ -635,7 +686,7 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
             job.sy = gDecomp.sy;
             job.sz = gDecomp.sz;
             shellJobs.push_back(std::move(job));
-            if (shellJobs.size() >= SHELL_BATCH_SIZE) {
+            if (shellJobs.size() >= shellBatchSize) {
               flushShellBatch();
             }
           }
@@ -672,20 +723,13 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
 
         uint32_t ltIndex = 0;
         if (!isIdentity) {
-          char ltBuf[160];
-          std::snprintf(
-              ltBuf,
-              sizeof(ltBuf),
-              "%.4f|%.4f|%.4f|%.3f|%.3f|%.3f|%.4f|%.4f|%.4f",
-              relDecomp.px, relDecomp.py, relDecomp.pz,
-              relDecomp.dxx, relDecomp.dxy, relDecomp.dxz,
-              relDecomp.dyx, relDecomp.dyy, relDecomp.dyz);
-          auto lit = localTransformMap.find(ltBuf);
+          const QuantizedTransformKey ltKey = makeTransformKey(relDecomp);
+          auto lit = localTransformMap.find(ltKey);
           if (lit != localTransformMap.end()) {
             ltIndex = lit->second;
           } else {
             ltIndex = static_cast<uint32_t>(localTransforms.size());
-            localTransformMap.emplace(ltBuf, ltIndex);
+            localTransformMap.emplace(ltKey, ltIndex);
             localTransforms.push_back(toFbTransform(relDecomp));
             localTransformIds.push_back(nextSyntheticId++);
           }
@@ -966,9 +1010,9 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
   checkCancelled();
 
   // ───────────────────────────────────────────────────────────────────────────
-  // SVF2-Lite Chunked Bundle Writer (--split-by-storey / --split-by-category)
+  // SVF2-Lite Chunked Bundle Writer (SingleBundle / Spatial / Storey / Category)
   // ───────────────────────────────────────────────────────────────────────────
-  if (opts.splitMode != SplitMode::None) {
+  if (effectiveSplitMode != SplitMode::None) {
     namespace fs = std::filesystem;
     fs::path bundleDir = opts.outDir.empty()
         ? (fs::path(opts.inputPath).parent_path() / (fs::path(opts.inputPath).stem().string() + ".fragbundle"))
@@ -990,7 +1034,17 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
       if (ii < geomElementsCount) samplesByItem[ii].push_back(si);
     }
 
-    if (opts.splitMode == SplitMode::Spatial) {
+    if (effectiveSplitMode == SplitMode::SingleBundle) {
+      ChunkBucket singleBucket{};
+      singleBucket.id = "principal";
+      singleBucket.name = fs::path(opts.inputPath).stem().string();
+      singleBucket.elevationM = 0.0;
+      singleBucket.itemIndices.reserve(geomElementsCount);
+      for (uint32_t itemIdx = 0; itemIdx < geomElementsCount; ++itemIdx) {
+        singleBucket.itemIndices.push_back(itemIdx);
+      }
+      bucketMap.emplace("00_model", std::move(singleBucket));
+    } else if (effectiveSplitMode == SplitMode::Spatial) {
       // Tier 0: Principal Elements (largest ~12% of triangles across entire model)
       // Tier 1: Remaining detail elements partitioned into balanced X-Z spatial zones
       struct ElemMetric {
@@ -1092,7 +1146,7 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
           b.itemIndices.push_back(m.itemIdx);
         }
       }
-    } else if (opts.splitMode == SplitMode::ByStorey) {
+    } else if (effectiveSplitMode == SplitMode::ByStorey) {
       std::unordered_map<uint32_t, uint32_t> parentOf;
       for (const auto& [pid, children] : spatialChildren) {
         for (const uint32_t cid : children) {
@@ -1167,7 +1221,18 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
     res.samplesCount = static_cast<uint32_t>(samples.size());
     res.propertySetsCount = propertySetsCount;
 
-    for (size_t ci = 0; ci < orderedBuckets.size(); ++ci) {
+    // Parallel Stage 4 chunk packing & zlib compression (bounded to max 3 threads for low peak RAM)
+    const size_t totalChunks = orderedBuckets.size();
+    const size_t chunkThreads = std::min<size_t>(
+        3u, std::min<size_t>(totalChunks, std::max<size_t>(1u, static_cast<size_t>(workerCount))));
+    std::vector<ChunkSummary> chunkResults(totalChunks);
+    std::vector<uint32_t> chunkRelCounts(totalChunks, 0);
+    std::atomic<size_t> nextChunkIdx{0};
+    std::atomic<size_t> completedChunks{0};
+    std::mutex errMtx;
+    std::exception_ptr firstErr = nullptr;
+
+    auto packOneChunk = [&](size_t ci) {
       checkCancelled();
       const auto& bucket = orderedBuckets[ci];
       char prefix[8];
@@ -1175,8 +1240,9 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
       const std::string chunkFile = std::string(prefix) + sanitizeChunkFilename(bucket.name) + ".frag";
       const fs::path chunkPath = bundleDir / chunkFile;
 
-      report(4, "Packing chunk [" + std::to_string(ci + 1) + "/" + std::to_string(orderedBuckets.size()) + "] " +
-                    bucket.name + " (" + std::to_string(bucket.itemIndices.size()) + " elements)...");
+      report(4, "Packing chunk [" + std::to_string(ci + 1) + "/" + std::to_string(totalChunks) + "] " +
+                    bucket.name + " (" + std::to_string(bucket.itemIndices.size()) + " elements, " +
+                    std::to_string(chunkThreads) + " threads)...");
 
       // Remap chunk-local mesh arrays
       std::vector<uint32_t> cMeshesItems;
@@ -1469,10 +1535,46 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
         cs.minX = cMinX; cs.minY = cMinY; cs.minZ = cMinZ;
         cs.maxX = cMaxX; cs.maxY = cMaxY; cs.maxZ = cMaxZ;
       }
-      res.rawFlatBufferBytes += cRawSize;
-      res.compressedFragBytes += cCompBytes;
-      res.relationsCount += static_cast<uint32_t>(cRelOffsets.size());
-      res.chunks.push_back(std::move(cs));
+      chunkRelCounts[ci] = static_cast<uint32_t>(cRelOffsets.size());
+      chunkResults[ci] = std::move(cs);
+      ++completedChunks;
+    };
+
+    if (chunkThreads <= 1) {
+      for (size_t ci = 0; ci < totalChunks; ++ci) {
+        packOneChunk(ci);
+      }
+    } else {
+      std::vector<std::thread> chunkPool;
+      chunkPool.reserve(chunkThreads);
+      for (size_t t = 0; t < chunkThreads; ++t) {
+        chunkPool.emplace_back([&]() {
+          while (true) {
+            {
+              std::lock_guard<std::mutex> lk(errMtx);
+              if (firstErr) break;
+            }
+            const size_t ci = nextChunkIdx.fetch_add(1, std::memory_order_relaxed);
+            if (ci >= totalChunks) break;
+            try {
+              packOneChunk(ci);
+            } catch (...) {
+              std::lock_guard<std::mutex> lk(errMtx);
+              if (!firstErr) firstErr = std::current_exception();
+              break;
+            }
+          }
+        });
+      }
+      for (auto& th : chunkPool) th.join();
+      if (firstErr) std::rethrow_exception(firstErr);
+    }
+
+    for (size_t ci = 0; ci < totalChunks; ++ci) {
+      res.rawFlatBufferBytes += chunkResults[ci].uncompressedBytes;
+      res.compressedFragBytes += chunkResults[ci].compressedBytes;
+      res.relationsCount += chunkRelCounts[ci];
+      res.chunks.push_back(std::move(chunkResults[ci]));
     }
 
     // Write manifest.json
@@ -1480,15 +1582,17 @@ CompileResult compileIfcToFrag(const CompileOptions& opts) {
     std::ofstream mfs(manifestPath, std::ios::binary | std::ios::trunc);
     if (!mfs) throw std::runtime_error("Cannot write manifest.json: " + manifestPath.string());
     mfs << std::fixed << std::setprecision(4);
+    const char* splitModeStr =
+        effectiveSplitMode == SplitMode::SingleBundle
+            ? "single"
+            : (effectiveSplitMode == SplitMode::Spatial
+                   ? "spatial"
+                   : (effectiveSplitMode == SplitMode::ByStorey ? "storey" : "category"));
     mfs << "{\n"
         << "  \"version\": 1,\n"
         << "  \"format\": \"fragbundle\",\n"
         << "  \"sourceName\": \"" << jsonEscape(fs::path(opts.inputPath).filename().string()) << "\",\n"
-        << "  \"splitMode\": \""
-        << (opts.splitMode == SplitMode::Spatial
-                ? "spatial"
-                : (opts.splitMode == SplitMode::ByStorey ? "storey" : "category"))
-        << "\",\n"
+        << "  \"splitMode\": \"" << splitModeStr << "\",\n"
         << "  \"circleSegments\": " << opts.circleSegments << ",\n"
         << "  \"coordinationMatrix\": {\n"
         << "    \"position\": [" << fbCoords.position().x() << ", " << fbCoords.position().y() << ", " << fbCoords.position().z() << "],\n"

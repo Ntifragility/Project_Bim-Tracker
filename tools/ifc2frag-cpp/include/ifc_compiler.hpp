@@ -20,7 +20,9 @@ enum class SplitMode {
   None = 0,
   ByStorey = 1,
   ByCategory = 2,
-  Spatial = 3,  // Tier 0: Principal Elements + Tier 1: Spatial Detail Grid
+  Spatial = 3,       // Tier 0: Principal Elements + Tier 1: Spatial Detail Grid
+  SingleBundle = 4,  // 1-chunk .fragbundle (manifest.json + 00_Model.frag) for small IFCs
+  AutoBundle = 5,    // <50 MB IFC -> SingleBundle; >=50 MB IFC -> Spatial
 };
 
 struct ChunkSummary {
@@ -46,6 +48,7 @@ struct CompileOptions {
   bool rawShells = true;
   bool includeProperties = true;
   bool forceProperties = false;  // If true, extract Pset_* even on >250 MB IFCs
+  bool skipFasteners = false;    // If true, skip IFCFASTENER & IFCMECHANICALFASTENER before tessellation
   double distanceThresholdM = 100000.0;
   int zlibLevel = 6;
   int circleSegments = 12;
