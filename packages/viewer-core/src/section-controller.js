@@ -1726,6 +1726,18 @@ export function createSectionController({
 
     syncExternalClippedMaterials,
 
+    /**
+     * Re-applies active section clipping planes to all loaded fragments & external objects.
+     * Called automatically by chunked-loader when new spatial zones stream in.
+     */
+    syncClipping() {
+      if (hasCuts) {
+        applyActivePlaneToClipper({ syncMaterials: true });
+      } else {
+        syncExternalClippedMaterials();
+      }
+    },
+
     registerBoundsProvider(id, fn) {
       if (id && typeof fn === "function") externalBoundsProviders.set(id, fn);
     },

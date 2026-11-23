@@ -254,6 +254,16 @@ export function createProjectIo({ state, els, engine, api }) {
         api.renderRunsList(drawingTool);
         api.renderSummary();
 
+        // If this project was saved against a cloud .fragbundle URL and no bundle is loaded, offer to stream it
+        if (proj.sourceModel?.bundleUrl && api.chunkedPanel?.openBundleFromUrl) {
+          const st = api.chunkedPanel.manager?.getState?.();
+          if (!st?.active || st.bundleUrl !== proj.sourceModel.bundleUrl) {
+            api.chunkedPanel.openBundleFromUrl(proj.sourceModel.bundleUrl).catch((err) => {
+              console.warn('[Conduit Takeoff] Could not auto-reopen saved bundleUrl:', err);
+            });
+          }
+        }
+
         els.statusText.textContent = `Opened project ${file.name} successfully.`;
       } catch (err) {
         console.error('[Conduit Takeoff] Error reading project file:', err);
