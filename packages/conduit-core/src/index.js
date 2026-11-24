@@ -10,6 +10,7 @@ export * from './marker-model.js';
 export * from './project-io.js';
 export * from './csv-export.js';
 export * from './ifc-exporter.js';
+export * from './trace-excel.js';
 export * from './snap-engine.js';
 export * from './fitting-solver.js';
 export * from './bom-calculator.js';

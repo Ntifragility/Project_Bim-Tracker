@@ -13,6 +13,9 @@ import {
   verifySourceHash,
   exportCompleteCsv,
   exportOverlayIfc,
+  buildTracesFromNetwork,
+  extractConduitTracesFromStep,
+  exportTracesToExcelBytes,
 } from '@conduit-core';
 
 export function createProjectIo({ state, els, engine, api }) {
@@ -312,7 +315,46 @@ export function createProjectIo({ state, els, engine, api }) {
     });
   }
 
-  api.downloadFile = downloadFile;
+  function exportTracesExcel() {
+    let traces = buildTracesFromNetwork({
+      runs: state.network?.runs || [],
+      nodes: state.network?.nodes || {},
+      getRunColor: (run) => run.color || state.diameterRegistry.getColor(run.size),
+    });
 
-  return { downloadFile, handleEscape, wireProjectControls };
+    // If no runs were drawn in this session, extract grouped traces directly from the loaded Native IFC
+    if (traces.length === 0 && state.sourceModel?.buffer) {
+      try {
+        const text = new TextDecoder().decode(new Uint8Array(state.sourceModel.buffer));
+        traces = extractConduitTracesFromStep(text);
+      } catch (err) {
+        console.warn('[Conduit Takeoff] Could not parse IFC traces for Excel export:', err);
+      }
+    }
+
+    if (traces.length === 0) {
+      alert('No conduit traces found to export. Draw at least one trace or load an exported Conduit IFC.');
+      return false;
+    }
+
+    const xlsxBytes = exportTracesToExcelBytes(traces, {
+      wasteFactor: state.settings?.wasteFactor ?? 0.1,
+    });
+    const baseName = String(state.sourceModel?.name || 'conduit').replace(/\.(ifc|frag)$/i, '');
+    const filename = `${baseName}_traces.xlsx`;
+    downloadFile(
+      xlsxBytes,
+      filename,
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    if (els.statusText) {
+      els.statusText.textContent = `Exported ${traces.length} grouped trace${traces.length === 1 ? '' : 's'} to ${filename}`;
+    }
+    return true;
+  }
+
+  api.downloadFile = downloadFile;
+  api.exportTracesExcel = exportTracesExcel;
+
+  return { downloadFile, exportTracesExcel, handleEscape, wireProjectControls };
 }

@@ -215,6 +215,8 @@ export function exportOverlayIfc({
 
     const runIdStr = String(run.id ?? `run-${guidSeq}`);
     const runName = run.name || `Run ${runIdStr}`;
+    const runTag = String(run.tag || runName).trim();
+    const runComments = String(run.comments || '').trim();
     const runSize = run.size || run.diameter || '3/4"';
     const runSystem = run.system || 'Power';
     const computedLenM = polylineLengthM(nodeCoords);
@@ -232,12 +234,16 @@ export function exportOverlayIfc({
 
     const escRunId = escapeStepStr(runIdStr);
     const escRunName = escapeStepStr(runName);
+    const escRunTag = escapeStepStr(runTag);
+    const escRunComments = escapeStepStr(runComments);
     const escRunSize = escapeStepStr(runSize);
     const escRunSystem = escapeStepStr(runSystem);
 
     // Per-run property set (attached to assembly + every segment & elbow so clicking any piece shows total trace length)
     const pRunId = nextId();
     add(`#${pRunId}=IFCPROPERTYSINGLEVALUE('RunId',$,IFCLABEL('${escRunId}'),$);`);
+    const pRunTagId = nextId();
+    add(`#${pRunTagId}=IFCPROPERTYSINGLEVALUE('Tag',$,IFCLABEL('${escRunTag}'),$);`);
     const pRunNameId = nextId();
     add(`#${pRunNameId}=IFCPROPERTYSINGLEVALUE('RunName',$,IFCLABEL('${escRunName}'),$);`);
     const pSizeId = nextId();
@@ -266,10 +272,13 @@ export function exportOverlayIfc({
     const pColorId = nextId();
     add(`#${pColorId}=IFCPROPERTYSINGLEVALUE('ColorHex',$,IFCLABEL('${escapeStepStr(runColorHex)}'),$);`);
 
+    const pCommentsId = nextId();
+    add(`#${pCommentsId}=IFCPROPERTYSINGLEVALUE('Comments',$,IFCLABEL('${escRunComments}'),$);`);
+
     const runPsetId = nextId();
     add(
       `#${runPsetId}=IFCPROPERTYSET('${makeGuid(guidSeq++)}',#${ownerHistId},'Pset_ConduitRun',$,` +
-      `(#${pRunId},#${pRunNameId},#${pSizeId},#${pSystemId},#${pLenId},#${pTotalLenMId},#${pTotalLenFtId},#${pSticksId},#${pBendDegId},#${pPartCountId},#${pColorId}));`
+      `(#${pRunId},#${pRunTagId},#${pRunNameId},#${pSizeId},#${pSystemId},#${pLenId},#${pTotalLenMId},#${pTotalLenFtId},#${pSticksId},#${pBendDegId},#${pPartCountId},#${pColorId},#${pCommentsId}));`
     );
 
     // Parent assembly packaging all segments & elbows of this trace from start to end
@@ -277,7 +286,7 @@ export function exportOverlayIfc({
     const assemblyLabel = escapeStepStr(`${runName} (${runSize} - ${runLenFt.toFixed(2)} ft)`);
     add(
       `#${assemblyId}=IFCELEMENTASSEMBLY('${makeGuid(guidSeq++)}',#${ownerHistId},'${assemblyLabel}',` +
-      `'Conduit Run Assembly (${escRunSystem})',$,#${wcsId},$,'${escRunId}',.NOTDEFINED.,.USERDEFINED.);`
+      `'Conduit Run Assembly (${escRunSystem})',$,#${wcsId},$,'${escRunTag}',.NOTDEFINED.,.USERDEFINED.);`
     );
     const assemblyRef = `#${assemblyId}`;
     assemblyEntityIds.push(assemblyRef);

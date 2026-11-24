@@ -574,6 +574,22 @@ export function createConduitRibbonDef(ctx) {
                     btn?.click();
                   },
                 },
+                {
+                  id: 'conduit.proj-excel',
+                  label: 'Excel (.xlsx)',
+                  icon: 'csv',
+                  size: 'small',
+                  keytip: 'PEX',
+                  tooltip: 'Export grouped conduit traces (Tag, System, Size, Total Length) to Excel (.xlsx) — works on drawn runs or re-imported IFCs',
+                  enabled(c) {
+                    const runsCount = c.state?.network?.runs?.length || 0;
+                    const hasIfcBuffer = Boolean(c.state?.sourceModel?.buffer);
+                    return runsCount > 0 || hasIfcBuffer;
+                  },
+                  run(c) {
+                    c.api?.exportTracesExcel?.();
+                  },
+                },
               ],
               [
                 {
