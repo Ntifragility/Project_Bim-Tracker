@@ -14,6 +14,42 @@ export class AdapterError extends Error {
 }
 
 /**
+ * Resolves the target URL when switching between 'conduit' and 'tray' modules.
+ * - Production & vite preview: '/' (Conduit Takeoff) <-> '/tray/' (Cable Tray)
+ * - Localhost dev servers (5173/5174/5175/5176): switches sibling dev port seamlessly
+ * - Preserves active Cloud .fragbundle URL via `?bundle=` so IndexedDB cache hits instantly
+ */
+export function resolveModuleSwitchUrl(
+  targetAppId,
+  locationLike = typeof window !== 'undefined' ? window.location : null,
+  { bundleUrl = null } = {},
+) {
+  const isTray = targetAppId === 'tray';
+  const hostname = locationLike?.hostname || '';
+  const port = String(locationLike?.port || '');
+  const protocol = locationLike?.protocol || 'http:';
+  const isLocal = /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(hostname);
+
+  let baseHref = isTray ? '/tray/' : '/';
+  if (isLocal && (port === '5175' || port === '5176' || port === '5173' || port === '5174')) {
+    const trayPort = port === '5175' || port === '5176' ? '5176' : '5173';
+    const conduitPort = port === '5175' || port === '5176' ? '5175' : '5174';
+    baseHref = `${protocol}//${hostname}:${isTray ? trayPort : conduitPort}/`;
+  }
+
+  let effectiveBundle = bundleUrl;
+  if (!effectiveBundle && locationLike?.search) {
+    try {
+      effectiveBundle = new URLSearchParams(locationLike.search).get('bundle');
+    } catch { /* noop */ }
+  }
+  if (effectiveBundle) {
+    return `${baseHref}?bundle=${encodeURIComponent(effectiveBundle)}`;
+  }
+  return baseHref;
+}
+
+/**
  * Creates and mounts a Revit-style ribbon inside host element.
  *
  * @param {HTMLElement} host
@@ -203,6 +239,44 @@ export function createRibbon(host, def, ctx) {
     qatItemsContainer.appendChild(btn);
   }
   qatBar.appendChild(qatItemsContainer);
+
+  // Module Switcher (Conduit Takeoff | Cable Tray) — zero-coupling navigation with ?bundle= carry-over
+  if (def.appId === 'conduit' || def.appId === 'tray') {
+    const switcher = doc.createElement('div');
+    switcher.className = 'rc-app-switcher';
+    switcher.setAttribute('role', 'navigation');
+    switcher.setAttribute('aria-label', 'Module Switcher');
+
+    const modules = [
+      { id: 'conduit', label: 'Conduit Takeoff' },
+      { id: 'tray', label: 'Cable Tray' },
+    ];
+    for (const mod of modules) {
+      const link = doc.createElement('a');
+      link.className = `rc-app-switch-btn${def.appId === mod.id ? ' is-active' : ''}`;
+      link.textContent = mod.label;
+      link.setAttribute('data-module-id', mod.id);
+      if (def.appId === mod.id) {
+        link.setAttribute('aria-current', 'page');
+        link.href = '#';
+        link.addEventListener('click', (e) => e.preventDefault());
+      } else {
+        link.href = resolveModuleSwitchUrl(mod.id, winObj?.location);
+        link.title = `Switch to ${mod.label}`;
+        link.addEventListener('click', (e) => {
+          const activeBundleUrl = ctx?.api?.chunkedPanel?.manager?.getState?.()?.bundleUrl || null;
+          const dest = resolveModuleSwitchUrl(mod.id, winObj?.location, { bundleUrl: activeBundleUrl });
+          link.href = dest;
+          if (winObj?.location && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
+            e.preventDefault();
+            winObj.location.href = dest;
+          }
+        });
+      }
+      switcher.appendChild(link);
+    }
+    qatBar.appendChild(switcher);
+  }
 
   const qatCustomise = doc.createElement('button');
   qatCustomise.type = 'button';

@@ -37,6 +37,7 @@ function viewportWasmResolver() {
 }
 
 export default defineConfig({
+  base: process.env.VITE_APP_BASE || "/",
   root: ".",
   cacheDir: path.resolve(ROOT, "node_modules/.vite-conduit"),
   // Share the tray app's public dir (fixtures, web-ifc.wasm) so `?ifc=`

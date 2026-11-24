@@ -78,6 +78,46 @@
   flex: 1;
 }
 
+/* Module Switcher (Conduit Takeoff | Cable Tray) inside QAT bar */
+[data-rc-host] .rc-app-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 6px;
+  padding: 1px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.06);
+  border: 1px solid var(--rc-panel-border);
+}
+
+[data-rc-host] .rc-app-switch-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--rc-tab-text);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+[data-rc-host] .rc-app-switch-btn:hover:not(.is-active) {
+  background: var(--rc-tab-hover-bg);
+  color: var(--rc-tab-active-text);
+}
+
+[data-rc-host] .rc-app-switch-btn.is-active {
+  background: var(--rc-tab-active-bg);
+  color: var(--rc-tab-active-top);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  cursor: default;
+}
+
 [data-rc-host] .rc-qat-btn {
   width: 24px;
   height: 24px;
