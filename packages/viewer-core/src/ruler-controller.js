@@ -111,11 +111,10 @@ export function createRulerController({
   previewGroup.name = "__revizto_ruler_preview__";
   rootGroup.add(previewGroup);
 
-  // Snap reticle indicator shown while ruler mode is active
-  const reticleGeo = new THREE.RingGeometry(0.035, 0.055, 24);
+  // Snap point indicator shown while ruler mode is active (crisp solid Revizto-style dot)
+  const reticleGeo = new THREE.SphereGeometry(0.026, 14, 14);
   const reticleMat = new THREE.MeshBasicMaterial({
     color: 0xef4444,
-    side: THREE.DoubleSide,
     depthTest: false,
     transparent: true,
     opacity: 0.95,
@@ -497,22 +496,6 @@ export function createRulerController({
       if (m.kind === "p2p" && state.showDeltas) {
         addDeltaHelperLines(group, a, b);
       }
-      if (m.kind === "laser") {
-        // Perpendicular target ring at first hit
-        const ringGeo = new THREE.RingGeometry(0.06, 0.085, 24);
-        const ringMat = new THREE.MeshBasicMaterial({
-          color,
-          side: THREE.DoubleSide,
-          depthTest: false,
-          transparent: true,
-          opacity: 0.85,
-        });
-        const ring = new THREE.Mesh(ringGeo, ringMat);
-        ring.position.copy(a);
-        const dir = new THREE.Vector3().subVectors(b, a).normalize();
-        ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
-        group.add(ring);
-      }
       m.anchor = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5);
     } else if (m.kind === "elevation") {
       const a = m.points[0];
@@ -527,18 +510,6 @@ export function createRulerController({
         }
         m.anchor = new THREE.Vector3().addVectors(a, vertTarget).multiplyScalar(0.5);
       } else {
-        const ringGeo = new THREE.RingGeometry(0.08, 0.11, 24);
-        const ringMat = new THREE.MeshBasicMaterial({
-          color,
-          side: THREE.DoubleSide,
-          depthTest: false,
-          transparent: true,
-          opacity: 0.85,
-        });
-        const ring = new THREE.Mesh(ringGeo, ringMat);
-        ring.rotation.x = -Math.PI / 2;
-        ring.position.copy(a);
-        group.add(ring);
         m.anchor = a.clone();
       }
     } else if (m.kind === "angle") {
@@ -938,10 +909,10 @@ export function createRulerController({
       lastPreviewPoint = hit.point.clone();
       reticleMesh.visible = true;
       reticleMesh.position.copy(hit.point);
-      if (hit.normal) {
-        reticleMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), hit.normal);
-      } else if (camera) {
-        reticleMesh.quaternion.copy(camera.quaternion);
+      if (camera?.position) {
+        const dist = camera.position.distanceTo(hit.point);
+        const s = Math.max(0.5, Math.min(dist * 0.12, 8.0));
+        reticleMesh.scale.setScalar(s);
       }
       reticleMat.color.set(state.color);
       rebuildDraftPreview(hit.point);
