@@ -518,8 +518,46 @@ export function createLateralDock({ state, els, api }) {
     browser.setTreeData(buildProjectBrowserTree());
   }
 
+  function showIfcElementProperties(ifcInfo) {
+    if (!palette || !ifcInfo) return;
+    const groups = {};
+    const identity = [];
+    if (ifcInfo.name) identity.push({ name: 'Name', value: String(ifcInfo.name), readonly: true });
+    if (ifcInfo.description) identity.push({ name: 'Description', value: String(ifcInfo.description), readonly: true });
+    if (ifcInfo.category) identity.push({ name: 'IFC Class', value: String(ifcInfo.category), readonly: true });
+    if (ifcInfo.expressId != null) identity.push({ name: 'Express ID', value: `#${ifcInfo.expressId}`, readonly: true });
+    if (identity.length > 0) groups['Identity Data'] = identity;
+
+    for (const [psetName, props] of Object.entries(ifcInfo.psets || {})) {
+      if (Array.isArray(props) && props.length > 0) {
+        groups[psetName] = props.map((p) => ({
+          name: String(p.name),
+          value: String(p.value),
+          readonly: true,
+        }));
+      }
+    }
+
+    const conduitRunProps = ifcInfo.psets?.Pset_ConduitRun || [];
+    const totalFt = conduitRunProps.find((p) => p.name === 'TotalLengthFt')?.value;
+    const totalM = conduitRunProps.find((p) => p.name === 'TotalLengthM')?.value;
+    const sizeVal = conduitRunProps.find((p) => p.name === 'Size')?.value || ifcInfo.category || 'IFC Element';
+
+    palette.setElement({
+      id: `ifc-${ifcInfo.expressId ?? 'item'}`,
+      name: ifcInfo.name || 'Imported IFC Element',
+      family: conduitRunProps.length > 0 ? 'Imported Conduit Run (IFC)' : (ifcInfo.category || 'IFC Element'),
+      count: 1,
+      filterLabel: totalFt ? `${ifcInfo.name || 'Conduit'} (${totalFt} ft / ${totalM || ''} m)` : (ifcInfo.name || 'IFC Element'),
+      type: sizeVal,
+      types: [],
+      parameters: groups,
+    });
+  }
+
   // Register on shared API
   api.updatePropertiesPalette = updatePropertiesPalette;
+  api.showIfcElementProperties = showIfcElementProperties;
   api.updateProjectBrowserTree = updateBrowserTree;
   api.switchDockTab = switchDockTab;
   api.getActiveDockTab = () => activeDockTab;
