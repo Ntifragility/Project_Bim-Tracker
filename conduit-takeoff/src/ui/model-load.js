@@ -145,6 +145,7 @@ export function createModelLoad({ state, els, engine, api }) {
 
     els.statusText.textContent = `Loaded ${file.name} successfully. Ready for tracing.`;
     api.hideLoading();
+    api.refreshRibbon?.();
 
     api.updateProjectBrowserTree?.();
 

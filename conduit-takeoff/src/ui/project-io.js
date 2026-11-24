@@ -333,7 +333,34 @@ export function createProjectIo({ state, els, engine, api }) {
     }
 
     if (traces.length === 0) {
-      alert('No conduit traces found to export. Draw at least one trace or load an exported Conduit IFC.');
+      // Allow picking any exported Conduit .ifc directly to generate its grouped .xlsx schedule
+      const picker = document.createElement('input');
+      picker.type = 'file';
+      picker.accept = '.ifc';
+      picker.onchange = async () => {
+        const file = picker.files?.[0];
+        if (!file) return;
+        try {
+          const text = await file.text();
+          const parsed = extractConduitTracesFromStep(text);
+          if (parsed.length === 0) {
+            alert(`No grouped conduit traces (IFCELEMENTASSEMBLY / Pset_ConduitRun) found in ${file.name}.`);
+            return;
+          }
+          const bytes = exportTracesToExcelBytes(parsed, {
+            wasteFactor: state.settings?.wasteFactor ?? 0.1,
+          });
+          const outName = `${file.name.replace(/\.ifc$/i, '')}_traces.xlsx`;
+          downloadFile(bytes, outName, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+          if (els.statusText) {
+            els.statusText.textContent = `Exported ${parsed.length} grouped trace${parsed.length === 1 ? '' : 's'} from ${file.name} to ${outName}`;
+          }
+        } catch (err) {
+          console.error('[Conduit Takeoff] Direct IFC->Excel export error:', err);
+          alert(`Could not read ${file.name}: ${err.message}`);
+        }
+      };
+      picker.click();
       return false;
     }
 
