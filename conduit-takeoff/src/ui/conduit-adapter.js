@@ -580,11 +580,9 @@ export function createConduitRibbonDef(ctx) {
                   icon: 'csv',
                   size: 'small',
                   keytip: 'PEX',
-                  tooltip: 'Export grouped conduit traces (Tag, System, Size, Total Length) to Excel (.xlsx) — works on drawn runs or re-imported IFCs',
-                  enabled(c) {
-                    const runsCount = c.state?.network?.runs?.length || 0;
-                    const hasIfcBuffer = Boolean(c.state?.sourceModel?.buffer);
-                    return runsCount > 0 || hasIfcBuffer;
+                  tooltip: 'Export grouped conduit traces (Tag, System, Size, Total Length) to Excel (.xlsx) — works on drawn runs, loaded IFC, or pick any .ifc file',
+                  enabled() {
+                    return true;
                   },
                   run(c) {
                     c.api?.exportTracesExcel?.();
