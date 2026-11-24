@@ -19,6 +19,14 @@ export function createConduitRibbonDef(ctx) {
 
   return {
     appId: 'conduit',
+    hasUnsavedWork(c) {
+      const tool = getTool();
+      const midTrace = (tool?.activePoints?.length || 0) > 0;
+      if (midTrace || c?.state?.hasUnsavedChanges) {
+        return 'You have unsaved conduit runs. Switch to Cable Tray anyway?';
+      }
+      return false;
+    },
     qat: [
       'conduit.proj-save',
       'conduit.trace-undo',

@@ -172,6 +172,7 @@ export function createViewerChrome({ state, els, api }) {
 
     // 5. Update undo/redo state listeners
     state.commandStack.subscribe(() => {
+      state.hasUnsavedChanges = true;
       api.updateUndoRedoButtons();
       api.renderRunsList(window.__drawingTool);
       api.renderSummary();

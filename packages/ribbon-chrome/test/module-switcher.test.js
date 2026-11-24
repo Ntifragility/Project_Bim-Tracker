@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { resolveModuleSwitchUrl } from "../src/ribbon.js";
+import { resolveModuleSwitchUrl, getUnsavedWorkMessage } from "../src/ribbon.js";
 
 describe("Ribbon Chrome Module Switcher (Conduit Takeoff <-> Cable Tray)", () => {
   it("switches between / (Conduit) and /tray/ (Cable Tray) in production", () => {
@@ -39,5 +39,21 @@ describe("Ribbon Chrome Module Switcher (Conduit Takeoff <-> Cable Tray)", () =>
     const previewLoc = { protocol: "http:", hostname: "localhost", port: "4173", search: "" };
     assert.equal(resolveModuleSwitchUrl("tray", previewLoc), "/tray/");
     assert.equal(resolveModuleSwitchUrl("conduit", previewLoc), "/");
+  });
+
+  it("getUnsavedWorkMessage returns null when clean and prompt string when dirty", () => {
+    assert.equal(getUnsavedWorkMessage({}, {}), null);
+    assert.equal(getUnsavedWorkMessage({ hasUnsavedWork: () => false }, {}), null);
+    assert.equal(
+      getUnsavedWorkMessage({ hasUnsavedWork: () => true }, {}),
+      "You have unsaved work. Switch module anyway?",
+    );
+    assert.equal(
+      getUnsavedWorkMessage(
+        { hasUnsavedWork: (c) => (c.dirty ? "You have unsaved conduit runs. Switch?" : false) },
+        { dirty: true },
+      ),
+      "You have unsaved conduit runs. Switch?",
+    );
   });
 });

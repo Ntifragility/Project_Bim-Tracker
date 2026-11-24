@@ -211,6 +211,7 @@ export function createProjectIo({ state, els, engine, api }) {
       });
       const filename = `${state.sourceModel.name || 'project'}.conduit.json`;
       downloadFile(json, filename, 'application/json');
+      state.hasUnsavedChanges = false;
       els.statusText.textContent = `Saved project to ${filename}`;
     });
 
@@ -253,6 +254,7 @@ export function createProjectIo({ state, els, engine, api }) {
         drawingTool.renderRuns(state.network);
         api.renderRunsList(drawingTool);
         api.renderSummary();
+        state.hasUnsavedChanges = false;
 
         // If this project was saved against a cloud .fragbundle URL and no bundle is loaded, offer to stream it
         if (proj.sourceModel?.bundleUrl && api.chunkedPanel?.openBundleFromUrl) {
