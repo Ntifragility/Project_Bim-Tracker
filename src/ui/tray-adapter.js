@@ -21,6 +21,21 @@ export function createTrayRibbonDef(ctx) {
 
   return {
     appId: 'tray',
+    hasUnsavedWork(c) {
+      const propEdits = c?.pendingIfcPropertyEdits?.size || 0;
+      const colorEdits = c?.pendingIfcColorEdits?.size || 0;
+      let pendingTags = 0;
+      if (c?.tagAssignments instanceof Map) {
+        for (const entry of c.tagAssignments.values()) {
+          if (entry?.status === 'pending' || entry?.dirty) pendingTags++;
+        }
+      }
+      const previewCount = c?.batchPreviewAssignments?.length || 0;
+      const total = propEdits + colorEdits + pendingTags + previewCount;
+      return total > 0
+        ? `You have ${total} unsaved tray tag/property edit${total === 1 ? '' : 's'}. Switch to Conduit Takeoff anyway?`
+        : false;
+    },
     qat: [
       'tray.export-mapping',
       'tray.batch-undo',

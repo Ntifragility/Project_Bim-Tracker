@@ -50,6 +50,27 @@ export function resolveModuleSwitchUrl(
 }
 
 /**
+ * Queries an optional `hasUnsavedWork(ctx)` hook on `def` or `ctx` before switching modules.
+ * Returns a confirmation message string if dirty, or null if clean.
+ */
+export function getUnsavedWorkMessage(def, ctx) {
+  const fn =
+    typeof def?.hasUnsavedWork === 'function'
+      ? def.hasUnsavedWork
+      : typeof ctx?.hasUnsavedWork === 'function'
+        ? ctx.hasUnsavedWork
+        : null;
+  if (!fn) return null;
+  try {
+    const res = fn(ctx);
+    if (!res) return null;
+    return typeof res === 'string' ? res : 'You have unsaved work. Switch module anyway?';
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Creates and mounts a Revit-style ribbon inside host element.
  *
  * @param {HTMLElement} host
@@ -264,6 +285,11 @@ export function createRibbon(host, def, ctx) {
         link.href = resolveModuleSwitchUrl(mod.id, winObj?.location);
         link.title = `Switch to ${mod.label}`;
         link.addEventListener('click', (e) => {
+          const warnMsg = getUnsavedWorkMessage(def, ctx);
+          if (warnMsg && typeof winObj?.confirm === 'function' && !winObj.confirm(warnMsg)) {
+            e.preventDefault();
+            return;
+          }
           const activeBundleUrl = ctx?.api?.chunkedPanel?.manager?.getState?.()?.bundleUrl || null;
           const dest = resolveModuleSwitchUrl(mod.id, winObj?.location, { bundleUrl: activeBundleUrl });
           link.href = dest;
