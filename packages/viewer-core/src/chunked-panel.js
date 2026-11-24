@@ -8,6 +8,7 @@ import {
   createChunkedModelManager,
 } from "./chunked-loader.js";
 import { createBundleCache } from "./bundle-cache.js";
+import { createZoneGridOverlay } from "./zone-grid-overlay.js";
 
 const RECENT_URLS_STORAGE_KEY = "covillaf:recentBundleUrls";
 
@@ -41,6 +42,14 @@ export function mountChunkedBundlePanel(container, { engine, onStatus = null, on
 
   const manager = createChunkedModelManager({ engine });
   const sharedCache = createBundleCache();
+  const zoneOverlay = createZoneGridOverlay({
+    engine,
+    manager,
+    container,
+    onToggleZone: ({ chunkName, loaded }) => {
+      onStatus?.(loaded ? `Pinned zone ${chunkName} from 3D grid.` : `Unloaded zone ${chunkName} from 3D grid.`);
+    },
+  });
   let sessionCacheHits = 0;
 
   const host = document.createElement("div");
@@ -186,6 +195,33 @@ export function mountChunkedBundlePanel(container, { engine, onStatus = null, on
       topRow.appendChild(autoLabel);
       topRow.appendChild(autoBtn);
       autoBar.appendChild(topRow);
+
+      // 3D Zone Grid overlay toggle (OFF by default)
+      const gridRow = document.createElement("div");
+      gridRow.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:2px;";
+
+      const gridLabel = document.createElement("span");
+      gridLabel.style.cssText = "font-size:11px;color:#cbd5e1;";
+      gridLabel.textContent = "3D Zone Grid";
+      gridLabel.title = "Show clickable floor outlines and A1/B2 labels for each zone (cyan = auto, green = pinned)";
+
+      const gridOn = zoneOverlay.isVisible();
+      const gridBtn = document.createElement("button");
+      gridBtn.type = "button";
+      gridBtn.dataset.testid = "svf2-zonegrid-toggle";
+      gridBtn.textContent = gridOn ? "ON" : "OFF";
+      gridBtn.style.cssText = gridOn
+        ? "background:#16a34a;color:#052e16;border:1px solid #4ade80;border-radius:999px;padding:1px 10px;font-size:10px;font-weight:700;cursor:pointer;"
+        : "background:#1e293b;color:#94a3b8;border:1px solid #475569;border-radius:999px;padding:1px 10px;font-size:10px;font-weight:700;cursor:pointer;";
+      gridBtn.addEventListener("click", () => {
+        const next = zoneOverlay.toggle();
+        onStatus?.(next ? "3D Zone Grid ON — click any floor box to pin or unload that zone." : "3D Zone Grid OFF.");
+        render(manager.getState());
+      });
+
+      gridRow.appendChild(gridLabel);
+      gridRow.appendChild(gridBtn);
+      autoBar.appendChild(gridRow);
 
       const hint = document.createElement("div");
       hint.style.cssText = "font-size:10px;color:#94a3b8;line-height:1.25;";
@@ -416,6 +452,7 @@ export function mountChunkedBundlePanel(container, { engine, onStatus = null, on
   return {
     manager,
     cache: sharedCache,
+    zoneOverlay,
     openPicker() {
       folderInput.click();
     },
@@ -424,6 +461,7 @@ export function mountChunkedBundlePanel(container, { engine, onStatus = null, on
     },
     openBundleFromUrl,
     dispose() {
+      zoneOverlay.dispose();
       manager.closeBundle();
       host.remove();
     },

@@ -45,4 +45,5 @@ export {
   createChunkedModelManager,
 } from "./chunked-loader.js";
 export { mountChunkedBundlePanel, showDesktopCompilerModal } from "./chunked-panel.js";
+export { computeZoneFloorRects, createZoneGridOverlay } from "./zone-grid-overlay.js";
 export { mountPerfHud } from "./perf-hud.js";
