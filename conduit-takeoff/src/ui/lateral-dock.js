@@ -187,9 +187,14 @@ export function createLateralDock({ state, els, api }) {
           }
         }
 
-        // 4. Identity Data: Comments
+        // 4. Identity Data: Tag & Comments
+        if (committedChanges['Tag'] !== undefined && run) {
+          run.tag = String(committedChanges['Tag'] || '').trim();
+          state.hasUnsavedChanges = true;
+        }
         if (committedChanges['Comments'] !== undefined && run) {
           run.comments = committedChanges['Comments'];
+          state.hasUnsavedChanges = true;
         }
 
         // 5. Dimensions: Trade Size
@@ -300,6 +305,7 @@ export function createLateralDock({ state, els, api }) {
             { name: 'NEC Standards', value: 'NEC 358.24, 358.26, 314.28, 358.30', readonly: true },
           ],
           'Identity Data': [
+            { name: 'Tag', value: run.tag || run.name || `Run ${run.id}`, type: 'text' },
             { name: 'Run ID', value: run.id, readonly: true },
             { name: 'System Type', value: run.system || els.topSystemSelect?.value || 'Power', options: ['Power', 'Lighting', 'Controls', 'Fire Alarm', 'Low Voltage'] },
             { name: 'Comments', value: run.comments || '', type: 'text' },
