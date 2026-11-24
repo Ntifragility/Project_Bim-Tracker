@@ -33,7 +33,10 @@ export {
   collectWorldTrianglesFromObject,
   extractItemWorldTriangles,
 } from "./min-distance-solver.js";
+export { createBundleCache } from "./bundle-cache.js";
 export {
+  normalizeBundleBaseUrl,
+  createHttpBundleTransport,
   createLocalFolderTransport,
   validateBundleManifest,
   chunkBboxToBox3,

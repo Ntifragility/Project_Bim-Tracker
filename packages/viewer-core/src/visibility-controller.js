@@ -523,6 +523,19 @@ export function createVisibilityController({
     },
   };
 
+  visibility.recomputeVisibility = recomputeVisibility;
+  visibility.clearModelState = (modelId) => {
+    if (!modelId) return;
+    hiddenIfcMap.delete(modelId);
+    isolatedIfcMap.delete(modelId);
+    try {
+      if (highlighter?.selection?.select && modelId in highlighter.selection.select) {
+        delete highlighter.selection.select[modelId];
+      }
+    } catch { /* noop */ }
+    notifyAll();
+  };
+
   return {
     visibility,
     isolation,

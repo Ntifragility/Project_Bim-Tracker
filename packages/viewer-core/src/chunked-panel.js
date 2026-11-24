@@ -2,18 +2,46 @@
 // Shared SVF2-Lite Chunked Bundle UI panel (works identically in Conduit Takeoff & Cable Tray Viewer).
 // Zero regression to single-file .frag / .ifc workflows.
 
-import { createLocalFolderTransport, createChunkedModelManager } from "./chunked-loader.js";
+import {
+  createLocalFolderTransport,
+  createHttpBundleTransport,
+  createChunkedModelManager,
+} from "./chunked-loader.js";
+import { createBundleCache } from "./bundle-cache.js";
+
+const RECENT_URLS_STORAGE_KEY = "covillaf:recentBundleUrls";
+
+function loadRecentBundleUrls() {
+  try {
+    const raw = localStorage.getItem(RECENT_URLS_STORAGE_KEY);
+    const arr = JSON.parse(raw || "[]");
+    return Array.isArray(arr) ? arr.filter((u) => typeof u === "string" && u.trim()) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRecentBundleUrl(url) {
+  try {
+    const clean = String(url || "").trim();
+    if (!clean) return;
+    const prev = loadRecentBundleUrls().filter((u) => u !== clean);
+    localStorage.setItem(RECENT_URLS_STORAGE_KEY, JSON.stringify([clean, ...prev].slice(0, 6)));
+  } catch { /* noop */ }
+}
 
 function fmtMb(bytes) {
   const mb = (Number(bytes) || 0) / (1024 * 1024);
   return mb < 1 ? `${(mb * 1024).toFixed(0)} KB` : `${mb.toFixed(1)} MB`;
 }
 
-export function mountChunkedBundlePanel(container, { engine, onStatus = null } = {}) {
+export function mountChunkedBundlePanel(container, { engine, onStatus = null, onBundleOpened = null } = {}) {
   if (!container || typeof document === "undefined" || !engine) return null;
   if (container.querySelector("#svf2-chunk-host")) return null;
 
   const manager = createChunkedModelManager({ engine });
+  const sharedCache = createBundleCache();
+  let sessionCacheHits = 0;
 
   const host = document.createElement("div");
   host.id = "svf2-chunk-host";
@@ -52,24 +80,43 @@ export function mountChunkedBundlePanel(container, { engine, onStatus = null } =
     header.innerHTML = "";
     if (!st.active) {
       body.style.display = "none";
+      const btnRow = document.createElement("div");
+      btnRow.style.cssText = "display:flex;gap:6px;width:100%;";
+
       const btnOpen = document.createElement("button");
       btnOpen.type = "button";
-      btnOpen.textContent = "📂 Open Chunked Bundle";
-      btnOpen.title = "Open a .fragbundle folder (local or OneDrive/SharePoint synced) to stream floors on demand";
+      btnOpen.textContent = "Open Bundle";
+      btnOpen.title = "Open a local or OneDrive-synced .fragbundle folder";
       btnOpen.style.cssText =
-        "width:100%;background:#0ea5e9;color:#082f49;border:none;border-radius:5px;" +
+        "flex:1;background:#0284c7;color:#f8fafc;border:none;border-radius:5px;" +
         "padding:5px 10px;font-weight:600;font-size:12px;cursor:pointer;";
       btnOpen.addEventListener("click", () => folderInput.click());
-      header.appendChild(btnOpen);
+
+      const btnUrl = document.createElement("button");
+      btnUrl.type = "button";
+      btnUrl.textContent = "Open URL";
+      btnUrl.title = "Stream a .fragbundle hosted on Cloudflare R2, S3, SharePoint, or HTTP (with IndexedDB cache)";
+      btnUrl.style.cssText =
+        "background:#1e293b;color:#e2e8f0;border:1px solid #475569;border-radius:5px;" +
+        "padding:5px 10px;font-weight:600;font-size:12px;cursor:pointer;";
+      btnUrl.addEventListener("click", () => showOpenUrlModal());
+
+      btnRow.appendChild(btnOpen);
+      btnRow.appendChild(btnUrl);
+      header.appendChild(btnRow);
       return;
     }
 
     const titleWrap = document.createElement("div");
     titleWrap.style.cssText = "min-width:0;flex:1;";
+    const cacheTag =
+      st.transportKind === "http-url"
+        ? ` · Cloud${sessionCacheHits > 0 ? ` (${sessionCacheHits} cached)` : ""}`
+        : "";
     titleWrap.innerHTML =
       `<div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${st.manifest.sourceName || "Bundle"}">` +
-      `📦 ${st.manifest.sourceName || "Chunked Bundle"}</div>` +
-      `<div style="font-size:10px;opacity:0.8;">Loaded: ${st.loadedCount}/${st.totalCount} (${fmtMb(st.loadedCompressedBytes)} / ${fmtMb(st.totalCompressedBytes)})</div>`;
+      `${st.manifest.sourceName || "Chunked Bundle"}</div>` +
+      `<div style="font-size:10px;opacity:0.8;">Loaded: ${st.loadedCount}/${st.totalCount} (${fmtMb(st.loadedCompressedBytes)} / ${fmtMb(st.totalCompressedBytes)})${cacheTag}</div>`;
 
     const actions = document.createElement("div");
     actions.style.cssText = "display:flex;gap:4px;";
@@ -226,24 +273,124 @@ export function mountChunkedBundlePanel(container, { engine, onStatus = null } =
     }
   }
 
+  async function openWithTransport(transport) {
+    sessionCacheHits = 0;
+    const { manifest } = await manager.openBundle(transport);
+    collapsed = false;
+    onBundleOpened?.({ manifest, transport, manager });
+    onStatus?.(`Opened bundle '${manifest.sourceName}' (${manifest.chunks.length} chunks). Loading first chunk…`);
+    if (manifest.chunks.length > 0) {
+      await manager.loadChunk(manifest.chunks[0].id);
+      if (manifest.chunks.length > 1) {
+        await manager.setAutoStream(true);
+        onStatus?.(`Loaded '${manifest.chunks[0].name}' with Auto-Stream ON (nearest zones load automatically).`);
+      } else {
+        onStatus?.(`Loaded '${manifest.chunks[0].name}'.`);
+      }
+    }
+    return manifest;
+  }
+
+  async function openBundleFromUrl(url) {
+    const transport = createHttpBundleTransport(url, {
+      cache: sharedCache,
+      onCacheHit: () => {
+        sessionCacheHits++;
+      },
+    });
+    const manifest = await openWithTransport(transport);
+    saveRecentBundleUrl(transport.baseUrl);
+    render(manager.getState());
+    return manifest;
+  }
+
+  function showOpenUrlModal() {
+    const existing = document.getElementById("svf2-url-modal-backdrop");
+    if (existing) existing.remove();
+    const recent = loadRecentBundleUrls();
+
+    const backdrop = document.createElement("div");
+    backdrop.id = "svf2-url-modal-backdrop";
+    backdrop.style.cssText =
+      "position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;" +
+      "background:rgba(2,6,23,0.72);backdrop-filter:blur(4px);font:13px/1.4 system-ui,sans-serif;color:#e2e8f0;";
+
+    const card = document.createElement("div");
+    card.style.cssText =
+      "width:min(460px,92vw);background:#0f172a;border:1px solid #334155;" +
+      "border-radius:8px;padding:16px 18px;box-shadow:0 16px 40px rgba(0,0,0,0.5);";
+
+    card.innerHTML =
+      `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">` +
+        `<div style="font-size:14px;font-weight:600;color:#f8fafc;">Open Cloud Bundle URL</div>` +
+        `<button type="button" data-action="close" style="background:transparent;border:none;color:#94a3b8;font-size:15px;cursor:pointer;">✕</button>` +
+      `</div>` +
+      `<p style="margin:0 0 10px;font-size:12px;color:#94a3b8;">Paste a <code>.fragbundle</code> folder URL (Cloudflare R2, S3, or HTTP). Chunks are cached locally in IndexedDB.</p>` +
+      `<input type="url" data-role="url-input" placeholder="https://example.r2.dev/Plant.fragbundle" value="${recent[0] || ""}" style="width:100%;box-sizing:border-box;background:#1e293b;color:#f8fafc;border:1px solid #475569;border-radius:5px;padding:7px 10px;font-size:12px;margin-bottom:10px;" />` +
+      (recent.length > 0
+        ? `<div style="margin-bottom:12px;"><div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">Recent URLs</div><div data-role="recent-list" style="display:flex;flex-direction:column;gap:4px;"></div></div>`
+        : "") +
+      `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">` +
+        `<button type="button" data-action="clear-cache" style="background:transparent;color:#94a3b8;border:1px solid #334155;padding:5px 9px;border-radius:5px;font-size:11px;cursor:pointer;">Clear Cache</button>` +
+        `<div style="display:flex;gap:8px;">` +
+          `<button type="button" data-action="close" style="background:transparent;color:#94a3b8;border:1px solid #334155;padding:6px 10px;border-radius:5px;font-size:12px;cursor:pointer;">Cancel</button>` +
+          `<button type="button" data-action="load" style="background:#0284c7;color:#f8fafc;border:none;font-weight:600;padding:6px 14px;border-radius:5px;font-size:12px;cursor:pointer;">Stream Bundle</button>` +
+        `</div>` +
+      `</div>`;
+
+    const close = () => backdrop.remove();
+    backdrop.addEventListener("click", (e) => { if (e.target === backdrop) close(); });
+    card.querySelectorAll('[data-action="close"]').forEach((b) => b.addEventListener("click", close));
+
+    const input = card.querySelector('[data-role="url-input"]');
+    const recentList = card.querySelector('[data-role="recent-list"]');
+    if (recentList) {
+      for (const u of recent) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = u;
+        btn.style.cssText =
+          "text-align:left;background:#1e293b;color:#cbd5e1;border:1px solid #334155;border-radius:4px;" +
+          "padding:4px 8px;font-size:11px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+        btn.addEventListener("click", () => { input.value = u; });
+        recentList.appendChild(btn);
+      }
+    }
+
+    card.querySelector('[data-action="clear-cache"]')?.addEventListener("click", async () => {
+      await sharedCache.clear();
+      sessionCacheHits = 0;
+      onStatus?.("Cleared local IndexedDB chunk cache.");
+      close();
+    });
+
+    const submit = async () => {
+      const url = input.value.trim();
+      if (!url) return;
+      close();
+      try {
+        await openBundleFromUrl(url);
+      } catch (err) {
+        console.error("[chunked-panel] openBundleFromUrl error:", err);
+        onStatus?.(`Cloud bundle error: ${err?.message || err}`);
+        alert(`Could not open cloud bundle: ${err?.message || err}`);
+      }
+    };
+    card.querySelector('[data-action="load"]')?.addEventListener("click", submit);
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
+
+    backdrop.appendChild(card);
+    document.body.appendChild(backdrop);
+    input.focus();
+  }
+
   folderInput.addEventListener("change", async (e) => {
     const files = Array.from(e.target.files || []);
     e.target.value = "";
     if (files.length === 0) return;
     try {
       const transport = createLocalFolderTransport(files);
-      const { manifest } = await manager.openBundle(transport);
-      collapsed = false;
-      onStatus?.(`Opened chunked bundle '${manifest.sourceName}' (${manifest.chunks.length} chunks). Loading first chunk…`);
-      if (manifest.chunks.length > 0) {
-        await manager.loadChunk(manifest.chunks[0].id);
-        if (manifest.chunks.length > 1) {
-          await manager.setAutoStream(true);
-          onStatus?.(`Loaded '${manifest.chunks[0].name}' with Auto-Stream ON (nearest zones load automatically).`);
-        } else {
-          onStatus?.(`Loaded '${manifest.chunks[0].name}'.`);
-        }
-      }
+      await openWithTransport(transport);
     } catch (err) {
       console.error("[chunked-panel] openBundle error:", err);
       onStatus?.(`Bundle error: ${err?.message || err}`);
@@ -255,11 +402,27 @@ export function mountChunkedBundlePanel(container, { engine, onStatus = null } =
   render(manager.getState());
   container.appendChild(host);
 
+  // Support zero-click deep links: ?bundle=https://.../Plant.fragbundle
+  try {
+    const bundleParam = new URLSearchParams(window.location.search).get("bundle");
+    if (bundleParam) {
+      openBundleFromUrl(bundleParam).catch((err) => {
+        console.error("[chunked-panel] deep-link ?bundle= error:", err);
+        onStatus?.(`Deep-link bundle error: ${err?.message || err}`);
+      });
+    }
+  } catch { /* noop */ }
+
   return {
     manager,
+    cache: sharedCache,
     openPicker() {
       folderInput.click();
     },
+    openUrlModal() {
+      showOpenUrlModal();
+    },
+    openBundleFromUrl,
     dispose() {
       manager.closeBundle();
       host.remove();

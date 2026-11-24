@@ -1,11 +1,14 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  normalizeBundleBaseUrl,
+  createHttpBundleTransport,
   createLocalFolderTransport,
   createChunkedModelManager,
   selectChunksForCamera,
   isPrincipalChunk,
 } from "../src/chunked-loader.js";
+import { createBundleCache } from "../src/bundle-cache.js";
 
 describe("SVF2-Lite Chunked .frag Bundle Loader", () => {
   function makeFakeFile(name, content) {
@@ -234,5 +237,124 @@ describe("SVF2-Lite Chunked .frag Bundle Loader", () => {
     assert.equal(st.autoStreamEnabled, false);
     assert.equal(st.chunks.find((c) => c.id === "principal-structure").loaded, true);
     assert.equal(st.chunks.find((c) => c.id === "zone-a3").loaded, false);
+  });
+
+  it("HTTP bundle transport caches chunks in bundleCache and skips repeat network fetches", async () => {
+    assert.equal(
+      normalizeBundleBaseUrl("https://cdn.example.com/PlantA.fragbundle/manifest.json"),
+      "https://cdn.example.com/PlantA.fragbundle",
+    );
+    assert.equal(
+      normalizeBundleBaseUrl("https://cdn.example.com/PlantA.fragbundle/"),
+      "https://cdn.example.com/PlantA.fragbundle",
+    );
+
+    const manifestJson = JSON.stringify({
+      version: 1,
+      format: "fragbundle",
+      sourceName: "CloudPlant.ifc",
+      splitMode: "spatial",
+      chunks: [
+        { id: "principal", name: "Principal Structure", file: "00_Principal.frag", compressedBytes: 4, bbox: { min: [0, 0, 0], max: [10, 10, 10] } },
+      ],
+    });
+    const chunkPayload = new Uint8Array([0x78, 0x9c, 0xaa, 0xbb]);
+    const fetchedUrls = [];
+    const fakeFetch = async (url) => {
+      fetchedUrls.push(url);
+      if (url.endsWith("manifest.json")) {
+        return { ok: true, status: 200, async text() { return manifestJson; } };
+      }
+      if (url.endsWith("00_Principal.frag")) {
+        return {
+          ok: true,
+          status: 200,
+          async arrayBuffer() { return chunkPayload.buffer.slice(0); },
+        };
+      }
+      return { ok: false, status: 404 };
+    };
+
+    const cache = createBundleCache({ useIndexedDb: false, maxEntries: 8 });
+    let cacheHits = 0;
+    const transport = createHttpBundleTransport("https://cdn.example.com/PlantA.fragbundle/", {
+      fetchImpl: fakeFetch,
+      cache,
+      onCacheHit: () => { cacheHits++; },
+    });
+
+    const m = await transport.readManifest();
+    assert.equal(m.sourceName, "CloudPlant.ifc");
+
+    // First chunk fetch hits network and populates cache
+    const bytes1 = await transport.readChunkBytes("00_Principal.frag");
+    assert.deepEqual(Array.from(bytes1), [0x78, 0x9c, 0xaa, 0xbb]);
+    assert.equal(fetchedUrls.length, 2);
+    assert.equal(cacheHits, 0);
+
+    // Second chunk fetch hits cache with zero extra network requests
+    const bytes2 = await transport.readChunkBytes("00_Principal.frag");
+    assert.deepEqual(Array.from(bytes2), [0x78, 0x9c, 0xaa, 0xbb]);
+    assert.equal(fetchedUrls.length, 2);
+    assert.equal(cacheHits, 1);
+
+    const st = await cache.stats();
+    assert.equal(st.entries, 2);
+    await cache.clear();
+    assert.equal((await cache.stats()).entries, 0);
+  });
+
+  it("syncs Section clipping, Fragments raycast update, and Isolation when chunks stream in/out", async () => {
+    const manifest = {
+      version: 1,
+      format: "fragbundle",
+      sourceName: "SyncPlant.ifc",
+      splitMode: "spatial",
+      chunks: [
+        { id: "principal", name: "Principal", file: "00_Principal.frag", compressedBytes: 10, bbox: { min: [0, 0, 0], max: [10, 10, 10] } },
+      ],
+    };
+    const transport = createLocalFolderTransport([
+      makeFakeFile("manifest.json", JSON.stringify(manifest)),
+      makeFakeFile("00_Principal.frag", new Uint8Array([1, 2, 3])),
+    ]);
+
+    const events = [];
+    const fakeEngine = {
+      world: { scene: { three: { children: [], add() {}, remove() {} } } },
+      fragments: {
+        core: {
+          update(force) { events.push(`fragments.update:${force}`); },
+          async disposeModel(id) { events.push(`dispose:${id}`); },
+        },
+      },
+      section: {
+        registerClippedObject(id) { events.push(`section.register:${id}`); },
+        unregisterClippedObject() { events.push("section.unregister"); },
+        syncClipping() { events.push("section.syncClipping"); },
+      },
+      isolation: {
+        isIsolated() { return true; },
+      },
+      visibility: {
+        async recomputeVisibility() { events.push("visibility.recompute"); },
+        clearModelState(id) { events.push(`visibility.clear:${id}`); },
+      },
+      focusOnBox() {},
+      async loadFrag(_bytes, modelId) { return { object: { name: modelId } }; },
+    };
+
+    const mgr = createChunkedModelManager({ engine: fakeEngine });
+    await mgr.openBundle(transport);
+    await mgr.loadChunk("principal");
+
+    assert.ok(events.some((e) => e.startsWith("section.register:chunk::")));
+    assert.ok(events.includes("section.syncClipping"));
+    assert.ok(events.includes("fragments.update:true"));
+    assert.ok(events.includes("visibility.recompute"));
+
+    await mgr.unloadChunk("principal");
+    assert.ok(events.includes("section.unregister"));
+    assert.ok(events.some((e) => e.startsWith("visibility.clear:chunk::")));
   });
 });

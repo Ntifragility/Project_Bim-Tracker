@@ -445,13 +445,23 @@ export function createViewerChrome({ state, els, api }) {
       els.viewerContainer.appendChild(pill);
     }
 
-    // SVF2-Lite Chunked Bundle Panel (local / OneDrive-synced .fragbundle folder)
+    // SVF2-Lite Chunked Bundle Panel (local / OneDrive-synced folder OR cloud HTTP URL + IndexedDB cache)
     if (els.viewerContainer && engine) {
       api.chunkedPanel = mountChunkedBundlePanel(els.viewerContainer, {
         engine,
         onStatus: (msg) => {
           if (els.statusText) els.statusText.textContent = msg;
           ribbonApi?.setStatus?.('status-text', msg);
+        },
+        onBundleOpened: ({ manifest, transport }) => {
+          state.sourceModel.name = manifest.sourceName || 'Bundle';
+          state.sourceModel.size = Number(manifest.totalCompressedBytes) || 0;
+          state.sourceModel.schema = 'IFC4';
+          state.sourceModel.bundleUrl = transport?.baseUrl || null;
+          state.sourceModel.splitMode = manifest.splitMode || null;
+          if (els.modelInfo) els.modelInfo.hidden = false;
+          if (els.modelName) els.modelName.textContent = state.sourceModel.name;
+          if (els.modelSchema) els.modelSchema.textContent = `Bundle (${manifest.chunks?.length || 0} chunks)`;
         },
       });
       api.perfHud = mountPerfHud(els.viewerContainer, {

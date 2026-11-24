@@ -4,6 +4,90 @@
 // cloud transports (Cloudflare R2 / SharePoint / Google Drive) plug into the exact same interface.
 
 import * as THREE from "three";
+import { createBundleCache } from "./bundle-cache.js";
+
+/**
+ * Normalizes a cloud/HTTP .fragbundle URL (accepts folder URL with or without trailing slash,
+ * or direct manifest.json URL) into a clean base URL without trailing slash.
+ */
+export function normalizeBundleBaseUrl(rawUrl) {
+  const trimmed = String(rawUrl || "").trim();
+  if (!trimmed) {
+    throw new Error("Bundle URL cannot be empty.");
+  }
+  const stripped = trimmed.replace(/\/manifest\.json(\?.*)?$/i, "").replace(/\/+$/, "");
+  return stripped;
+}
+
+/**
+ * HTTP / Cloud URL transport for .fragbundle folders hosted on Cloudflare R2, S3,
+ * SharePoint/OneDrive CORS links, or any static web server, with automatic IndexedDB caching.
+ */
+export function createHttpBundleTransport(
+  bundleUrl,
+  {
+    fetchImpl = typeof fetch === "function" ? fetch.bind(globalThis) : null,
+    cache = createBundleCache(),
+    onCacheHit = null,
+    headers = undefined,
+  } = {},
+) {
+  const baseUrl = normalizeBundleBaseUrl(bundleUrl);
+  if (typeof fetchImpl !== "function") {
+    throw new Error("fetch API is unavailable for HTTP bundle transport.");
+  }
+
+  return {
+    kind: "http-url",
+    baseUrl,
+    cache,
+    async readManifest() {
+      const manifestUrl = `${baseUrl}/manifest.json`;
+      const cacheKey = `${baseUrl}::manifest.json`;
+      try {
+        const res = await fetchImpl(manifestUrl, { cache: "no-cache", headers });
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status} fetching ${manifestUrl}`);
+        }
+        const text = await res.text();
+        if (cache) {
+          try { await cache.put(cacheKey, new TextEncoder().encode(text)); } catch { /* noop */ }
+        }
+        return JSON.parse(text);
+      } catch (err) {
+        if (cache) {
+          const cached = await cache.get(cacheKey);
+          if (cached) {
+            onCacheHit?.("manifest.json", cached.byteLength);
+            return JSON.parse(new TextDecoder().decode(cached));
+          }
+        }
+        throw err;
+      }
+    },
+    async readChunkBytes(filename) {
+      const cleanName = String(filename || "").replace(/^\/+/, "");
+      const cacheKey = `${baseUrl}::${cleanName}`;
+      if (cache) {
+        const cached = await cache.get(cacheKey);
+        if (cached && cached.byteLength > 0) {
+          onCacheHit?.(cleanName, cached.byteLength);
+          return cached;
+        }
+      }
+      const chunkUrl = `${baseUrl}/${encodeURI(cleanName)}`;
+      const res = await fetchImpl(chunkUrl, { headers });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status} fetching chunk '${cleanName}'`);
+      }
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      if (cache) {
+        cache.put(cacheKey, bytes).catch(() => {});
+      }
+      return bytes;
+    },
+  };
+}
 
 /**
  * Local / OneDrive-synced folder transport from <input webkitdirectory> or dropped File[].
@@ -260,6 +344,8 @@ export function createChunkedModelManager({
     return {
       active: Boolean(activeManifest),
       manifest: activeManifest,
+      transportKind: activeTransport?.kind || null,
+      bundleUrl: activeTransport?.baseUrl || null,
       chunks,
       loadedCount: loadedChunks.size,
       totalCount: chunks.length,
@@ -282,9 +368,13 @@ export function createChunkedModelManager({
   async function disposeLoadedChunk(entry) {
     const { model, modelId } = entry;
     const obj = model?.object || model;
-    if (obj && engine?.world?.scene?.three) {
-      try { engine.world.scene.three.remove(obj); } catch { /* noop */ }
+    if (obj) {
+      try { engine?.section?.unregisterClippedObject?.(obj); } catch { /* noop */ }
+      if (engine?.world?.scene?.three) {
+        try { engine.world.scene.three.remove(obj); } catch { /* noop */ }
+      }
     }
+    try { engine?.visibility?.clearModelState?.(modelId); } catch { /* noop */ }
     try {
       if (typeof engine?.fragments?.core?.disposeModel === "function") {
         await engine.fragments.core.disposeModel(modelId);
@@ -478,6 +568,15 @@ export function createChunkedModelManager({
       const obj = model.object || model;
       if (obj && engine?.world?.scene?.three && !engine.world.scene.three.children.includes(obj)) {
         engine.world.scene.three.add(obj);
+      }
+      // Dynamic Chunk Sync: keep Section Box/Planes, Raycast/Surface Snapping, and Isolation synced
+      if (obj) {
+        try { engine?.section?.registerClippedObject?.(modelId, obj); } catch { /* noop */ }
+        try { engine?.section?.syncClipping?.(); } catch { /* noop */ }
+      }
+      try { engine?.fragments?.core?.update?.(true); } catch { /* noop */ }
+      if (engine?.isolation?.isIsolated?.() && typeof engine?.visibility?.recomputeVisibility === "function") {
+        try { await engine.visibility.recomputeVisibility(); } catch { /* noop */ }
       }
       loadedChunks.set(chunkId, { model, modelId, chunk });
       if (source === "auto") {
