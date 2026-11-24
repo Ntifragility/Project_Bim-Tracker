@@ -61,16 +61,6 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
   workPlaneGrid.renderOrder = 50;
   overlayGroup.add(workPlaneGrid);
 
-  // XYZ Work Plane Grid Axes Helper (Red = X, Green = Y/Elevation, Blue = Z)
-  const workPlaneAxes = new THREE.AxesHelper(10);
-  workPlaneAxes.name = 'WorkPlaneAxesHelper';
-  workPlaneAxes.position.y = 2.8;
-  workPlaneAxes.renderOrder = 55;
-  workPlaneAxes.material.depthTest = false;
-  workPlaneAxes.material.transparent = true;
-  workPlaneAxes.material.opacity = 0.85;
-  overlayGroup.add(workPlaneAxes);
-
   // XYZ World Origin Axes Helper (Red = X, Green = Y, Blue = Z)
   let worldAxesHelper = engine?.axes?.helper;
   if (!worldAxesHelper) {
@@ -1516,7 +1506,6 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
     set activeElevation(val) {
       activeElevation = Number(val) || 0;
       workPlaneGrid.position.y = activeElevation;
-      workPlaneAxes.position.y = activeElevation;
       updateActiveRunVisuals();
     },
 
@@ -1525,7 +1514,6 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
     },
     set workPlaneVisible(val) {
       workPlaneGrid.visible = Boolean(val);
-      workPlaneAxes.visible = Boolean(val);
     },
 
     get activePoints() {
