@@ -9,6 +9,7 @@ import {
   isPrincipalChunk,
 } from "../src/chunked-loader.js";
 import { createBundleCache } from "../src/bundle-cache.js";
+import { computeZoneFloorRects, createZoneGridOverlay } from "../src/zone-grid-overlay.js";
 
 describe("SVF2-Lite Chunked .frag Bundle Loader", () => {
   function makeFakeFile(name, content) {
@@ -356,5 +357,63 @@ describe("SVF2-Lite Chunked .frag Bundle Loader", () => {
     await mgr.unloadChunk("principal");
     assert.ok(events.includes("section.unregister"));
     assert.ok(events.some((e) => e.startsWith("visibility.clear:chunk::")));
+  });
+
+  it("computeZoneFloorRects & createZoneGridOverlay exclude Principal and toggle cleanly in scene", async () => {
+    const manifest = {
+      version: 1,
+      format: "fragbundle",
+      sourceName: "GridPlant.ifc",
+      splitMode: "spatial",
+      chunks: [
+        { id: "principal", name: "Principal Structure", file: "00_Principal.frag", bbox: { min: [0, 0, 0], max: [60, 20, 60] } },
+        { id: "zone-a1", name: "Zone A1", file: "01_Zone_A1.frag", bbox: { min: [0, 0, 0], max: [30, 15, 30] } },
+        { id: "zone-b2", name: "Zone B2", file: "02_Zone_B2.frag", bbox: { min: [30, 2, 30], max: [60, 15, 60] } },
+      ],
+    };
+
+    const rects = computeZoneFloorRects(manifest.chunks, manifest);
+    assert.equal(rects.length, 2);
+    assert.equal(rects[0].shortLabel, "A1");
+    assert.equal(rects[1].shortLabel, "B2");
+    assert.equal(rects[0].y, rects[1].y);
+
+    const sceneChildren = [];
+    const fakeEngine = {
+      world: {
+        scene: {
+          three: {
+            children: sceneChildren,
+            add(obj) { sceneChildren.push(obj); },
+            remove(obj) {
+              const i = sceneChildren.indexOf(obj);
+              if (i >= 0) sceneChildren.splice(i, 1);
+            },
+          },
+        },
+      },
+      focusOnBox() {},
+      async loadFrag(_bytes, modelId) { return { object: { name: modelId } }; },
+    };
+
+    const transport = createLocalFolderTransport([
+      makeFakeFile("manifest.json", JSON.stringify(manifest)),
+      makeFakeFile("00_Principal.frag", new Uint8Array([1])),
+    ]);
+    const mgr = createChunkedModelManager({ engine: fakeEngine });
+    await mgr.openBundle(transport);
+
+    const overlay = createZoneGridOverlay({ engine: fakeEngine, manager: mgr });
+    assert.equal(overlay.isVisible(), false);
+    assert.equal(sceneChildren.length, 0);
+
+    overlay.toggle();
+    assert.equal(overlay.isVisible(), true);
+    assert.equal(sceneChildren.length, 1);
+    assert.equal(sceneChildren[0].name, "CovillafZoneGridOverlay");
+
+    overlay.dispose();
+    assert.equal(overlay.isVisible(), false);
+    assert.equal(sceneChildren.length, 0);
   });
 });
