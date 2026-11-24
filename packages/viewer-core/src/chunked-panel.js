@@ -83,7 +83,8 @@ export function mountChunkedBundlePanel(container, { engine, onStatus = null, on
   body.style.cssText = "max-height:240px;overflow-y:auto;padding:6px 8px;display:none;";
   host.appendChild(body);
 
-  let collapsed = false;
+  // Start collapsed as a clean 1-line streaming pill (Revizto/NWD style; zero checkboxes on screen by default)
+  let collapsed = true;
 
   function render(st) {
     header.innerHTML = "";
@@ -118,6 +119,7 @@ export function mountChunkedBundlePanel(container, { engine, onStatus = null, on
 
     const titleWrap = document.createElement("div");
     titleWrap.style.cssText = "min-width:0;flex:1;";
+    const streamStatus = st.totalCount > 1 && st.autoStreamEnabled ? "Streaming" : "Loaded";
     const cacheTag =
       st.transportKind === "http-url"
         ? ` · Cloud${sessionCacheHits > 0 ? ` (${sessionCacheHits} cached)` : ""}`
@@ -125,16 +127,16 @@ export function mountChunkedBundlePanel(container, { engine, onStatus = null, on
     titleWrap.innerHTML =
       `<div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${st.manifest.sourceName || "Bundle"}">` +
       `${st.manifest.sourceName || "Chunked Bundle"}</div>` +
-      `<div style="font-size:10px;opacity:0.8;">Loaded: ${st.loadedCount}/${st.totalCount} (${fmtMb(st.loadedCompressedBytes)} / ${fmtMb(st.totalCompressedBytes)})${cacheTag}</div>`;
+      `<div style="font-size:10px;opacity:0.8;">${streamStatus}: ${fmtMb(st.loadedCompressedBytes)} / ${fmtMb(st.totalCompressedBytes)}${cacheTag}</div>`;
 
     const actions = document.createElement("div");
     actions.style.cssText = "display:flex;gap:4px;";
 
     const btnToggle = document.createElement("button");
     btnToggle.type = "button";
-    btnToggle.textContent = collapsed ? "▲" : "▼";
-    btnToggle.title = collapsed ? "Expand chunks" : "Collapse chunks";
-    btnToggle.style.cssText = "background:#1e293b;color:#cbd5e1;border:1px solid #334155;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:10px;";
+    btnToggle.textContent = collapsed ? "⚙" : "▾";
+    btnToggle.title = collapsed ? "Streaming options & zones" : "Hide streaming options";
+    btnToggle.style.cssText = "background:#1e293b;color:#cbd5e1;border:1px solid #334155;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;";
     btnToggle.addEventListener("click", () => {
       collapsed = !collapsed;
       render(manager.getState());
@@ -312,7 +314,7 @@ export function mountChunkedBundlePanel(container, { engine, onStatus = null, on
   async function openWithTransport(transport) {
     sessionCacheHits = 0;
     const { manifest } = await manager.openBundle(transport);
-    collapsed = false;
+    collapsed = true;
     onBundleOpened?.({ manifest, transport, manager });
     onStatus?.(`Opened bundle '${manifest.sourceName}' (${manifest.chunks.length} chunks). Loading first chunk…`);
     if (manifest.chunks.length > 0) {

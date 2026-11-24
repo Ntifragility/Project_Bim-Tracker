@@ -64,6 +64,17 @@ function tradeRadiusFromLabel(sizeLabel) {
   return 0.025;
 }
 
+function parseHexRgb(hexStr) {
+  const clean = String(hexStr || '').trim().replace(/^#/, '');
+  if (!/^[0-9a-fA-F]{6}$/.test(clean)) {
+    return { r: 0.9608, g: 0.6196, b: 0.0431, hex: '#f59e0b' }; // Default Amber
+  }
+  const r = parseInt(clean.slice(0, 2), 16) / 255;
+  const g = parseInt(clean.slice(2, 4), 16) / 255;
+  const b = parseInt(clean.slice(4, 6), 16) / 255;
+  return { r, g, b, hex: `#${clean.toLowerCase()}` };
+}
+
 export function exportOverlayIfc({
   runs = [],
   nodes = {},
@@ -71,6 +82,7 @@ export function exportOverlayIfc({
   projectName = 'Conduit Takeoff Overlay',
   unit = 'METRE',
   toOriginal = null,
+  getRunColor = null,
 }) {
   const schemaUpper = schema.toUpperCase().includes('2X3') ? 'IFC2X3' : 'IFC4';
   const timestamp = formatIfcDate();
@@ -141,11 +153,29 @@ export function exportOverlayIfc({
 
   const assemblyEntityIds = [];
   const systemGroups = new Map(); // systemName -> { members: string[], runCount: number, totalLengthM: number, totalSticks10Ft: number }
+  const styleAssignmentByHex = new Map(); // '#rrggbb' -> psaId (IFCPRESENTATIONSTYLEASSIGNMENT)
   let guidSeq = 10;
 
   const isIfc4 = schemaUpper === 'IFC4';
 
-  const emitSweptPipePart = (partPts, radiusM) => {
+  const getOrCreateStyleAssignment = (hexColor) => {
+    const rgb = parseHexRgb(hexColor);
+    if (styleAssignmentByHex.has(rgb.hex)) {
+      return { psaId: styleAssignmentByHex.get(rgb.hex), hex: rgb.hex };
+    }
+    const colourId = nextId();
+    add(`#${colourId}=IFCCOLOURRGB($,${rgb.r.toFixed(4)},${rgb.g.toFixed(4)},${rgb.b.toFixed(4)});`);
+    const renderingId = nextId();
+    add(`#${renderingId}=IFCSURFACESTYLERENDERING(#${colourId},0.,$,$,$,$,$,$,.NOTDEFINED.);`);
+    const surfStyleId = nextId();
+    add(`#${surfStyleId}=IFCSURFACESTYLE('Conduit_${rgb.hex.slice(1)}',.BOTH.,(#${renderingId}));`);
+    const psaId = nextId();
+    add(`#${psaId}=IFCPRESENTATIONSTYLEASSIGNMENT((#${surfStyleId}));`);
+    styleAssignmentByHex.set(rgb.hex, psaId);
+    return { psaId, hex: rgb.hex };
+  };
+
+  const emitSweptPipePart = (partPts, radiusM, stylePsaId) => {
     const pointIds = [];
     for (const rawPt of partPts) {
       const pt = typeof toOriginal === 'function' ? toOriginal(rawPt) : rawPt;
@@ -158,6 +188,11 @@ export function exportOverlayIfc({
 
     const sweptSolidId = nextId();
     add(`#${sweptSolidId}=IFCSWEPTDISKSOLID(#${polylineId},${radiusM.toFixed(4)},$,0.,$);`);
+
+    if (stylePsaId) {
+      const styledItemId = nextId();
+      add(`#${styledItemId}=IFCSTYLEDITEM(#${sweptSolidId},(#${stylePsaId}),$);`);
+    }
 
     const shapeRepId = nextId();
     add(`#${shapeRepId}=IFCSHAPEREPRESENTATION(#${geomContextId},'Body','SweptSolid',(#${sweptSolidId}));`);
@@ -222,10 +257,19 @@ export function exportOverlayIfc({
     const pPartCountId = nextId();
     add(`#${pPartCountId}=IFCPROPERTYSINGLEVALUE('PartCount',$,IFCINTEGER(${parts.length}),$);`);
 
+    const rawColor =
+      (typeof getRunColor === 'function' ? getRunColor(run) : null) ||
+      run.color ||
+      '#f59e0b';
+    const { psaId: runStylePsaId, hex: runColorHex } = getOrCreateStyleAssignment(rawColor);
+
+    const pColorId = nextId();
+    add(`#${pColorId}=IFCPROPERTYSINGLEVALUE('ColorHex',$,IFCLABEL('${escapeStepStr(runColorHex)}'),$);`);
+
     const runPsetId = nextId();
     add(
       `#${runPsetId}=IFCPROPERTYSET('${makeGuid(guidSeq++)}',#${ownerHistId},'Pset_ConduitRun',$,` +
-      `(#${pRunId},#${pRunNameId},#${pSizeId},#${pSystemId},#${pLenId},#${pTotalLenMId},#${pTotalLenFtId},#${pSticksId},#${pBendDegId},#${pPartCountId}));`
+      `(#${pRunId},#${pRunNameId},#${pSizeId},#${pSystemId},#${pLenId},#${pTotalLenMId},#${pTotalLenFtId},#${pSticksId},#${pBendDegId},#${pPartCountId},#${pColorId}));`
     );
 
     // Parent assembly packaging all segments & elbows of this trace from start to end
@@ -251,8 +295,10 @@ export function exportOverlayIfc({
     let segIdx = 1;
     let fitIdx = 1;
 
+    const runSummaryTag = escapeStepStr(`Total: ${runLenFt.toFixed(2)} ft (${runLenM.toFixed(2)} m)`);
+
     for (const part of parts) {
-      const prodShapeId = emitSweptPipePart(part.points, radiusM);
+      const prodShapeId = emitSweptPipePart(part.points, radiusM, runStylePsaId);
       const partId = nextId();
       const partLenM = polylineLengthM(part.points);
       const partLenFt = partLenM * METRES_TO_FEET;
@@ -260,8 +306,8 @@ export function exportOverlayIfc({
       if (part.kind === 'fitting') {
         const angleLabel = `${Math.round(part.bendAngle || 0)}°`;
         const entityLine = isIfc4
-          ? `#${partId}=IFCCABLECARRIERFITTING('${makeGuid(guidSeq++)}',#${ownerHistId},'${escRunName} - Elbow ${fitIdx++}','${angleLabel} Conduit Bend (${escRunSize})',$,#${wcsId},#${prodShapeId},'${escRunSize}',.BEND.);`
-          : `#${partId}=IFCFLOWFITTING('${makeGuid(guidSeq++)}',#${ownerHistId},'${escRunName} - Elbow ${fitIdx++}','${angleLabel} Conduit Bend (${escRunSize})',$,#${wcsId},#${prodShapeId},'${escRunSize}');`;
+          ? `#${partId}=IFCCABLECARRIERFITTING('${makeGuid(guidSeq++)}',#${ownerHistId},'${escRunName} - Elbow ${fitIdx++}','${angleLabel} Conduit Bend (${escRunSize}) | ${runSummaryTag}',$,#${wcsId},#${prodShapeId},'${escRunSize}',.BEND.);`
+          : `#${partId}=IFCFLOWFITTING('${makeGuid(guidSeq++)}',#${ownerHistId},'${escRunName} - Elbow ${fitIdx++}','${angleLabel} Conduit Bend (${escRunSize}) | ${runSummaryTag}',$,#${wcsId},#${prodShapeId},'${escRunSize}');`;
         add(entityLine);
 
         const pAngleId = nextId();
@@ -278,8 +324,8 @@ export function exportOverlayIfc({
         add(`#${relFitId}=IFCRELDEFINESBYPROPERTIES('${makeGuid(guidSeq++)}',#${ownerHistId},$,$,(#${partId}),#${fitPsetId});`);
       } else {
         const entityLine = isIfc4
-          ? `#${partId}=IFCCABLECARRIERSEGMENT('${makeGuid(guidSeq++)}',#${ownerHistId},'${escRunName} - Seg ${segIdx++}','Conduit Segment (${escRunSize})',$,#${wcsId},#${prodShapeId},'${escRunSize}',.CONDUITSEGMENT.);`
-          : `#${partId}=IFCFLOWSEGMENT('${makeGuid(guidSeq++)}',#${ownerHistId},'${escRunName} - Seg ${segIdx++}','Conduit Segment (${escRunSize})',$,#${wcsId},#${prodShapeId},'${escRunSize}');`;
+          ? `#${partId}=IFCCABLECARRIERSEGMENT('${makeGuid(guidSeq++)}',#${ownerHistId},'${escRunName} - Seg ${segIdx++}','Conduit Segment (${escRunSize}) | ${runSummaryTag}',$,#${wcsId},#${prodShapeId},'${escRunSize}',.CONDUITSEGMENT.);`
+          : `#${partId}=IFCFLOWSEGMENT('${makeGuid(guidSeq++)}',#${ownerHistId},'${escRunName} - Seg ${segIdx++}','Conduit Segment (${escRunSize}) | ${runSummaryTag}',$,#${wcsId},#${prodShapeId},'${escRunSize}');`;
         add(entityLine);
 
         const pSegMId = nextId();

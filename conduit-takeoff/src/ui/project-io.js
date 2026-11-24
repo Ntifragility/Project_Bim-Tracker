@@ -297,6 +297,7 @@ export function createProjectIo({ state, els, engine, api }) {
         nodes: state.network.nodes,
         schema: state.sourceModel.schema || 'IFC4',
         projectName: `${state.sourceModel.name || 'Project'} Conduit Overlay`,
+        getRunColor: (run) => run.color || state.diameterRegistry.getColor(run.size),
         toOriginal: (pt) => {
           if (typeof engine?.coordinates?.toOriginal === 'function') {
             return engine.coordinates.toOriginal(pt);

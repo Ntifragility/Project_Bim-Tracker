@@ -50,7 +50,7 @@ export async function createCovillafEngine(container, { enableHighlighting = tru
   if (grid.three) grid.three.position.y = -0.01;
 
   // 3D XYZ World Coordinate Axes Helper (World Origin: X=Red, Y=Green, Z=Blue)
-  const axesHelper = new THREE.AxesHelper(16);
+  const axesHelper = new THREE.AxesHelper(8);
   axesHelper.name = "CovillafWorldAxesHelper";
   axesHelper.renderOrder = 45;
   if (axesHelper.material) {

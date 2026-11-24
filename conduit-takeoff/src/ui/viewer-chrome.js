@@ -472,6 +472,56 @@ export function createViewerChrome({ state, els, api }) {
       });
     }
 
+    // Inspect clicked Native IFC elements (including re-imported exported conduit traces & Pset_ConduitRun)
+    const unwrapVal = (v) => (v && typeof v === 'object' && 'value' in v ? v.value : v);
+    engine.highlighter?.events?.select?.onHighlight?.add?.(async (modelIdMap) => {
+      try {
+        if (drawingTool.isDrawingMode || state.selectedRunId != null) return;
+        const entries = Object.entries(modelIdMap || {});
+        if (!entries.length) return;
+        const [modelId, idSet] = entries[0];
+        const firstId = idSet instanceof Set ? idSet.values().next().value : Array.isArray(idSet) ? idSet[0] : null;
+        if (firstId == null) return;
+        const model =
+          engine.fragments?.list?.get?.(modelId) ||
+          engine.fragments?.core?.models?.list?.get?.(modelId);
+        if (!model || typeof model.getItemsData !== 'function') return;
+
+        const [itemData] = await model.getItemsData([Number(firstId)], {
+          attributesDefault: true,
+          relations: { IsDefinedBy: { attributes: true, relations: true } },
+        });
+        if (!itemData) return;
+
+        const psets = {};
+        const defs = Array.isArray(itemData.IsDefinedBy) ? itemData.IsDefinedBy : [];
+        for (const pset of defs) {
+          const psetName = String(unwrapVal(pset?.Name) || 'PropertySet');
+          const hasProps = Array.isArray(pset?.HasProperties) ? pset.HasProperties : [];
+          const rows = [];
+          for (const prop of hasProps) {
+            const pName = unwrapVal(prop?.Name);
+            const pVal = unwrapVal(prop?.NominalValue);
+            if (pName != null && pVal != null && String(pVal) !== '') {
+              rows.push({ name: String(pName), value: String(pVal) });
+            }
+          }
+          if (rows.length > 0) psets[psetName] = rows;
+        }
+
+        api.showIfcElementProperties?.({
+          expressId: Number(firstId),
+          name: unwrapVal(itemData.Name) || '',
+          description: unwrapVal(itemData.Description) || '',
+          category: unwrapVal(itemData._category) || '',
+          psets,
+        });
+        api.switchDockTab?.('properties');
+      } catch (err) {
+        console.warn('[Conduit Takeoff] IFC property inspect warning:', err);
+      }
+    });
+
     // Initial render of lateral dock components
     api.updatePropertiesPalette?.();
     api.updateProjectBrowserTree?.();

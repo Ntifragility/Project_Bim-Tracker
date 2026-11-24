@@ -64,7 +64,7 @@ export function createDrawingTool({ engine, commandStack, diameterRegistry, onSt
   // XYZ World Origin Axes Helper (Red = X, Green = Y, Blue = Z)
   let worldAxesHelper = engine?.axes?.helper;
   if (!worldAxesHelper) {
-    worldAxesHelper = new THREE.AxesHelper(16);
+    worldAxesHelper = new THREE.AxesHelper(8);
     worldAxesHelper.name = 'WorldAxesHelper';
     worldAxesHelper.renderOrder = 45;
     worldAxesHelper.material.depthTest = false;

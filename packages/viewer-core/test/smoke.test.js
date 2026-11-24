@@ -132,7 +132,7 @@ test('engine exposes Phase-B APIs (selection, perf, appearanceHistory)', async (
   }
 
   // 3D XYZ world coordinate axes helper contract
-  for (const token of ['CovillafWorldAxesHelper', 'THREE.AxesHelper(16)', 'axes:', 'helper', 'visible', 'toggle()']) {
+  for (const token of ['CovillafWorldAxesHelper', 'THREE.AxesHelper(8)', 'axes:', 'helper', 'visible', 'toggle()']) {
     assert.ok(src.includes(token), `engine.js contains ${token}`);
   }
 
