@@ -128,6 +128,10 @@ export function initPropertiesPanel(ctx, dom, api) {
   }
 
   function refreshSelectedPropertiesTag() {
+    if (ctx.multiSelectionElements && ctx.multiSelectionElements.length > 1) {
+      void displayCombinedProperties(ctx.multiSelectionElements);
+      return;
+    }
     if (!ctx.selectedIfcElement || !ctx._lastRevitPaletteArgs) return;
     if (Number(ctx._lastRevitPaletteArgs.expressId) !== Number(ctx.selectedIfcElement.localId)) return;
     const assignment = api.getAssignmentForElement ? api.getAssignmentForElement(ctx.selectedIfcElement) : null;

@@ -5,6 +5,8 @@ import {
   getDistinctPropertyValues,
   filterTaggedItems,
   buildModelIdMapFromItems,
+  groupItemsByField,
+  toggleItemsInSelectionMap,
 } from '../../../src/tagging/tag-search.js';
 
 describe('Cable Tray Buscador de TAGs (Revizto / Navisworks search & filters)', () => {
@@ -40,4 +42,30 @@ describe('Cable Tray Buscador de TAGs (Revizto / Navisworks search & filters)', 
     const map = buildModelIdMapFromItems(byPlano);
     assert.deepEqual(Array.from(map.m1).sort((a, b) => a - b), [2, 10]);
   });
+
+  it('groups elements by PLANO and SYSTEM TAG and toggles selection map cleanly', () => {
+    const byPlano = groupItemsByField(sample, 'plano');
+    assert.deepEqual(byPlano.map((g) => g.label), ['E-301', 'E-302']);
+    assert.equal(byPlano[0].items.length, 2);
+
+    const bySystem = groupItemsByField(sample, 'systemTag');
+    assert.deepEqual(bySystem.map((g) => g.label), ['PT1.01', '(Unassigned)']);
+    assert.equal(bySystem[0].items.length, 3);
+    assert.equal(bySystem[1].isUnassigned, true);
+
+    // Select E-301 group -> { m1: Set(10, 2) }
+    let sel = toggleItemsInSelectionMap({}, byPlano[0].items, true);
+    assert.deepEqual(Array.from(sel.m1).sort((a, b) => a - b), [2, 10]);
+
+    // Add E-302 group -> { m1: Set(1, 2, 10), m2: Set(50) }
+    sel = toggleItemsInSelectionMap(sel, byPlano[1].items, true);
+    assert.deepEqual(Array.from(sel.m1).sort((a, b) => a - b), [1, 2, 10]);
+    assert.deepEqual(Array.from(sel.m2), [50]);
+
+    // Unselect E-301 group -> only E-302 remains selected
+    sel = toggleItemsInSelectionMap(sel, byPlano[0].items, false);
+    assert.deepEqual(Array.from(sel.m1), [1]);
+    assert.deepEqual(Array.from(sel.m2), [50]);
+  });
 });
+
