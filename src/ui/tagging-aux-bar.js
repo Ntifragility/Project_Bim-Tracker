@@ -46,14 +46,21 @@ export function initTaggingAuxBar(ctx, dom, api) {
   let statusText = 'Click elements in 3D to tag sequentially.';
   const undoStack = []; // Array<{ prevSeq, entries: Array<{ key, previous }> }>
 
+  const mountTarget = document.getElementById('app') || document.body || container;
   const host = document.createElement('div');
   host.id = 'tray-tagging-aux-bar';
   host.style.cssText =
-    'position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:28;' +
-    'display:none;flex-direction:column;gap:4px;max-width:calc(100% - 24px);' +
-    'background:rgba(15,23,42,0.94);color:#e2e8f0;border:1px solid #334155;' +
-    'border-radius:8px;padding:7px 10px;font:12px/1.3 system-ui,-apple-system,sans-serif;' +
-    'box-shadow:0 10px 28px rgba(0,0,0,0.45);backdrop-filter:blur(8px);';
+    'position:fixed;top:154px;left:50%;transform:translateX(-50%);z-index:120;' +
+    'display:none;flex-direction:column;gap:4px;max-width:calc(100vw - 24px);' +
+    'background:rgba(15,23,42,0.96);color:#e2e8f0;border:1px solid #38bdf8;' +
+    'border-radius:8px;padding:8px 12px;font:12px/1.3 system-ui,-apple-system,sans-serif;' +
+    'box-shadow:0 12px 32px rgba(0,0,0,0.55);backdrop-filter:blur(8px);';
+
+  function positionBelowRibbon() {
+    const ribbonEl = document.getElementById('ribbon');
+    const bottom = ribbonEl ? Math.ceil(ribbonEl.getBoundingClientRect().bottom) : 148;
+    host.style.top = `${Math.max(12, bottom + 8)}px`;
+  }
 
   // Stop clicks/wheel inside bar from leaking to Three.js canvas / highlighter
   for (const ev of ['pointerdown', 'pointerup', 'click', 'dblclick', 'wheel', 'contextmenu']) {
@@ -156,7 +163,10 @@ export function initTaggingAuxBar(ctx, dom, api) {
   statusLine.style.cssText = 'font-size:11px;color:#94a3b8;display:flex;justify-content:space-between;gap:12px;';
 
   host.append(row, statusLine);
-  container.appendChild(host);
+  mountTarget.appendChild(host);
+  window.addEventListener('resize', () => {
+    if (isOpen) positionBelowRibbon();
+  });
 
   function getAllExistingTagStrings() {
     const effective = api.getEffectiveTaggedElements?.() || [];
@@ -173,6 +183,7 @@ export function initTaggingAuxBar(ctx, dom, api) {
   }
 
   function syncUi() {
+    if (isOpen) positionBelowRibbon();
     host.style.display = isOpen ? 'flex' : 'none';
     const nextSeq = getNextAvailableSequence({
       prefix,

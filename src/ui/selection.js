@@ -327,11 +327,7 @@ export function initSelection(ctx, dom, api) {
         if (viewportSelection.length > 0) {
           const identities = [];
           for (const selected of viewportSelection) {
-            const modelEntry = ctx.loadedModels.find((entry) =>
-              entry.model?.modelId === selected.modelId ||
-              entry.model?.uuid === selected.modelId ||
-              entry.uuid === selected.modelId
-            );
+            const modelEntry = findLoadedModelEntry(selected.modelId);
             if (!modelEntry || !modelEntry.model) continue;
             try {
               const identity = await readElementIdentity(modelEntry.model, selected.localId, modelEntry.name);
@@ -353,11 +349,7 @@ export function initSelection(ctx, dom, api) {
           const expressIdNum = Number(selectedExpressId);
 
           // Sync viewport selection back to active model state and Loaded Models sidebar list
-          const foundModelEntry = ctx.loadedModels.find((entry) =>
-            entry.model?.modelId === selectedModelId ||
-            entry.model?.uuid === selectedModelId ||
-            entry.uuid === selectedModelId
-          );
+          const foundModelEntry = findLoadedModelEntry(selectedModelId);
 
           if (foundModelEntry && !foundModelEntry.visible) {
             console.debug(`[Selection] Discarded pick on hidden model "${foundModelEntry.name}" (element #${expressIdNum}).`);
@@ -387,12 +379,13 @@ export function initSelection(ctx, dom, api) {
             const matchedIdentity = ctx.multiSelectionElements.find((identity) => identity.localId === expressIdNum);
             if (matchedIdentity) {
               ctx.selectedIfcElement = matchedIdentity;
-              api.onElementSelectedForTagging?.(matchedIdentity, ctx.multiSelectionElements);
             } else {
               ctx.selectedIfcElement = await readElementIdentity(foundModelEntry.model, expressIdNum, foundModelEntry.name);
             }
+            api.onElementSelectedForTagging?.(ctx.selectedIfcElement, ctx.multiSelectionElements);
 
             api.updateTagAssignmentUi();
+      api.taggingAuxBar?.syncUi?.();
             api.refreshLoadedModelsList();
           }
         }
@@ -447,6 +440,7 @@ export function initSelection(ctx, dom, api) {
       ctx.traySelection.clear();
       ctx.routingController.setSelectedElement(null, null);
       api.updateTagAssignmentUi();
+      api.taggingAuxBar?.syncUi?.();
       ctx.autoRotateActive = false;
       if (dom.orbitIndicator) {
         dom.orbitIndicator.style.display = 'none';
