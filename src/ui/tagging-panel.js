@@ -338,6 +338,13 @@ export function initTaggingPanel(ctx, dom, api) {
           elements.delete(key);
           continue;
         }
+        const hasUniqueTag = Boolean(String(assignment.elementTag || assignment.componentId || '').trim());
+        if (!hasUniqueTag) {
+          // Property-only entries (e.g. PLANO / SUB_TIPO assigned before tagging)
+          // must not appear as tagged elements, floating tags, or Hide Tagged targets.
+          elements.delete(key);
+          continue;
+        }
         elements.set(key, { ...assignment, source: 'pending' });
       }
     }

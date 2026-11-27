@@ -527,6 +527,7 @@ export function initTaggingAuxBar(ctx, dom, api) {
       const key = getAssignmentKey(item.modelId, item.localId);
       const prev = ctx.tagAssignments.has(key) ? { ...ctx.tagAssignments.get(key) } : null;
       const existingSaved = api.findLoadedModelEntry?.(item.modelId)?.existingProjectTags?.get(Number(item.localId));
+      const hasCustomProps = Boolean(prev?.plano || prev?.subTipo);
       const applied = existingSaved
         ? {
             modelId: item.modelId,
@@ -535,9 +536,20 @@ export function initTaggingAuxBar(ctx, dom, api) {
             type: item.type || existingSaved.type || '',
             name: item.name || existingSaved.name || '',
             modelName: item.modelName || existingSaved.modelName || '',
+            plano: prev?.plano || '',
+            subTipo: prev?.subTipo || '',
             delete: true,
           }
-        : null;
+        : hasCustomProps
+          ? {
+              ...prev,
+              elementTag: '',
+              componentId: '',
+              systemTag: '',
+              sequenceNumber: '',
+              delete: false,
+            }
+          : null;
       snapshotEntries.push({
         key,
         modelId: item.modelId,
@@ -843,8 +855,11 @@ export function initTaggingAuxBar(ctx, dom, api) {
     if (source === 'viewport' && clickToTagActive && identity && (!multiList || multiList.length <= 1)) {
       const key = getAssignmentKey(identity.modelId, identity.localId);
       const already = ctx.tagAssignments.get(key);
-      if (already && already.delete !== true) {
-        statusText = `Element #${identity.localId} already has tag ${already.elementTag || already.componentId}.`;
+      const existingUniqueTag = already && already.delete !== true
+        ? String(already.elementTag || already.componentId || '').trim()
+        : '';
+      if (existingUniqueTag) {
+        statusText = `Element #${identity.localId} already has tag ${existingUniqueTag}.`;
         syncUi();
         return;
       }
