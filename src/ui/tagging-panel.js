@@ -131,6 +131,7 @@ export function initTaggingPanel(ctx, dom, api) {
       dom.batchSelectionCount.textContent = `${count} selected`;
     }
     if (dom.btnPreviewBatchTags) dom.btnPreviewBatchTags.disabled = selectedKeys.length === 0;
+    api.refreshRibbon?.();
   }
 
   async function getOrderedCurrentSelectionElements() {
@@ -215,6 +216,7 @@ export function initTaggingPanel(ctx, dom, api) {
     }
     dom.batchPreviewPanel.hidden = false;
     dom.btnApplyBatchTags.disabled = hasConflicts && !dom.batchReplaceConflicts.checked;
+    api.refreshRibbon?.();
   }
 
   async function generateBatchPreview(elements) {
@@ -331,9 +333,7 @@ export function initTaggingPanel(ctx, dom, api) {
       }
     }
     for (const [key, assignment] of ctx.tagAssignments) {
-      if (ctx.loadedModels.some((entry) =>
-        entry.model.modelId === assignment.modelId || entry.model.uuid === assignment.modelId
-      )) {
+      if (api.findLoadedModelEntry(assignment.modelId)) {
         if (assignment.delete === true) {
           elements.delete(key);
           continue;
@@ -426,6 +426,7 @@ export function initTaggingPanel(ctx, dom, api) {
     dom.btnExportTaggedIfc.disabled = ctx.tagAssignments.size === 0;
     reconcileSelectionOrder();
     api.renderTraySystemManager();
+    api.refreshRibbon?.();
 
     if (ctx.selectedIfcElement) {
       const existingAssignment = getExistingTrayAssignment(ctx.selectedIfcElement);
@@ -699,7 +700,89 @@ export function initTaggingPanel(ctx, dom, api) {
     });
   }
 
+  function openTaggingSidebar() {
+    if (dom.sidebar?.classList.contains('collapsed')) {
+      dom.sidebar.classList.remove('collapsed');
+      const toggleSpan = dom.btnSidebarToggle?.querySelector('span');
+      if (toggleSpan) toggleSpan.innerText = '◀';
+    }
+    const tagTabBtn = document.querySelector('.sidebar-tab-btn[data-tab-target="tagging"]');
+    tagTabBtn?.click();
+  }
+
+  async function previewBatchTags() {
+    openTaggingSidebar();
+    setTaggingMode('assign');
+    const elements = await getOrderedCurrentSelectionElements();
+    if (!elements.length) {
+      clearBatchPreview('Select one or more IFC elements in 3D first, then click Preview Batch.');
+      api.refreshRibbon?.();
+      return false;
+    }
+    ctx.batchPreviewElements = elements;
+    const ok = await generateBatchPreview(ctx.batchPreviewElements);
+    api.refreshRibbon?.();
+    return ok;
+  }
+
+  async function applyBatchTags() {
+    if (!ctx.batchPreviewAssignments.length) {
+      const ok = await previewBatchTags();
+      if (!ok || !ctx.batchPreviewAssignments.length) return false;
+      const hasConflicts = ctx.batchPreviewAssignments.some((item) => item.conflict);
+      if (hasConflicts && !dom.batchReplaceConflicts?.checked) {
+        setBatchStatus('Conflicts detected — review in sidebar and check "Replace existing" before applying.', 'warning');
+        return false;
+      }
+    }
+    if (dom.btnApplyBatchTags) {
+      dom.btnApplyBatchTags.disabled = false;
+      dom.btnApplyBatchTags.click();
+    }
+    api.refreshRibbon?.();
+    return true;
+  }
+
+  function undoBatchTags() {
+    if (!ctx.lastBatchSnapshot?.length) return false;
+    if (dom.btnUndoBatchTags) {
+      dom.btnUndoBatchTags.disabled = false;
+      dom.btnUndoBatchTags.click();
+    }
+    api.refreshRibbon?.();
+    return true;
+  }
+
+  async function assignCurrentTag() {
+    const selectedElements = ctx.traySelection.size
+      ? Array.from(ctx.traySelection.values())
+      : await api.getCurrentSelectionElements();
+    if (!selectedElements.length) {
+      openTaggingSidebar();
+      setTaggingMode('manage');
+      updateTagAssignmentUi('Select one or more IFC elements in 3D first, then click Assign Tag.', 'warning');
+      return false;
+    }
+    let systemTag = getEnteredSystemTag();
+    if (!systemTag) {
+      const defaultTag = ctx.selectedTraySystemTag || getSystemTag(getBatchScheme()) || 'CT01';
+      const entered = typeof window !== 'undefined'
+        ? window.prompt(`Enter System Tag for ${selectedElements.length} selected element${selectedElements.length === 1 ? '' : 's'}:`, defaultTag)
+        : '';
+      if (!entered || !entered.trim()) return false;
+      systemTag = entered.trim();
+      if (dom.systemTagInput) dom.systemTagInput.value = systemTag;
+    }
+    const ok = await assignElementsToSystem(systemTag, selectedElements);
+    api.refreshRibbon?.();
+    return ok;
+  }
+
   api.getAssignmentForElement = getAssignmentForElement;
+  api.previewBatchTags = previewBatchTags;
+  api.applyBatchTags = applyBatchTags;
+  api.undoBatchTags = undoBatchTags;
+  api.assignCurrentTag = assignCurrentTag;
   api.getExistingProjectTag = getExistingProjectTag;
   api.getExistingTrayAssignment = getExistingTrayAssignment;
   api.getAssignmentSourceLabel = getAssignmentSourceLabel;

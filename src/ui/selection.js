@@ -88,11 +88,27 @@ export function initSelection(ctx, dom, api) {
   }
 
   function findLoadedModelEntry(modelId) {
-    return ctx.loadedModels.find((entry) =>
+    const direct = ctx.loadedModels.find((entry) =>
       entry.model?.modelId === modelId ||
       entry.model?.uuid === modelId ||
       entry.uuid === modelId
-    ) || null;
+    );
+    if (direct) return direct;
+    // Fallback for chunked .fragbundle models loaded via FragmentsManager
+    const fragModel =
+      ctx.fragments?.list?.get?.(modelId) ||
+      ctx.engine?.fragments?.list?.get?.(modelId) ||
+      ctx.engine?.fragments?.core?.models?.list?.get?.(modelId);
+    if (fragModel) {
+      return {
+        uuid: modelId,
+        name: fragModel.name || modelId,
+        model: fragModel,
+        visible: true,
+        existingProjectTags: new Map(),
+      };
+    }
+    return null;
   }
 
   async function getElementsFromModelIdMap(modelIdMap) {
