@@ -48,3 +48,42 @@ export function writeWorkbookBytes(sheetsMap) {
   }
   return XLSX.write(workbook, { type: "array", bookType: "xlsx" });
 }
+
+/**
+ * Builds the clean Cable Tray Excel (.xlsx) workbook bytes:
+ *   Sheet 1 ("Bandejas"): TAG UNICO | ANCHO | LONGITUD
+ *   Sheet 2 ("Detalle"):  Optional BIM audit metadata
+ */
+export function buildTrayScheduleWorkbook(rows = [], detailRows = []) {
+  const workbook = XLSX.utils.book_new();
+  const mainRows = rows.length
+    ? rows.map((r) => ({
+        "TAG UNICO": r.tagUnico ?? r["TAG UNICO"] ?? "",
+        "ANCHO": r.ancho ?? r["ANCHO"] ?? "",
+        "LONGITUD": r.longitud ?? r["LONGITUD"] ?? "",
+      }))
+    : [{ "TAG UNICO": "", "ANCHO": "", "LONGITUD": "" }];
+
+  const wsMain = XLSX.utils.json_to_sheet(mainRows);
+  wsMain["!cols"] = [{ wch: 22 }, { wch: 14 }, { wch: 14 }];
+  XLSX.utils.book_append_sheet(workbook, wsMain, "Bandejas");
+
+  if (Array.isArray(detailRows) && detailRows.length > 0) {
+    const wsDetail = XLSX.utils.json_to_sheet(detailRows);
+    wsDetail["!cols"] = [
+      { wch: 22 }, { wch: 26 }, { wch: 28 }, { wch: 24 }, { wch: 12 }, { wch: 24 },
+    ];
+    XLSX.utils.book_append_sheet(workbook, wsDetail, "Detalle");
+  }
+  return workbook;
+}
+
+export function exportTrayScheduleExcelBytes(rows = [], detailRows = []) {
+  const wb = buildTrayScheduleWorkbook(rows, detailRows);
+  return new Uint8Array(XLSX.write(wb, { type: "array", bookType: "xlsx" }));
+}
+
+export function exportTrayScheduleExcel(rows = [], detailRows = [], fileName = "Bandejas_Tags.xlsx") {
+  const wb = buildTrayScheduleWorkbook(rows, detailRows);
+  XLSX.writeFile(wb, fileName);
+}

@@ -48,9 +48,11 @@ export function initExcelPanel(ctx, dom, api) {
   }
 
   async function readElementDimensions(assignment) {
-    const modelEntry = ctx.loadedModels.find((entry) =>
-      entry.model.modelId === assignment.modelId || entry.model.uuid === assignment.modelId
-    );
+    const modelEntry =
+      api.findLoadedModelEntry?.(assignment.modelId) ||
+      ctx.loadedModels.find((entry) =>
+        entry.model.modelId === assignment.modelId || entry.model.uuid === assignment.modelId
+      );
     if (!modelEntry || typeof modelEntry.model.getItemsData !== 'function') {
       return { Width: '', Height: '', Length: '' };
     }
@@ -66,10 +68,10 @@ export function initExcelPanel(ctx, dom, api) {
       }))?.[0];
     } catch (error) {
       console.warn(`[Mapping Export] Could not read dimensions for element #${assignment.localId}:`, error);
-      return { Width: '', Height: '', Length: '' };
+      data = null;
     }
     const candidates = new Map();
-    collectDimensionCandidates(data, candidates);
+    if (data) collectDimensionCandidates(data, candidates);
     const pick = (...names) => {
       for (const name of names) {
         const value = candidates.get(name);
@@ -77,11 +79,32 @@ export function initExcelPanel(ctx, dom, api) {
       }
       return '';
     };
-    return {
-      Width: pick('width', 'overallwidth', 'traywidth', 'nominalwidth'),
-      Height: pick('height', 'overallheight', 'trayheight', 'nominalheight'),
-      Length: pick('length', 'overalllength', 'traylength', 'segmentlength'),
-    };
+    let width = pick('width', 'overallwidth', 'traywidth', 'nominalwidth', 'ancho');
+    const height = pick('height', 'overallheight', 'trayheight', 'nominalheight', 'alto', 'altura');
+    let length = pick('length', 'overalllength', 'traylength', 'segmentlength', 'longitud', 'largo');
+
+    // 3D Bounding-Box fallback when explicit IFC properties are missing
+    if ((!width || !length) && typeof modelEntry.model.getMergedBox === 'function') {
+      try {
+        const box = await modelEntry.model.getMergedBox([Number(assignment.localId)]);
+        if (box && !box.isEmpty()) {
+          const dx = Math.abs(box.max.x - box.min.x);
+          const dy = Math.abs(box.max.y - box.min.y);
+          const dz = Math.abs(box.max.z - box.min.z);
+          const horiz = [dx, dz].sort((a, b) => b - a);
+          const all = [dx, dy, dz].sort((a, b) => b - a);
+          if (!length && all[0] > 0.001) {
+            length = Number(all[0].toFixed(3));
+          }
+          if (!width && horiz[1] > 0.001) {
+            // Convert metres -> mm for standard tray width (e.g. 0.300 m -> 300)
+            width = Math.round(horiz[1] * 1000);
+          }
+        }
+      } catch { /* ignore bbox errors */ }
+    }
+
+    return { Width: width, Height: height, Length: length };
   }
 
   function updateExcelNavigationUi() {

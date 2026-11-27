@@ -387,6 +387,7 @@ export function initSelection(ctx, dom, api) {
             const matchedIdentity = ctx.multiSelectionElements.find((identity) => identity.localId === expressIdNum);
             if (matchedIdentity) {
               ctx.selectedIfcElement = matchedIdentity;
+              api.onElementSelectedForTagging?.(matchedIdentity, ctx.multiSelectionElements);
             } else {
               ctx.selectedIfcElement = await readElementIdentity(foundModelEntry.model, expressIdNum, foundModelEntry.name);
             }
