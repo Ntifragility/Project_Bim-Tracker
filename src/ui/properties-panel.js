@@ -69,7 +69,12 @@ export function initPropertiesPanel(ctx, dom, api) {
       }
     }
 
-    const systemTag = assignment?.systemTag || existing?.systemTag || '-';
+    const uniqueTag = assignment?.delete
+      ? ''
+      : (assignment?.elementTag || assignment?.componentId || existing?.elementTag || existing?.componentId || '');
+    const systemTag = assignment?.delete
+      ? ''
+      : (assignment?.systemTag || existing?.systemTag || '');
     const service = assignment?.service || 'Power';
     const status = assignment?.status || 'Active';
 
@@ -84,17 +89,18 @@ export function initPropertiesPanel(ctx, dom, api) {
       parameters: {
         'Constraints': [
           { name: 'Reference Level', value: level || 'Level 1', readonly: true },
-          { name: 'Elevation', value: elevation || '2.750 m', readonly: false },
+          { name: 'Elevation', value: elevation || '2.750 m', readonly: true },
         ],
         'Dimensions': [
-          { name: 'Width', value: width || '300 mm', readonly: false },
-          { name: 'Height', value: height || '100 mm', readonly: false },
+          { name: 'Width', value: width || '300 mm', readonly: true },
+          { name: 'Height', value: height || '100 mm', readonly: true },
           { name: 'Length', value: length || '3.048 m', readonly: true },
         ],
         'Electrical': [
-          { name: 'System Tag', value: systemTag, readonly: false },
-          { name: 'Service', value: service, readonly: false },
-          { name: 'Status', value: status, readonly: false },
+          { name: 'Unique Tag', value: uniqueTag, type: 'text', readonly: false },
+          { name: 'System Tag', value: systemTag, type: 'text', readonly: false },
+          { name: 'Service', value: service, readonly: true },
+          { name: 'Status', value: status, readonly: true },
         ],
         'Identity Data': [
           { name: 'Entity', value: typeName || 'IfcElement', readonly: true },
@@ -105,8 +111,30 @@ export function initPropertiesPanel(ctx, dom, api) {
       },
     };
 
+    ctx._lastRevitPaletteArgs = {
+      expressId,
+      typeName,
+      name,
+      globalId,
+      modelName,
+      groups,
+      count,
+    };
     api.propertiesPalette.setElement(paletteData);
   }
+
+  function refreshSelectedPropertiesTag() {
+    if (!ctx.selectedIfcElement || !ctx._lastRevitPaletteArgs) return;
+    if (Number(ctx._lastRevitPaletteArgs.expressId) !== Number(ctx.selectedIfcElement.localId)) return;
+    const assignment = api.getAssignmentForElement ? api.getAssignmentForElement(ctx.selectedIfcElement) : null;
+    const existing = api.findLoadedModelEntry?.(ctx.selectedIfcElement.modelId)?.existingProjectTags?.get(Number(ctx.selectedIfcElement.localId));
+    syncRevitPropertiesPalette({
+      ...ctx._lastRevitPaletteArgs,
+      assignment,
+      existing,
+    });
+  }
+  api.refreshSelectedPropertiesTag = refreshSelectedPropertiesTag;
 
   // Render a single property set group (collapsible <details>)
   function renderPsetGroup(name, entries, isQuantity = false) {

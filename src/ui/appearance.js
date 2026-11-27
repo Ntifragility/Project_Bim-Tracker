@@ -188,6 +188,7 @@ export function initAppearance(ctx, dom, api) {
 
     await ctx.tagLabelManager.setVisible(ctx.isFloatingLabelsActive, ctx.loadedModels);
     if (ctx.isFloatingLabelsActive) await refreshFloatingLabels();
+    api.taggingAuxBar?.syncUi?.();
   }
 
   function setTaggedHighlightColorValue(color) {

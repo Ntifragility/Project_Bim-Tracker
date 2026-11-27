@@ -270,7 +270,20 @@ export function initLateralDock(ctx, dom, api) {
       console.log('[Properties] Edit Type for:', element);
     },
     onApply(pendingChanges, element) {
-      console.log('[Properties] Applying changes:', pendingChanges, element);
+      if (ctx.selectedIfcElement && ('Unique Tag' in pendingChanges || 'System Tag' in pendingChanges)) {
+        const current = api.getAssignmentForElement?.(ctx.selectedIfcElement);
+        const nextUniqueTag = 'Unique Tag' in pendingChanges
+          ? String(pendingChanges['Unique Tag'] ?? '').trim()
+          : (current?.elementTag || current?.componentId || '');
+        const nextSystemTag = 'System Tag' in pendingChanges
+          ? String(pendingChanges['System Tag'] ?? '').trim()
+          : (current?.systemTag || '');
+        api.editElementTag?.(ctx.selectedIfcElement, {
+          elementTag: nextUniqueTag,
+          systemTag: nextSystemTag,
+        });
+        return;
+      }
       if (typeof api.stagePropertyChange === 'function' && element?.id) {
         for (const [key, val] of Object.entries(pendingChanges)) {
           api.stagePropertyChange('BIM_TRACKER_EDIT', key, val);

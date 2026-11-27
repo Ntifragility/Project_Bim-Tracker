@@ -69,6 +69,26 @@ export class TagLabelManager {
     this.markerSignatures = new Map();
     this.cachedElements = [];
     this.isVisible = false;
+    this._refreshSeq = 0;
+  }
+
+  /**
+   * Clear any stale OBF.Marker cluster badges left behind after marker deletions.
+   */
+  clearClusterBadges() {
+    try {
+      if (typeof this.markers?.resetMarkers === 'function') {
+        this.markers.resetMarkers();
+      }
+      if (this.markers?.clusterLabels && typeof this.markers.clusterLabels[Symbol.iterator] === 'function') {
+        for (const cluster of this.markers.clusterLabels) {
+          try { cluster?.label?.dispose?.(); } catch { /* noop */ }
+        }
+        this.markers.clusterLabels.clear?.();
+      }
+    } catch (err) {
+      console.warn('[TagLabelManager] Failed to clear cluster badges:', err);
+    }
   }
 
   /**
@@ -98,6 +118,7 @@ export class TagLabelManager {
    * @param {Array} loadedModels
    */
   async refreshLabels(taggedElements = [], loadedModels = []) {
+    const seq = ++this._refreshSeq;
     this.cachedElements = Array.isArray(taggedElements) ? taggedElements : [];
 
     if (!this.isVisible) {
@@ -134,7 +155,8 @@ export class TagLabelManager {
       }
     }
 
-    // Remove any markers that are no longer tagged
+    // Remove any markers that are no longer tagged or are currently hidden
+    let removedAny = false;
     for (const [key, markerKey] of this.activeMarkers.entries()) {
       if (!neededKeys.has(key)) {
         try {
@@ -144,13 +166,25 @@ export class TagLabelManager {
         }
         this.activeMarkers.delete(key);
         this.markerSignatures.delete(key);
+        removedAny = true;
       }
     }
 
-    if (elementsToCreate.length === 0) return;
+    if (removedAny || this.activeMarkers.size === 0) {
+      // OBF.Marker.delete() does not clear clusterLabels; always clean them up.
+      this.clearClusterBadges();
+    }
+
+    if (elementsToCreate.length === 0) {
+      if (removedAny && this.activeMarkers.size > 0 && this.markers?.autoCluster) {
+        try { this.markers.cluster?.(this.world); } catch { /* noop */ }
+      }
+      return;
+    }
 
     // Create new markers
     for (const { key, elem } of elementsToCreate) {
+      if (seq !== this._refreshSeq || !this.isVisible) return;
       const modelEntry =
         (typeof this.options.findModelEntry === 'function' ? this.options.findModelEntry(elem.modelId) : null) ||
         loadedModels.find(
@@ -160,7 +194,14 @@ export class TagLabelManager {
 
       try {
         const position = await this.getElementPosition(modelEntry.model, elem.localId);
+        if (seq !== this._refreshSeq || !this.isVisible) return;
         if (!position) continue;
+        if (
+          typeof this.options.isElementVisible === 'function' &&
+          !this.options.isElementVisible(elem.modelId, Number(elem.localId))
+        ) {
+          continue;
+        }
 
         const labelDiv = this.createLabelElement(elem);
         const markerKey = this.markers.create(this.world, labelDiv, position);
@@ -171,6 +212,10 @@ export class TagLabelManager {
       } catch (err) {
         console.warn('[TagLabelManager] Failed to create label for', key, err);
       }
+    }
+
+    if (seq === this._refreshSeq && this.activeMarkers.size > 0 && this.markers?.autoCluster) {
+      try { this.markers.cluster?.(this.world); } catch { /* noop */ }
     }
   }
 
@@ -267,9 +312,21 @@ export class TagLabelManager {
       container.appendChild(sub);
     }
 
-    // Interactive pointer handling
+    // Interactive pointer handling: select immediately on primary pointerdown
+    // so CSS2DRenderer frame transforms or minor hand jitter never swallow the click.
+    let lastTapMs = 0;
     container.addEventListener('pointerdown', (e) => {
-      e.stopPropagation(); // Avoid triggering OrbitControls / drag
+      e.stopPropagation(); // Avoid triggering OrbitControls / canvas raycast
+      if (e.button !== 0) return;
+      e.preventDefault();
+      const now = Date.now();
+      const isDoubleTap = now - lastTapMs < 320;
+      lastTapMs = now;
+      if (isDoubleTap && typeof this.options.onDoubleClick === 'function') {
+        this.options.onDoubleClick(elem.modelId, elem.localId, elem, e);
+      } else if (typeof this.options.onClick === 'function') {
+        this.options.onClick(elem.modelId, elem.localId, elem, e);
+      }
     });
 
     container.addEventListener('pointerup', (e) => {
@@ -278,16 +335,10 @@ export class TagLabelManager {
 
     container.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (typeof this.options.onClick === 'function') {
-        this.options.onClick(elem.modelId, elem.localId, elem, e);
-      }
     });
 
     container.addEventListener('dblclick', (e) => {
       e.stopPropagation();
-      if (typeof this.options.onDoubleClick === 'function') {
-        this.options.onDoubleClick(elem.modelId, elem.localId, elem, e);
-      }
     });
 
     return container;
@@ -306,6 +357,7 @@ export class TagLabelManager {
    * Clear all active markers
    */
   clearAll() {
+    this._refreshSeq += 1;
     for (const markerKey of this.activeMarkers.values()) {
       try {
         this.markers.delete(markerKey);
@@ -315,6 +367,7 @@ export class TagLabelManager {
     }
     this.activeMarkers.clear();
     this.markerSignatures.clear();
+    this.clearClusterBadges();
   }
 
   /**

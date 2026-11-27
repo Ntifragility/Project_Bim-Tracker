@@ -103,6 +103,16 @@ export function initEscapeHandler(ctx, dom, api) {
       }
     }
 
+    // Delete / Backspace removes tags from selected elements when Aux Tagging Bar is open
+    if (!event.ctrlKey && !event.metaKey && !event.altKey && (event.key === 'Delete' || event.key === 'Backspace')) {
+      if (isTypingTarget(event.target)) return;
+      if (api.taggingAuxBar?.isOpen?.() && (api.taggingAuxBar?.getSelectedTaggedCount?.() || 0) > 0) {
+        event.preventDefault();
+        api.taggingAuxBar.clearSelectedTags();
+        return;
+      }
+    }
+
     // Revizto-style Hide (Ctrl + H) and Unhide (Ctrl + Shift + H)
     if (event.ctrlKey && event.key.toLowerCase() === 'h') {
       if (isTypingTarget(event.target)) return;
