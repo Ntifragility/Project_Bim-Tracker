@@ -416,6 +416,13 @@ export function createPropertiesPalette(container, options = {}) {
             inputEl.addEventListener('change', () => {
               onInputChange(param.name, inputEl.value, param.value);
             });
+            inputEl.addEventListener('keydown', (e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                onInputChange(param.name, inputEl.value, param.value);
+                if (!applyBtn.disabled) applyBtn.click();
+              }
+            });
 
             valueCol.appendChild(inputEl);
           }

@@ -112,3 +112,74 @@ export function buildModelIdMapFromItems(items = []) {
   }
   return map;
 }
+
+/**
+ * Groups items hierarchically by 'plano', 'systemTag', or 'subTipo' for the Tree Map view.
+ * Naturally sorts group labels with "(Unassigned)" placed last.
+ */
+export function groupItemsByField(items = [], field = 'plano') {
+  const groups = new Map(); // lowerKey -> { key, label, isUnassigned, items }
+
+  for (const item of items || []) {
+    if (!item || item.delete === true) continue;
+    let rawVal = '';
+    if (field === 'systemTag') {
+      rawVal = String(item.systemTag || '').trim();
+      if (!rawVal && (item.elementTag || item.componentId)) {
+        rawVal = String(item.elementTag || item.componentId)
+          .replace(/[.\-_]?\d+$/, '')
+          .replace(/[.\-_]+$/, '')
+          .trim();
+      }
+    } else {
+      rawVal = String(item[field] || '').trim();
+    }
+
+    const isUnassigned = !rawVal;
+    const lowerKey = isUnassigned ? UNASSIGNED_FILTER : rawVal.toLowerCase();
+    if (!groups.has(lowerKey)) {
+      groups.set(lowerKey, {
+        key: lowerKey,
+        label: isUnassigned ? '(Unassigned)' : rawVal,
+        isUnassigned,
+        items: [],
+      });
+    }
+    groups.get(lowerKey).items.push(item);
+  }
+
+  const list = Array.from(groups.values());
+  list.sort((a, b) => {
+    if (a.isUnassigned && !b.isUnassigned) return 1;
+    if (!a.isUnassigned && b.isUnassigned) return -1;
+    return compareNaturalTags(a.label, b.label);
+  });
+  return list;
+}
+
+/**
+ * Pure helper to add or remove a list of items from a modelIdMap (`{ [modelId]: Set<number> }`),
+ * enabling checkbox-based select & unselect in the Classification Tree.
+ */
+export function toggleItemsInSelectionMap(currentMap = {}, items = [], shouldSelect = true) {
+  const next = {};
+  for (const [modelId, ids] of Object.entries(currentMap || {})) {
+    const arr = ids instanceof Set ? Array.from(ids) : Array.isArray(ids) ? ids : [];
+    if (arr.length) next[modelId] = new Set(arr.map(Number));
+  }
+
+  for (const item of items || []) {
+    if (!item?.modelId || item.localId === undefined || item.localId === null) continue;
+    const id = Number(item.localId);
+    if (!Number.isFinite(id)) continue;
+    if (shouldSelect) {
+      if (!next[item.modelId]) next[item.modelId] = new Set();
+      next[item.modelId].add(id);
+    } else if (next[item.modelId]) {
+      next[item.modelId].delete(id);
+      if (next[item.modelId].size === 0) delete next[item.modelId];
+    }
+  }
+  return next;
+}
+

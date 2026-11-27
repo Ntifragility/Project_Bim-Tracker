@@ -131,6 +131,10 @@ export class TagLabelManager {
 
     for (const elem of this.cachedElements) {
       if (!elem.modelId || elem.localId === undefined || elem.localId === null) continue;
+      // Floating tags must ONLY exist for elements with an assigned UNIQUE TAG
+      // (never for PLANO-only, SUB_TIPO-only, or untagged elements).
+      const uniqueTagText = String(elem.elementTag || elem.componentId || '').trim();
+      if (!uniqueTagText) continue;
       if (typeof this.options.isElementVisible === 'function') {
         if (!this.options.isElementVisible(elem.modelId, Number(elem.localId))) {
           continue;

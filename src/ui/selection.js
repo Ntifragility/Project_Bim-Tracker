@@ -327,6 +327,25 @@ export function initSelection(ctx, dom, api) {
     }
   }
 
+  async function applySelectionMap(modelIdMap = {}, { source = 'ui' } = {}) {
+    const cleaned = cloneModelIdMap(modelIdMap);
+    const hasItems = countModelIdMapItems(cleaned) > 0;
+    ctx.pendingSelectionSource = source;
+    try {
+      if (!hasItems) {
+        await ctx.highlighter.clear('select');
+      } else {
+        await ctx.highlighter.highlightByID('select', cleaned, true, false);
+      }
+      return true;
+    } catch (err) {
+      console.warn('[Selection] applySelectionMap failed:', err);
+      return false;
+    } finally {
+      ctx.pendingSelectionSource = null;
+    }
+  }
+
   function wireSelectionEvents() {
     // Bidirectional highlighting: 3D Selection -> Excel Selection & Loaded Models Sync
     ctx.highlighter.events.select.onHighlight.add(async (fragmentMap) => {
@@ -423,6 +442,7 @@ export function initSelection(ctx, dom, api) {
 
             api.updateTagAssignmentUi();
             api.taggingAuxBar?.syncUi?.();
+            api.tagFinder?.refresh?.();
             api.refreshLoadedModelsList();
           }
         }
@@ -478,6 +498,7 @@ export function initSelection(ctx, dom, api) {
       ctx.routingController.setSelectedElement(null, null);
       api.updateTagAssignmentUi();
       api.taggingAuxBar?.syncUi?.();
+      api.tagFinder?.refresh?.();
       ctx.autoRotateActive = false;
       if (dom.orbitIndicator) {
         dom.orbitIndicator.style.display = 'none';
@@ -505,6 +526,7 @@ export function initSelection(ctx, dom, api) {
   api.highlightTrayMembers = highlightTrayMembers;
   api.isolateTrayMembers = isolateTrayMembers;
   api.selectElementFromUi = selectElementFromUi;
+  api.applySelectionMap = applySelectionMap;
 
   return {
     cloneModelIdMap,
