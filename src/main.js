@@ -32,6 +32,7 @@ import { initPropertiesPanel } from './ui/properties-panel.js';
 import { initSelection } from './ui/selection.js';
 import { initAppearance } from './ui/appearance.js';
 import { initTaggingPanel } from './ui/tagging-panel.js';
+import { initTaggingAuxBar } from './ui/tagging-aux-bar.js';
 import { initSystemManager } from './ui/system-manager.js';
 import { initExcelPanel } from './ui/excel-panel.js';
 import { initEditing } from './ui/editing.js';
@@ -101,10 +102,11 @@ export async function initApp() {
   appearance.initTagLabelManager();
   appearance.setSelectionHighlightStyle(ctx.selectionHighlightColor);
 
-  // 5. Tagging workbench (needs appearance update fns).
+  // 5. Tagging workbench + Auxiliary Sequential Tagging Bar (needs appearance update fns).
   const tagging = initTaggingPanel(ctx, dom, api);
   tagging.wireBatchControls();
   tagging.wireAssignmentControls();
+  initTaggingAuxBar(ctx, dom, api);
 
   // 6. System manager (needs tagging + appearance fns).
   const systems = initSystemManager(ctx, dom, api);

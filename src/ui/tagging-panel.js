@@ -331,9 +331,7 @@ export function initTaggingPanel(ctx, dom, api) {
       }
     }
     for (const [key, assignment] of ctx.tagAssignments) {
-      if (ctx.loadedModels.some((entry) =>
-        entry.model.modelId === assignment.modelId || entry.model.uuid === assignment.modelId
-      )) {
+      if (api.findLoadedModelEntry(assignment.modelId)) {
         if (assignment.delete === true) {
           elements.delete(key);
           continue;

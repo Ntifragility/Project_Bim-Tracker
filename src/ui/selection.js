@@ -88,11 +88,26 @@ export function initSelection(ctx, dom, api) {
   }
 
   function findLoadedModelEntry(modelId) {
-    return ctx.loadedModels.find((entry) =>
+    const direct = ctx.loadedModels.find((entry) =>
       entry.model?.modelId === modelId ||
       entry.model?.uuid === modelId ||
       entry.uuid === modelId
-    ) || null;
+    );
+    if (direct) return direct;
+    const fragModel =
+      ctx.fragments?.list?.get?.(modelId) ||
+      ctx.engine?.fragments?.list?.get?.(modelId) ||
+      ctx.engine?.fragments?.core?.models?.list?.get?.(modelId);
+    if (fragModel) {
+      return {
+        uuid: modelId,
+        name: fragModel.name || modelId,
+        model: fragModel,
+        visible: true,
+        existingProjectTags: new Map(),
+      };
+    }
+    return null;
   }
 
   async function getElementsFromModelIdMap(modelIdMap) {
@@ -371,6 +386,7 @@ export function initSelection(ctx, dom, api) {
             const matchedIdentity = ctx.multiSelectionElements.find((identity) => identity.localId === expressIdNum);
             if (matchedIdentity) {
               ctx.selectedIfcElement = matchedIdentity;
+              api.onElementSelectedForTagging?.(matchedIdentity, ctx.multiSelectionElements);
             } else {
               ctx.selectedIfcElement = await readElementIdentity(foundModelEntry.model, expressIdNum, foundModelEntry.name);
             }

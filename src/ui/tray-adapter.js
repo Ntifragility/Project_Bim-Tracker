@@ -361,18 +361,14 @@ export function createTrayRibbonDef(ctx) {
               [
                 {
                   id: 'tray.batch-apply',
-                  label: 'Apply\nBatch',
+                  label: 'Sequence\nTag Bar',
                   icon: 'tag-batch',
                   size: 'big',
                   keytip: 'TA',
-                  tooltip: 'Apply batch tags to selected elements',
-                  enabled: () => {
-                    if (dom.btnApplyBatchTags) return !dom.btnApplyBatchTags.disabled;
-                    return Boolean(ctx.batchPreviewAssignments?.length);
-                  },
+                  tooltip: 'Open Auxiliary Sequential Tagging Bar (Fixed + Variable pattern, Click-to-Tag, Export Excel)',
                   run: () => {
-                    if (typeof api.applyBatchTags === 'function') {
-                      api.applyBatchTags();
+                    if (api.taggingAuxBar) {
+                      api.taggingAuxBar.toggle();
                     } else if (dom.btnApplyBatchTags) {
                       dom.btnApplyBatchTags.click();
                     }
@@ -428,10 +424,10 @@ export function createTrayRibbonDef(ctx) {
                   icon: 'tag',
                   size: 'big',
                   keytip: 'TAS',
-                  tooltip: 'Assign system tag to selected elements',
-                  run: async () => {
-                    if (typeof api.assignCurrentTag === 'function') {
-                      await api.assignCurrentTag();
+                  tooltip: 'Open Auxiliary Sequential Tagging Bar to tag elements on click or in batch',
+                  run: () => {
+                    if (api.taggingAuxBar) {
+                      api.taggingAuxBar.open({ clickMode: true });
                     } else if (dom.btnAssignTag) {
                       dom.btnAssignTag.click();
                     }
