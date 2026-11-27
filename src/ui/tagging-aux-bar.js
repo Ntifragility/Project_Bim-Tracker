@@ -342,6 +342,7 @@ export function initTaggingAuxBar(ctx, dom, api) {
     api.refreshFloatingLabels?.();
     api.refreshSelectedPropertiesTag?.();
     api.refreshRibbon?.();
+    api.sessionAutosave?.scheduleSave?.();
     if (hideTaggedActive) {
       void syncHideTaggedFilterLayer().then(() => {
         try { ctx.highlighter?.clear?.('select'); } catch { /* noop */ }
@@ -379,6 +380,7 @@ export function initTaggingAuxBar(ctx, dom, api) {
     api.refreshFloatingLabels?.();
     api.refreshSelectedPropertiesTag?.();
     api.refreshRibbon?.();
+    api.sessionAutosave?.scheduleSave?.();
 
     if (hideTaggedActive) {
       void syncHideTaggedFilterLayer().then(() => {
@@ -665,6 +667,24 @@ export function initTaggingAuxBar(ctx, dom, api) {
     isHideTaggedActive: () => hideTaggedActive,
     getTaggedCount: () => (api.getEffectiveTaggedElements?.() || []).length,
     getSelectedTaggedCount: () => getSelectedTaggedEntries().length,
+    getPattern: () => ({ prefix, start: currentSeq, digits }),
+    applyPattern(nextPattern) {
+      if (!nextPattern) return;
+      if (typeof nextPattern.prefix === 'string' && nextPattern.prefix.trim()) {
+        prefix = nextPattern.prefix;
+        prefixInput.value = prefix;
+      }
+      if (Number.isFinite(Number(nextPattern.start))) {
+        currentSeq = Math.max(1, Number.parseInt(nextPattern.start, 10) || 1);
+        startInput.value = String(currentSeq);
+      }
+      if (Number.isFinite(Number(nextPattern.digits))) {
+        digits = Math.max(1, Math.min(6, Number.parseInt(nextPattern.digits, 10) || 2));
+        digitsSelect.value = String(digits);
+      }
+      savePattern({ prefix, start: currentSeq, digits });
+      syncUi();
+    },
     syncUi,
   };
 
