@@ -55,7 +55,33 @@ export function createVisibilityController({
 } = {}) {
   const hiddenIfcMap = new Map(); // modelId -> Set<number>
   const isolatedIfcMap = new Map(); // modelId -> Set<number>
+  // Named boolean filter layers (e.g. 'tagged'): layerId -> Map<modelId, Set<number>>
+  const filterLayers = new Map();
   let isolationMode = "none"; // 'none' | 'hard' | 'ghost'
+
+  function isHiddenByMapOrFilter(modelId, numericId) {
+    if (hiddenIfcMap.get(modelId)?.has(numericId)) return true;
+    for (const layerMap of filterLayers.values()) {
+      if (layerMap.get(modelId)?.has(numericId)) return true;
+    }
+    return false;
+  }
+
+  function buildCombinedHiddenIfcMap() {
+    const combined = new Map();
+    for (const [modelId, set] of hiddenIfcMap) {
+      if (set.size > 0) combined.set(modelId, new Set(set));
+    }
+    for (const layerMap of filterLayers.values()) {
+      for (const [modelId, set] of layerMap) {
+        if (!set.size) continue;
+        if (!combined.has(modelId)) combined.set(modelId, new Set());
+        const target = combined.get(modelId);
+        for (const id of set) target.add(id);
+      }
+    }
+    return combined;
+  }
 
   // External adapters (app-owned overlays such as drawn conduit runs):
   // adapter = { getAllIds(), getSelectedIds(), clearSelection(), applyVisibility({ hiddenIds, ghostIds, hardIsolatedIds }) }
@@ -136,6 +162,8 @@ export function createVisibilityController({
   }
 
   async function recomputeVisibility() {
+    const combinedHiddenMap = buildCombinedHiddenIfcMap();
+
     // 1. Apply ghost highlight style on non-isolated IFC items when in 'ghost' mode
     if (highlighter) {
       const wasEnabled = highlighter.enabled;
@@ -158,7 +186,7 @@ export function createVisibilityController({
           if (modelList) {
             for (const [modelId, model] of modelList) {
               const kept = isolatedIfcMap.get(modelId) || new Set();
-              const hidden = hiddenIfcMap.get(modelId) || new Set();
+              const hidden = combinedHiddenMap.get(modelId) || new Set();
               let allIds = [];
               if (typeof model?.getItemsIdsWithGeometry === "function") {
                 try {
@@ -176,7 +204,7 @@ export function createVisibilityController({
           } else if (fragments.groups) {
             for (const [modelId, model] of fragments.groups) {
               const kept = isolatedIfcMap.get(modelId) || new Set();
-              const hidden = hiddenIfcMap.get(modelId) || new Set();
+              const hidden = combinedHiddenMap.get(modelId) || new Set();
               const nonKept = [];
               if (model?.data?.keys) {
                 for (const expressId of model.data.keys()) {
@@ -203,14 +231,14 @@ export function createVisibilityController({
       }
     }
 
-    // 2. Compose OBC.Hider visibility (isolation + explicit hides)
+    // 2. Compose OBC.Hider visibility (isolation + explicit hides + active filter layers)
     if (hider) {
       try {
         if (isolationMode === "hard") {
-          // Only show isolated items that are NOT explicitly hidden
+          // Only show isolated items that are NOT explicitly hidden or filtered out
           const visibleIso = {};
           for (const [modelId, isoSet] of isolatedIfcMap) {
-            const hiddenSet = hiddenIfcMap.get(modelId);
+            const hiddenSet = combinedHiddenMap.get(modelId);
             const remaining = [];
             for (const id of isoSet) {
               if (!hiddenSet || !hiddenSet.has(id)) remaining.push(id);
@@ -224,7 +252,7 @@ export function createVisibilityController({
           }
         } else {
           await hider.set(true);
-          const hiddenObj = toPlainObjectMap(hiddenIfcMap);
+          const hiddenObj = toPlainObjectMap(combinedHiddenMap);
           if (Object.keys(hiddenObj).length > 0) {
             await hider.set(false, hiddenObj);
           }
@@ -387,6 +415,34 @@ export function createVisibilityController({
 
     getHiddenElements() {
       return toPlainObjectMap(hiddenIfcMap);
+    },
+
+    async setFilterLayer(layerId, modelIdMap = {}) {
+      if (!layerId) return;
+      const parsed = fromPlainObjectMap(modelIdMap);
+      if (countMapItems(parsed) === 0) {
+        filterLayers.delete(layerId);
+      } else {
+        filterLayers.set(layerId, parsed);
+      }
+      await recomputeVisibility();
+    },
+
+    async clearFilterLayer(layerId) {
+      if (!layerId || !filterLayers.has(layerId)) return;
+      filterLayers.delete(layerId);
+      await recomputeVisibility();
+    },
+
+    hasFilterLayer(layerId) {
+      return filterLayers.has(layerId) && countMapItems(filterLayers.get(layerId)) > 0;
+    },
+
+    isItemVisible(modelId, localId) {
+      const numId = Number(localId);
+      const inHidden = isHiddenByMapOrFilter(modelId, numId);
+      const inIsolated = Boolean(isolatedIfcMap.get(modelId)?.has(numId));
+      return isItemEffectivelyVisible({ inHidden, isolationMode, inIsolated });
     },
 
     onVisibilityChange(callback) {

@@ -447,4 +447,42 @@ describe("Revizto Section & Ruler Mutual Exclusion & 3-Zone UI Architecture", ()
     assert.equal(section.getState().boxMode, "move-box");
     section.dispose();
   });
+
+  it("composes named visibility filter layers (Hide Tagged) independently of manual Hide / Unhide All", async () => {
+    const { createVisibilityController } = await import("../src/visibility-controller.js");
+    const hiderCalls = [];
+    const mockHider = {
+      async set(visible, map) { hiderCalls.push({ visible, map }); },
+      async isolate(map) { hiderCalls.push({ isolate: map }); },
+    };
+    const { visibility } = createVisibilityController({ hider: mockHider });
+
+    // 1. Manually hide wall #100
+    await visibility.hideSelection({ m1: [100] });
+    assert.equal(visibility.getHiddenCount(), 1);
+    assert.equal(visibility.isItemVisible("m1", 100), false);
+    assert.equal(visibility.isItemVisible("m1", 200), true);
+
+    // 2. Enable 'tagged' filter layer for trays #200 and #201
+    await visibility.setFilterLayer("tagged", { m1: [200, 201] });
+    // Manual hidden count stays 1 (Unhide (1) only reflects manual hides!)
+    assert.equal(visibility.getHiddenCount(), 1);
+    assert.equal(visibility.hasFilterLayer("tagged"), true);
+    assert.equal(visibility.isItemVisible("m1", 100), false);
+    assert.equal(visibility.isItemVisible("m1", 200), false);
+    assert.equal(visibility.isItemVisible("m1", 201), false);
+    assert.equal(visibility.isItemVisible("m1", 300), true);
+
+    // 3. Manual unhideAll restores wall #100 while keeping tagged filter layer active
+    await visibility.unhideAll();
+    assert.equal(visibility.getHiddenCount(), 0);
+    assert.equal(visibility.isItemVisible("m1", 100), true);
+    assert.equal(visibility.isItemVisible("m1", 200), false);
+
+    // 4. Clearing 'tagged' filter layer restores trays #200 and #201
+    await visibility.clearFilterLayer("tagged");
+    assert.equal(visibility.hasFilterLayer("tagged"), false);
+    assert.equal(visibility.isItemVisible("m1", 200), true);
+    assert.equal(visibility.isItemVisible("m1", 201), true);
+  });
 });

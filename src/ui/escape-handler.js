@@ -79,6 +79,30 @@ export function initEscapeHandler(ctx, dom, api) {
   function onKeyDown(event) {
     if (event.defaultPrevented) return;
 
+    // Tag Undo (Ctrl+Z / Cmd+Z) and Redo (Ctrl+Y / Ctrl+Shift+Z)
+    if ((event.ctrlKey || event.metaKey) && !event.altKey) {
+      const key = event.key.toLowerCase();
+      if (key === 'z' && !event.shiftKey) {
+        if (isTypingTarget(event.target)) return;
+        if (api.taggingAuxBar?.undoLast?.()) {
+          event.preventDefault();
+          return;
+        }
+        if (typeof api.undoBatchTags === 'function' && ctx.lastBatchSnapshot?.length) {
+          event.preventDefault();
+          api.undoBatchTags();
+          return;
+        }
+      }
+      if ((key === 'z' && event.shiftKey) || (key === 'y' && !event.shiftKey)) {
+        if (isTypingTarget(event.target)) return;
+        if (api.taggingAuxBar?.redoLast?.()) {
+          event.preventDefault();
+          return;
+        }
+      }
+    }
+
     // Revizto-style Hide (Ctrl + H) and Unhide (Ctrl + Shift + H)
     if (event.ctrlKey && event.key.toLowerCase() === 'h') {
       if (isTypingTarget(event.target)) return;

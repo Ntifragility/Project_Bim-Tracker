@@ -296,11 +296,44 @@ export function initSelection(ctx, dom, api) {
     }
   }
 
+  async function selectElementFromUi(modelId, localId, { source = 'ui', additive = false, zoom = false } = {}) {
+    const modelEntry = findLoadedModelEntry(modelId);
+    if (!modelEntry?.model) return false;
+    const expressId = Number(localId);
+    if (!Number.isInteger(expressId)) return false;
+
+    const nextMap = additive ? cloneModelIdMap(getSelectedModelIdMap()) : {};
+    if (!nextMap[modelId]) nextMap[modelId] = new Set();
+    if (additive && nextMap[modelId].has(expressId) && nextMap[modelId].size > 1) {
+      nextMap[modelId].delete(expressId);
+    } else {
+      nextMap[modelId].add(expressId);
+    }
+
+    ctx.pendingSelectionSource = source;
+    try {
+      // Do NOT set isProgrammaticSelect = true so the single canonical onHighlight pipeline
+      // updates Properties, multi-select, Aux Bar, and visibility-controller (Hide/Isolate).
+      await ctx.highlighter.highlightByID('select', nextMap, !additive, false);
+      if (zoom) {
+        await zoomToElementInModel(modelEntry.model, expressId);
+      }
+      return true;
+    } catch (err) {
+      console.warn('[Selection] selectElementFromUi failed:', err);
+      return false;
+    } finally {
+      ctx.pendingSelectionSource = null;
+    }
+  }
+
   function wireSelectionEvents() {
     // Bidirectional highlighting: 3D Selection -> Excel Selection & Loaded Models Sync
     ctx.highlighter.events.select.onHighlight.add(async (fragmentMap) => {
       try {
         if (ctx.highlighter.isProgrammaticSelect) return;
+        const selectionSource = ctx.pendingSelectionSource || 'viewport';
+        ctx.pendingSelectionSource = null;
 
         const visibleSelectionMap = Object.fromEntries(
           Object.entries(fragmentMap || {}).filter(([modelId]) => findLoadedModelEntry(modelId)?.visible)
@@ -359,13 +392,26 @@ export function initSelection(ctx, dom, api) {
           if (foundModelEntry) {
             ctx.activeModel = foundModelEntry.model;
             ctx.routingController.setSelectedElement(foundModelEntry.model, expressIdNum);
+
+            // Set selectedIfcElement immediately and fire fast Click-to-Tag (<15 ms)
+            // before heavy async orbit bounding-box and IFC Pset tree queries.
+            const matchedIdentity = ctx.multiSelectionElements.find((identity) => identity.localId === expressIdNum);
+            if (matchedIdentity) {
+              ctx.selectedIfcElement = matchedIdentity;
+            } else {
+              ctx.selectedIfcElement = await readElementIdentity(foundModelEntry.model, expressIdNum, foundModelEntry.name);
+            }
+            api.onElementSelectedForTagging?.(ctx.selectedIfcElement, ctx.multiSelectionElements, {
+              source: selectionSource,
+            });
+
             try {
               await setOrbitTargetToElement(foundModelEntry.model, expressIdNum);
             } catch (err) {
               console.warn('[onHighlight] setOrbitTargetToElement failed:', err);
             }
 
-            // Prioritize displaying properties before any other asynchronous tasks
+            // Display properties asynchronously without blocking Click-to-Tag
             if (ctx.multiSelectionElements.length > 1) {
               ctx.multiSelectionIndex = -1; // Combined View
               await api.displayCombinedProperties(ctx.multiSelectionElements);
@@ -375,17 +421,8 @@ export function initSelection(ctx, dom, api) {
               await api.displayElementProperties(foundModelEntry.model, expressIdNum, foundModelEntry.name);
             }
 
-            // Set selectedIfcElement safely
-            const matchedIdentity = ctx.multiSelectionElements.find((identity) => identity.localId === expressIdNum);
-            if (matchedIdentity) {
-              ctx.selectedIfcElement = matchedIdentity;
-            } else {
-              ctx.selectedIfcElement = await readElementIdentity(foundModelEntry.model, expressIdNum, foundModelEntry.name);
-            }
-            api.onElementSelectedForTagging?.(ctx.selectedIfcElement, ctx.multiSelectionElements);
-
             api.updateTagAssignmentUi();
-      api.taggingAuxBar?.syncUi?.();
+            api.taggingAuxBar?.syncUi?.();
             api.refreshLoadedModelsList();
           }
         }
@@ -467,6 +504,7 @@ export function initSelection(ctx, dom, api) {
   api.zoomToElementInModel = zoomToElementInModel;
   api.highlightTrayMembers = highlightTrayMembers;
   api.isolateTrayMembers = isolateTrayMembers;
+  api.selectElementFromUi = selectElementFromUi;
 
   return {
     cloneModelIdMap,

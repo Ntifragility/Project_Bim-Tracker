@@ -46,7 +46,10 @@ export class TagLabelManager {
       yOffset: 0.25,
       clusterThreshold: 45,
       onClick: null,
+      onDoubleClick: null,
       getHighlightColor: null,
+      findModelEntry: null,
+      isElementVisible: null,
       ...options,
     };
 
@@ -107,6 +110,11 @@ export class TagLabelManager {
 
     for (const elem of this.cachedElements) {
       if (!elem.modelId || elem.localId === undefined || elem.localId === null) continue;
+      if (typeof this.options.isElementVisible === 'function') {
+        if (!this.options.isElementVisible(elem.modelId, Number(elem.localId))) {
+          continue;
+        }
+      }
       const key = `${elem.modelId}:${Number(elem.localId)}`;
       neededKeys.add(key);
 
@@ -143,9 +151,11 @@ export class TagLabelManager {
 
     // Create new markers
     for (const { key, elem } of elementsToCreate) {
-      const modelEntry = loadedModels.find(
-        (m) => m.model?.modelId === elem.modelId || m.model?.uuid === elem.modelId || m.uuid === elem.modelId
-      );
+      const modelEntry =
+        (typeof this.options.findModelEntry === 'function' ? this.options.findModelEntry(elem.modelId) : null) ||
+        loadedModels.find(
+          (m) => m.model?.modelId === elem.modelId || m.model?.uuid === elem.modelId || m.uuid === elem.modelId
+        );
       if (!modelEntry || !modelEntry.model) continue;
 
       try {
@@ -234,7 +244,8 @@ export class TagLabelManager {
     title.className = 'tag-3d-label-title';
     const icon = document.createElement('span');
     icon.className = 'tag-icon';
-    icon.textContent = '🏷️';
+    icon.innerHTML =
+      '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><circle cx="7" cy="7" r="1.5"/></svg>';
     const text = document.createElement('span');
     text.className = 'tag-text';
     text.textContent = elem.elementTag || elem.componentId || `Tag #${elem.localId}`;
@@ -261,10 +272,21 @@ export class TagLabelManager {
       e.stopPropagation(); // Avoid triggering OrbitControls / drag
     });
 
+    container.addEventListener('pointerup', (e) => {
+      e.stopPropagation();
+    });
+
     container.addEventListener('click', (e) => {
       e.stopPropagation();
       if (typeof this.options.onClick === 'function') {
-        this.options.onClick(elem.modelId, elem.localId, elem);
+        this.options.onClick(elem.modelId, elem.localId, elem, e);
+      }
+    });
+
+    container.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      if (typeof this.options.onDoubleClick === 'function') {
+        this.options.onDoubleClick(elem.modelId, elem.localId, elem, e);
       }
     });
 

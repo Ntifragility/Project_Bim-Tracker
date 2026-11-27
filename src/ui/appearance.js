@@ -207,31 +207,33 @@ export function initAppearance(ctx, dom, api) {
       clusterThreshold: 45,
       yOffset: 0.25,
       getHighlightColor: () => ctx.taggedHighlightColor,
-      onClick: async (modelId, localId) => {
-        const modelEntry = api.findLoadedModelEntry(modelId);
-        if (!modelEntry?.model) return;
-
-        const expressId = Number(localId);
-        if (!Number.isInteger(expressId)) return;
-        const fragmentMap = { [modelId]: new Set([expressId]) };
-
-        try {
-          await api.zoomToElementInModel(modelEntry.model, expressId);
-          ctx.highlighter.isProgrammaticSelect = true;
-          await ctx.highlighter.highlightByID('select', fragmentMap, true, true);
-          ctx.currentSelectionMap = api.cloneModelIdMap(fragmentMap);
-          ctx.activeModel = modelEntry.model;
-          await api.displayElementProperties(modelEntry.model, expressId, modelEntry.name);
-          ctx.selectedIfcElement = await api.readElementIdentity(modelEntry.model, expressId, modelEntry.name);
-          ctx.routingController.setSelectedElement(modelEntry.model, expressId);
-          api.updateTagAssignmentUi(`Focused on floating tag #${expressId}.`);
-          api.refreshLoadedModelsList();
-        } catch (err) {
-          console.warn('[Floating Tag] Failed to focus element:', err);
-        } finally {
-          ctx.highlighter.isProgrammaticSelect = false;
-        }
+      findModelEntry: (modelId) => api.findLoadedModelEntry?.(modelId),
+      isElementVisible: (modelId, localId) =>
+        ctx.engine?.visibility?.isItemVisible
+          ? ctx.engine.visibility.isItemVisible(modelId, localId)
+          : true,
+      onClick: async (modelId, localId, _elem, event) => {
+        const additive = Boolean(event?.ctrlKey || event?.metaKey || event?.shiftKey);
+        await api.selectElementFromUi?.(modelId, Number(localId), {
+          source: 'floating-tag',
+          additive,
+          zoom: false,
+        });
       },
+      onDoubleClick: async (modelId, localId) => {
+        await api.selectElementFromUi?.(modelId, Number(localId), {
+          source: 'floating-tag',
+          additive: false,
+          zoom: true,
+        });
+      },
+    });
+
+    // Keep floating tags automatically in sync whenever visibility or isolation changes
+    ctx.engine?.visibility?.onStateChange?.(() => {
+      if (ctx.isFloatingLabelsActive) {
+        void refreshFloatingLabels();
+      }
     });
   }
 
@@ -281,9 +283,11 @@ export function initAppearance(ctx, dom, api) {
   api.clearContinuityGroupHighlights = clearContinuityGroupHighlights;
   api.applyContinuityGroupHighlights = applyContinuityGroupHighlights;
   api.refreshTaggedTrayHighlights = refreshTaggedTrayHighlights;
+  api.updateTaggedElementsHighlight = refreshTaggedTrayHighlights;
   api.setTaggedHighlightActive = setTaggedHighlightActive;
   api.setFloatingLabelsActive = setFloatingLabelsActive;
   api.refreshFloatingLabels = refreshFloatingLabels;
+  api.updateFloatingTagLabels = refreshFloatingLabels;
 
   return {
     setSelectionHighlightStyle,
