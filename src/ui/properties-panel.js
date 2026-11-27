@@ -75,8 +75,12 @@ export function initPropertiesPanel(ctx, dom, api) {
     const systemTag = assignment?.delete
       ? ''
       : (assignment?.systemTag || existing?.systemTag || '');
-    const plano = assignment?.delete ? '' : (assignment?.plano || '');
-    const subTipo = assignment?.delete ? '' : (assignment?.subTipo || '');
+    const plano = assignment?.plano !== undefined
+      ? assignment.plano
+      : (existing?.plano || '');
+    const subTipo = assignment?.subTipo !== undefined
+      ? assignment.subTipo
+      : (existing?.subTipo || '');
     const service = assignment?.service || 'Power';
     const status = assignment?.status || 'Active';
 
@@ -230,14 +234,16 @@ export function initPropertiesPanel(ctx, dom, api) {
       }
       return;
     }
-    const systemTag = assignment?.systemTag || existing?.systemTag || '';
-    const componentId = assignment?.componentId || existing?.componentId || '';
-    const sequenceNumber = assignment?.sequenceNumber || existing?.sequenceNumber || '';
-    const elementTag = assignment?.elementTag || existing?.elementTag || componentId;
-    const elementKind = assignment?.elementKind || existing?.elementKind || '';
-    const typeCode = assignment?.typeCode || existing?.typeCode || '';
+    const systemTag = assignment?.delete ? '' : (assignment?.systemTag || existing?.systemTag || '');
+    const componentId = assignment?.delete ? '' : (assignment?.componentId || existing?.componentId || '');
+    const sequenceNumber = assignment?.delete ? '' : (assignment?.sequenceNumber || existing?.sequenceNumber || '');
+    const elementTag = assignment?.delete ? '' : (assignment?.elementTag || existing?.elementTag || componentId);
+    const elementKind = assignment?.delete ? '' : (assignment?.elementKind || existing?.elementKind || '');
+    const typeCode = assignment?.delete ? '' : (assignment?.typeCode || existing?.typeCode || '');
+    const plano = assignment?.plano !== undefined ? assignment.plano : (existing?.plano || '');
+    const subTipo = assignment?.subTipo !== undefined ? assignment.subTipo : (existing?.subTipo || '');
 
-    if (!systemTag) {
+    if (!systemTag && !elementTag && !plano && !subTipo) {
       dom.propPsetsContainer.querySelector('[data-pset-name="CCP_TRAY_SYSTEM"]')?.remove();
       return;
     }
@@ -245,6 +251,8 @@ export function initPropertiesPanel(ctx, dom, api) {
       SystemTag: systemTag,
       ElementTag: elementTag,
       ComponentId: componentId,
+      Plano: plano,
+      SubTipo: subTipo,
       ElementKind: elementKind,
       TypeCode: typeCode,
       SequenceNumber: sequenceNumber,
@@ -619,9 +627,9 @@ export function initPropertiesPanel(ctx, dom, api) {
       const planoValues = new Set();
       const subTipoValues = new Set();
       for (const el of elements) {
-        const a = api.getAssignmentForElement?.(el);
-        planoValues.add(a && !a.delete ? (a.plano || '') : '');
-        subTipoValues.add(a && !a.delete ? (a.subTipo || '') : '');
+        const a = api.getEffectiveElementRecord?.(el) || api.getAssignmentForElement?.(el);
+        planoValues.add(a ? (a.plano || '') : '');
+        subTipoValues.add(a ? (a.subTipo || '') : '');
       }
       const planoText = planoValues.size === 1 ? Array.from(planoValues)[0] : '<Varies>';
       const subTipoText = subTipoValues.size === 1 ? Array.from(subTipoValues)[0] : '<Varies>';

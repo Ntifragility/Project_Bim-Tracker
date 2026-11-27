@@ -201,7 +201,7 @@ function extractNamedPropertySets(sourceBytes, filterSetNames = null) {
       const property = properties.get(propertyId);
       if (property) values.set(property.name.toLowerCase(), { ...property, propertyId });
     }
-    const resolvedSet = { name: pset.name, values };
+    const resolvedSet = { name: pset.name, psetId: rel.psetId, values };
     for (const reference of rel.targetsText.matchAll(/#(\d+)/g)) {
       const localId = Number(reference[1]);
       if (!elementSets.has(localId)) elementSets.set(localId, new Map());
@@ -219,11 +219,18 @@ export function extractTraySystemAssignmentsFromIfc(sourceBytes) {
     const systemTag = system?.values.get('systemtag')?.value || '';
     const componentId = system?.values.get('componentid')?.value || '';
     const elementTag = system?.values.get('elementtag')?.value || componentId;
-    if (!systemTag && !componentId && !elementTag) continue;
+    const planoEntry = system?.values.get('plano');
+    const subTipoEntry = system?.values.get('subtipo') || system?.values.get('sub_tipo');
+    const plano = planoEntry?.value || '';
+    const subTipo = subTipoEntry?.value || '';
+    if (!systemTag && !componentId && !elementTag && !plano && !subTipo) continue;
     assignments.set(localId, {
+      psetId: system?.psetId,
       systemTag,
       elementTag,
       componentId,
+      plano,
+      subTipo,
       elementKind: system?.values.get('elementkind')?.value || '',
       typeCode: system?.values.get('typecode')?.value || '',
       sequenceNumber: system?.values.get('sequencenumber')?.value || '',
@@ -232,6 +239,8 @@ export function extractTraySystemAssignmentsFromIfc(sourceBytes) {
       systemTagPropertyId: system?.values.get('systemtag')?.propertyId,
       elementTagPropertyId: system?.values.get('elementtag')?.propertyId,
       componentIdPropertyId: system?.values.get('componentid')?.propertyId,
+      planoPropertyId: planoEntry?.propertyId,
+      subTipoPropertyId: subTipoEntry?.propertyId,
       elementKindPropertyId: system?.values.get('elementkind')?.propertyId,
       typeCodePropertyId: system?.values.get('typecode')?.propertyId,
       sequencePropertyId: system?.values.get('sequencenumber')?.propertyId,
@@ -240,6 +249,20 @@ export function extractTraySystemAssignmentsFromIfc(sourceBytes) {
     });
   }
   return assignments;
+}
+
+function appendPropertyIdsToPropertySet(source, psetId, newPropertyIds = []) {
+  if (!psetId || !newPropertyIds.length) return source;
+  const psetLine = new RegExp(
+    `(^\\s*#${psetId}\\s*=\\s*IFCPROPERTYSET\\([^;]*?\\()([^)]*)(\\)\\s*\\)\\s*;)`,
+    'gmi',
+  );
+  return source.replace(psetLine, (_m, prefix, listText, suffix) => {
+    const trimmed = listText.trim();
+    const additions = newPropertyIds.map((id) => `#${id}`).join(',');
+    const combined = trimmed ? `${trimmed},${additions}` : additions;
+    return `${prefix}${combined}${suffix}`;
+  });
 }
 
 function replacePropertyValue(source, propertyId, value) {
@@ -348,8 +371,10 @@ export function addTraySystemAssignmentsToIfc(sourceBytes, assignments) {
     const localId = Number(assignment.localId);
     const removeAssignment = assignment.delete === true || assignment.action === 'delete';
     const systemTag = String(assignment.systemTag ?? '').trim();
-    const componentId = String(assignment.componentId ?? '').trim();
+    const componentId = String(assignment.componentId ?? assignment.elementTag ?? '').trim();
     const elementTag = String(assignment.elementTag ?? componentId).trim();
+    const plano = String(assignment.plano ?? '').trim();
+    const subTipo = String(assignment.subTipo ?? '').trim();
     const elementKind = String(assignment.elementKind ?? '').trim();
     const typeCode = String(assignment.typeCode ?? '').trim();
     const sequenceNumber = String(assignment.sequenceNumber ?? '').trim();
@@ -361,7 +386,13 @@ export function addTraySystemAssignmentsToIfc(sourceBytes, assignments) {
     }
     if (removeAssignment) {
       const current = existing.get(localId);
-      if (!current?.systemTagPropertyId && !current?.componentIdPropertyId && !current?.sequencePropertyId) {
+      if (
+        !current?.systemTagPropertyId &&
+        !current?.componentIdPropertyId &&
+        !current?.sequencePropertyId &&
+        !current?.planoPropertyId &&
+        !current?.subTipoPropertyId
+      ) {
         skipped.push({ assignment, reason: 'tray-assignment-not-found-in-source-ifc' });
         continue;
       }
@@ -371,47 +402,110 @@ export function addTraySystemAssignmentsToIfc(sourceBytes, assignments) {
       if (current.elementTagPropertyId) source = replacePropertyValue(source, current.elementTagPropertyId, '');
       if (current.elementKindPropertyId) source = replacePropertyValue(source, current.elementKindPropertyId, '');
       if (current.typeCodePropertyId) source = replacePropertyValue(source, current.typeCodePropertyId, '');
+      if (current.planoPropertyId) source = replacePropertyValue(source, current.planoPropertyId, plano);
+      if (current.subTipoPropertyId) source = replacePropertyValue(source, current.subTipoPropertyId, subTipo);
       const nativeTag = readNativeElementTag(source, localId);
       if (nativeTag && [current.elementTag, current.componentId].filter(Boolean).includes(nativeTag)) {
         source = replaceNativeElementTag(source, localId, '').source;
       }
-      applied.push({ localId, systemTag: '', componentId: '', sequenceNumber: '', action: 'deleted' });
+      applied.push({ localId, systemTag: '', componentId: '', sequenceNumber: '', plano, subTipo, action: 'deleted' });
       continue;
     }
-    if (!systemTag || !componentId || !sequenceNumber) {
+
+    const hasCompleteTag = Boolean(systemTag && componentId && sequenceNumber);
+    const hasCustomProps = Boolean(plano || subTipo);
+    if (!hasCompleteTag && !hasCustomProps) {
       skipped.push({ assignment, reason: 'incomplete-tray-assignment' });
       continue;
     }
 
     const current = existing.get(localId);
-    if (current?.systemTagPropertyId && current?.componentIdPropertyId && current?.sequencePropertyId) {
-      source = replacePropertyValue(source, current.systemTagPropertyId, systemTag);
-      source = replacePropertyValue(source, current.componentIdPropertyId, componentId);
-      source = replacePropertyValue(source, current.sequencePropertyId, sequenceNumber);
-      if (current.elementTagPropertyId) source = replacePropertyValue(source, current.elementTagPropertyId, elementTag);
-      if (current.elementKindPropertyId) source = replacePropertyValue(source, current.elementKindPropertyId, elementKind);
-      if (current.typeCodePropertyId) source = replacePropertyValue(source, current.typeCodePropertyId, typeCode);
-      if (current.schemeVersionPropertyId) source = replacePropertyValue(source, current.schemeVersionPropertyId, schemeVersion);
-      if (current.originalIfcTagPropertyId) source = replacePropertyValue(source, current.originalIfcTagPropertyId, originalIfcTag);
-      const nativeTag = replaceNativeElementTag(source, localId, elementTag || componentId);
-      source = nativeTag.source;
-      applied.push({ localId, systemTag, elementTag, componentId, sequenceNumber, nativeTagUpdated: nativeTag.updated, action: 'updated' });
+    if (current) {
+      const appendedPropIds = [];
+      const upsertProp = (propId, propName, propVal, alwaysCreate = false) => {
+        if (propId) {
+          source = replacePropertyValue(source, propId, propVal);
+        } else if (propVal || alwaysCreate) {
+          const newPid = nextId++;
+          entityLines.push(
+            `#${newPid}=IFCPROPERTYSINGLEVALUE('${escapeStepString(propName)}',$,IFCLABEL('${escapeStepString(propVal)}'),$);`,
+          );
+          appendedPropIds.push(newPid);
+        }
+      };
+
+      if (hasCompleteTag) {
+        upsertProp(current.systemTagPropertyId, 'SystemTag', systemTag, true);
+        upsertProp(current.elementTagPropertyId, 'ElementTag', elementTag, true);
+        upsertProp(current.componentIdPropertyId, 'ComponentId', componentId, true);
+        upsertProp(current.elementKindPropertyId, 'ElementKind', elementKind);
+        upsertProp(current.typeCodePropertyId, 'TypeCode', typeCode);
+        upsertProp(current.sequencePropertyId, 'SequenceNumber', sequenceNumber, true);
+        upsertProp(current.schemeVersionPropertyId, 'SchemeVersion', schemeVersion);
+        if (originalIfcTag || current.originalIfcTagPropertyId) {
+          upsertProp(current.originalIfcTagPropertyId, 'OriginalIfcTag', originalIfcTag);
+        }
+      }
+      upsertProp(current.planoPropertyId, 'Plano', plano, hasCustomProps);
+      upsertProp(current.subTipoPropertyId, 'SubTipo', subTipo, hasCustomProps);
+
+      if (appendedPropIds.length > 0 && current.psetId) {
+        source = appendPropertyIdsToPropertySet(source, current.psetId, appendedPropIds);
+      }
+
+      let nativeUpdated = false;
+      if (elementTag || componentId) {
+        const nativeTag = replaceNativeElementTag(source, localId, elementTag || componentId);
+        source = nativeTag.source;
+        nativeUpdated = nativeTag.updated;
+      }
+      applied.push({
+        localId,
+        systemTag,
+        elementTag,
+        componentId,
+        sequenceNumber,
+        plano,
+        subTipo,
+        nativeTagUpdated: nativeUpdated,
+        action: 'updated',
+      });
       continue;
     }
-    const propertyValues = [
-      ['SystemTag', systemTag],
-      ['ElementTag', elementTag],
-      ['ComponentId', componentId],
-      ['ElementKind', elementKind],
-      ['TypeCode', typeCode],
-      ['SequenceNumber', sequenceNumber],
-      ['SchemeVersion', schemeVersion],
-    ];
-    if (originalIfcTag) propertyValues.push(['OriginalIfcTag', originalIfcTag]);
+
+    const propertyValues = [];
+    if (hasCompleteTag) {
+      propertyValues.push(
+        ['SystemTag', systemTag],
+        ['ElementTag', elementTag],
+        ['ComponentId', componentId],
+        ['ElementKind', elementKind],
+        ['TypeCode', typeCode],
+        ['SequenceNumber', sequenceNumber],
+        ['SchemeVersion', schemeVersion],
+      );
+      if (originalIfcTag) propertyValues.push(['OriginalIfcTag', originalIfcTag]);
+    }
+    propertyValues.push(['Plano', plano], ['SubTipo', subTipo]);
+
     appendPropertySet(localId, 'CCP_TRAY_SYSTEM', propertyValues);
-    const nativeTag = replaceNativeElementTag(source, localId, elementTag || componentId);
-    source = nativeTag.source;
-    applied.push({ localId, systemTag, elementTag, componentId, sequenceNumber, nativeTagUpdated: nativeTag.updated, action: 'created' });
+    let nativeUpdated = false;
+    if (elementTag || componentId) {
+      const nativeTag = replaceNativeElementTag(source, localId, elementTag || componentId);
+      source = nativeTag.source;
+      nativeUpdated = nativeTag.updated;
+    }
+    applied.push({
+      localId,
+      systemTag,
+      elementTag,
+      componentId,
+      sequenceNumber,
+      plano,
+      subTipo,
+      nativeTagUpdated: nativeUpdated,
+      action: 'created',
+    });
   }
   if (!applied.length) throw new Error('No tray-system assignments matched elements in the source IFC.');
   const insertionIndex = findDataTerminator(source);

@@ -420,10 +420,11 @@ export function initTaggingAuxBar(ctx, dom, api) {
     for (const assignment of result.assignments) {
       const key = getAssignmentKey(assignment.modelId, assignment.localId);
       const prev = ctx.tagAssignments.has(key) ? { ...ctx.tagAssignments.get(key) } : null;
+      const base = api.getEffectiveElementRecord?.(assignment.modelId, assignment.localId) || prev;
       const applied = {
         ...assignment,
-        plano: prev?.plano || '',
-        subTipo: prev?.subTipo || '',
+        plano: base?.plano || '',
+        subTipo: base?.subTipo || '',
         excelRowIndex: ctx.selectedExcelRowIndex,
       };
       snapshotEntries.push({
@@ -603,28 +604,31 @@ export function initTaggingAuxBar(ctx, dom, api) {
     }
 
     const prev = ctx.tagAssignments.has(key) ? { ...ctx.tagAssignments.get(key) } : null;
+    const base = api.getEffectiveElementRecord?.(element.modelId, element.localId) || prev;
     const derivedSystem = String(systemTag ?? '').trim()
-      || prev?.systemTag
+      || base?.systemTag
       || cleanTag.replace(/[.\-_]?\d+$/, '').replace(/[.\-_]+$/, '')
       || cleanTag;
     const seqMatch = cleanTag.match(/(\d+)$/);
-    const derivedSeq = seqMatch ? seqMatch[1] : (prev?.sequenceNumber || '01');
+    const derivedSeq = seqMatch ? seqMatch[1] : (base?.sequenceNumber || '01');
 
     const applied = {
-      ...(prev || {}),
+      ...(base || {}),
       modelId: element.modelId,
       localId: Number(element.localId),
-      globalId: element.globalId || prev?.globalId || '',
-      type: element.type || prev?.type || '',
-      name: element.name || prev?.name || '',
-      modelName: element.modelName || prev?.modelName || '',
+      globalId: element.globalId || base?.globalId || '',
+      type: element.type || base?.type || '',
+      name: element.name || base?.name || '',
+      modelName: element.modelName || base?.modelName || '',
       elementTag: cleanTag,
       componentId: cleanTag,
       systemTag: derivedSystem,
       sequenceNumber: derivedSeq,
+      plano: base?.plano || '',
+      subTipo: base?.subTipo || '',
       source: 'pending',
       delete: false,
-      excelRowIndex: prev?.excelRowIndex ?? ctx.selectedExcelRowIndex,
+      excelRowIndex: base?.excelRowIndex ?? ctx.selectedExcelRowIndex,
     };
 
     redoStack.length = 0;
@@ -656,21 +660,22 @@ export function initTaggingAuxBar(ctx, dom, api) {
       if (!el?.modelId || el.localId === undefined) continue;
       const key = getAssignmentKey(el.modelId, el.localId);
       const prev = ctx.tagAssignments.has(key) ? { ...ctx.tagAssignments.get(key) } : null;
+      const base = api.getEffectiveElementRecord?.(el.modelId, el.localId) || prev;
       const applied = {
-        ...(prev || {}),
+        ...(base || {}),
         modelId: el.modelId,
         localId: Number(el.localId),
-        globalId: el.globalId || prev?.globalId || '',
-        type: el.type || prev?.type || '',
-        name: el.name || prev?.name || '',
-        modelName: el.modelName || prev?.modelName || '',
-        elementTag: prev?.elementTag || prev?.componentId || '',
-        componentId: prev?.componentId || prev?.elementTag || '',
-        systemTag: prev?.systemTag || '',
-        sequenceNumber: prev?.sequenceNumber || '',
-        plano: hasPlano ? cleanPlano : (prev?.plano || ''),
-        subTipo: hasSubTipo ? cleanSubTipo : (prev?.subTipo || ''),
-        source: prev?.source || 'pending',
+        globalId: el.globalId || base?.globalId || '',
+        type: el.type || base?.type || '',
+        name: el.name || base?.name || '',
+        modelName: el.modelName || base?.modelName || '',
+        elementTag: base?.elementTag || base?.componentId || '',
+        componentId: base?.componentId || base?.elementTag || '',
+        systemTag: base?.systemTag || '',
+        sequenceNumber: base?.sequenceNumber || '',
+        plano: hasPlano ? cleanPlano : (base?.plano || ''),
+        subTipo: hasSubTipo ? cleanSubTipo : (base?.subTipo || ''),
+        source: 'pending',
         delete: false,
       };
       snapshotEntries.push({
@@ -854,7 +859,7 @@ export function initTaggingAuxBar(ctx, dom, api) {
     if (!isOpen) return;
     if (source === 'viewport' && clickToTagActive && identity && (!multiList || multiList.length <= 1)) {
       const key = getAssignmentKey(identity.modelId, identity.localId);
-      const already = ctx.tagAssignments.get(key);
+      const already = api.getEffectiveElementRecord?.(identity.modelId, identity.localId) || ctx.tagAssignments.get(key);
       const existingUniqueTag = already && already.delete !== true
         ? String(already.elementTag || already.componentId || '').trim()
         : '';

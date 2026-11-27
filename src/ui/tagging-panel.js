@@ -311,44 +311,118 @@ export function initTaggingPanel(ctx, dom, api) {
     ) || null;
   }
 
-  function getEffectiveTaggedElements() {
-    const elements = new Map();
+  function getEffectiveElementRecord(elementOrModelId, maybeLocalId) {
+    const modelId = typeof elementOrModelId === 'object' && elementOrModelId !== null
+      ? elementOrModelId.modelId
+      : elementOrModelId;
+    const localId = Number(
+      typeof elementOrModelId === 'object' && elementOrModelId !== null
+        ? elementOrModelId.localId
+        : maybeLocalId,
+    );
+    if (!modelId || !Number.isFinite(localId)) return null;
+
+    const modelEntry = api.findLoadedModelEntry(modelId);
+    if (!modelEntry) return null;
+
+    const existing = modelEntry.existingProjectTags?.get(localId) || null;
+    const key = getAssignmentKey(modelId, localId);
+    const pending = ctx.tagAssignments.get(key) || null;
+
+    if (!existing && !pending) return null;
+
+    if (pending?.delete === true) {
+      const plano = pending.plano ?? '';
+      const subTipo = pending.subTipo ?? '';
+      return {
+        modelId,
+        modelName: pending.modelName || modelEntry.name || '',
+        localId,
+        globalId: pending.globalId || existing?.globalId || '',
+        type: pending.type || existing?.type || '',
+        name: pending.name || existing?.name || '',
+        systemTag: '',
+        elementTag: '',
+        componentId: '',
+        elementKind: '',
+        typeCode: '',
+        sequenceNumber: '',
+        schemeVersion: '',
+        plano,
+        subTipo,
+        delete: true,
+        source: 'pending',
+      };
+    }
+
+    const pick = (pendingVal, existingVal) =>
+      pendingVal !== undefined && pendingVal !== '' ? pendingVal : (existingVal || '');
+
+    const elementTag =
+      pending?.elementTag !== undefined
+        ? pending.elementTag
+        : (pending?.componentId !== undefined
+            ? pending.componentId
+            : (existing?.elementTag || existing?.componentId || ''));
+    const componentId =
+      pending?.componentId !== undefined
+        ? pending.componentId
+        : (pending?.elementTag !== undefined
+            ? pending.elementTag
+            : (existing?.componentId || existing?.elementTag || ''));
+
+    return {
+      modelId,
+      modelName: pending?.modelName || modelEntry.name || '',
+      localId,
+      globalId: pick(pending?.globalId, existing?.globalId),
+      type: pick(pending?.type, existing?.type),
+      name: pick(pending?.name, existing?.name),
+      systemTag: pending?.systemTag !== undefined ? pending.systemTag : (existing?.systemTag || ''),
+      elementTag,
+      componentId,
+      elementKind: pick(pending?.elementKind, existing?.elementKind),
+      typeCode: pick(pending?.typeCode, existing?.typeCode),
+      sequenceNumber: pending?.sequenceNumber !== undefined ? pending.sequenceNumber : (existing?.sequenceNumber || ''),
+      schemeVersion: pick(pending?.schemeVersion, existing?.schemeVersion),
+      plano: pending?.plano !== undefined ? pending.plano : (existing?.plano || ''),
+      subTipo: pending?.subTipo !== undefined ? pending.subTipo : (existing?.subTipo || ''),
+      excelRowIndex: pending?.excelRowIndex ?? null,
+      source: pending ? 'pending' : 'ifc',
+      delete: false,
+    };
+  }
+
+  function getAllAnnotatedElements() {
+    const keys = new Map(); // key -> { modelId, localId }
     for (const modelEntry of ctx.loadedModels) {
-      const modelId = modelEntry.model.modelId || modelEntry.model.uuid;
-      for (const [localId, projectTag] of modelEntry.existingProjectTags || []) {
-        const key = getAssignmentKey(modelId, localId);
-        elements.set(key, {
-          modelId,
-          modelName: modelEntry.name,
-          localId: Number(localId),
-          systemTag: projectTag.systemTag,
-          elementTag: projectTag.elementTag || projectTag.componentId,
-          componentId: projectTag.componentId,
-          elementKind: projectTag.elementKind || '',
-          typeCode: projectTag.typeCode || '',
-          sequenceNumber: projectTag.sequenceNumber,
-          schemeVersion: projectTag.schemeVersion || '',
-          source: 'ifc',
-        });
+      const modelId = modelEntry.model?.modelId || modelEntry.model?.uuid || modelEntry.uuid;
+      if (!modelId) continue;
+      for (const localId of modelEntry.existingProjectTags?.keys?.() || []) {
+        keys.set(getAssignmentKey(modelId, localId), { modelId, localId: Number(localId) });
       }
     }
     for (const [key, assignment] of ctx.tagAssignments) {
-      if (api.findLoadedModelEntry(assignment.modelId)) {
-        if (assignment.delete === true) {
-          elements.delete(key);
-          continue;
-        }
-        const hasUniqueTag = Boolean(String(assignment.elementTag || assignment.componentId || '').trim());
-        if (!hasUniqueTag) {
-          // Property-only entries (e.g. PLANO / SUB_TIPO assigned before tagging)
-          // must not appear as tagged elements, floating tags, or Hide Tagged targets.
-          elements.delete(key);
-          continue;
-        }
-        elements.set(key, { ...assignment, source: 'pending' });
-      }
+      if (!assignment?.modelId || assignment.localId === undefined) continue;
+      keys.set(key, { modelId: assignment.modelId, localId: Number(assignment.localId) });
     }
-    return Array.from(elements.values());
+
+    const results = [];
+    for (const { modelId, localId } of keys.values()) {
+      const rec = getEffectiveElementRecord(modelId, localId);
+      if (!rec) continue;
+      const hasAny = Boolean(
+        String(rec.elementTag || rec.componentId || rec.systemTag || rec.plano || rec.subTipo || '').trim(),
+      );
+      if (hasAny) results.push(rec);
+    }
+    return results;
+  }
+
+  function getEffectiveTaggedElements() {
+    return getAllAnnotatedElements().filter((item) =>
+      Boolean(String(item.elementTag || item.componentId || '').trim()),
+    );
   }
 
   function getExcelTagsForValidation() {
@@ -794,6 +868,8 @@ export function initTaggingPanel(ctx, dom, api) {
   api.getExistingTrayAssignment = getExistingTrayAssignment;
   api.getAssignmentSourceLabel = getAssignmentSourceLabel;
   api.getEffectiveTaggedElements = getEffectiveTaggedElements;
+  api.getAllAnnotatedElements = getAllAnnotatedElements;
+  api.getEffectiveElementRecord = getEffectiveElementRecord;
   api.getEnteredSystemTag = getEnteredSystemTag;
   api.assignElementsToSystem = assignElementsToSystem;
   api.invalidateBatchUndo = invalidateBatchUndo;

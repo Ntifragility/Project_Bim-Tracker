@@ -8,6 +8,10 @@ import {
   groupItemsByField,
   toggleItemsInSelectionMap,
 } from '../../../src/tagging/tag-search.js';
+import {
+  addTraySystemAssignmentsToIfc,
+  extractTraySystemAssignmentsFromIfc,
+} from '../../../src/ifc/ifc-tag-exporter.js';
 
 describe('Cable Tray Buscador de TAGs (Revizto / Navisworks search & filters)', () => {
   const sample = [
@@ -66,6 +70,82 @@ describe('Cable Tray Buscador de TAGs (Revizto / Navisworks search & filters)', 
     sel = toggleItemsInSelectionMap(sel, byPlano[0].items, false);
     assert.deepEqual(Array.from(sel.m1), [1]);
     assert.deepEqual(Array.from(sel.m2), [50]);
+  });
+
+  it('roundtrips PLANO and SUB_TIPO inside exported IFC CCP_TRAY_SYSTEM PropertySet (tagged and untagged)', () => {
+    const sampleIfc = [
+      'ISO-10303-21;',
+      'HEADER;',
+      'ENDSEC;',
+      'DATA;',
+      "#10=IFCCABLECARRIERSEGMENT('guid1',$,'Tray-10',$,$,$,$,'OLD-10',.CABLELADDERSEGMENT.);",
+      "#20=IFCCABLECARRIERFITTING('guid2',$,'Elbow-20',$,$,$,$,$,.BEND.);",
+      'ENDSEC;',
+      'END-ISO-10303-21;',
+    ].join('\r\n');
+    const sourceBytes = new TextEncoder().encode(sampleIfc);
+
+    // 1. First export: #10 has full tag + PLANO + SUB_TIPO; #20 has ONLY PLANO + SUB_TIPO (no Unique Tag yet)
+    const exp1 = addTraySystemAssignmentsToIfc(sourceBytes, [
+      {
+        localId: 10,
+        systemTag: 'PT1.01',
+        elementTag: 'PT1.01.01',
+        componentId: 'PT1.01.01',
+        sequenceNumber: '01',
+        plano: 'E-301',
+        subTipo: 'ESCALERILLA',
+      },
+      {
+        localId: 20,
+        systemTag: '',
+        elementTag: '',
+        componentId: '',
+        sequenceNumber: '',
+        plano: 'E-302',
+        subTipo: 'CURVA 90',
+      },
+    ]);
+    assert.equal(exp1.applied.length, 2);
+
+    // 2. Re-upload / parse exported IFC bytes
+    const parsed1 = extractTraySystemAssignmentsFromIfc(exp1.bytes);
+    assert.equal(parsed1.size, 2);
+    assert.equal(parsed1.get(10).elementTag, 'PT1.01.01');
+    assert.equal(parsed1.get(10).plano, 'E-301');
+    assert.equal(parsed1.get(10).subTipo, 'ESCALERILLA');
+
+    assert.equal(parsed1.get(20).elementTag, '');
+    assert.equal(parsed1.get(20).plano, 'E-302');
+    assert.equal(parsed1.get(20).subTipo, 'CURVA 90');
+
+    // 3. Second export on already-exported IFC: update #10 PLANO in-place and add Unique Tag to #20 while keeping PLANO/SUB_TIPO
+    const exp2 = addTraySystemAssignmentsToIfc(exp1.bytes, [
+      {
+        localId: 10,
+        systemTag: 'PT1.01',
+        elementTag: 'PT1.01.01',
+        componentId: 'PT1.01.01',
+        sequenceNumber: '01',
+        plano: 'E-301-REV2',
+        subTipo: 'ESCALERILLA',
+      },
+      {
+        localId: 20,
+        systemTag: 'PT1.01',
+        elementTag: 'PT1.01.02',
+        componentId: 'PT1.01.02',
+        sequenceNumber: '02',
+        plano: 'E-302',
+        subTipo: 'CURVA 90',
+      },
+    ]);
+    const parsed2 = extractTraySystemAssignmentsFromIfc(exp2.bytes);
+    assert.equal(parsed2.get(10).plano, 'E-301-REV2');
+    assert.equal(parsed2.get(10).subTipo, 'ESCALERILLA');
+    assert.equal(parsed2.get(20).elementTag, 'PT1.01.02');
+    assert.equal(parsed2.get(20).plano, 'E-302');
+    assert.equal(parsed2.get(20).subTipo, 'CURVA 90');
   });
 });
 
