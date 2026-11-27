@@ -53,9 +53,9 @@ export function initTaggingAuxBar(ctx, dom, api) {
   host.id = 'tray-tagging-aux-bar';
   host.style.cssText =
     'position:fixed;top:154px;left:50%;transform:translateX(-50%);z-index:120;' +
-    'display:none;flex-direction:column;gap:4px;max-width:calc(100vw - 24px);' +
+    'display:none;flex-direction:column;gap:4px;max-width:calc(100vw - 16px);' +
     'background:rgba(15,23,42,0.96);color:#e2e8f0;border:1px solid #38bdf8;' +
-    'border-radius:8px;padding:8px 12px;font:12px/1.3 system-ui,-apple-system,sans-serif;' +
+    'border-radius:8px;padding:6px 10px;font:12px/1.3 system-ui,-apple-system,sans-serif;' +
     'box-shadow:0 12px 32px rgba(0,0,0,0.55);backdrop-filter:blur(8px);';
 
   function positionBelowRibbon() {
@@ -70,7 +70,7 @@ export function initTaggingAuxBar(ctx, dom, api) {
   }
 
   const row = document.createElement('div');
-  row.style.cssText = 'display:flex;align-items:center;flex-wrap:wrap;gap:6px;';
+  row.style.cssText = 'display:flex;align-items:center;flex-wrap:nowrap;gap:5px;overflow-x:auto;';
 
   const mkLabel = (txt) => {
     const s = document.createElement('span');
@@ -83,9 +83,9 @@ export function initTaggingAuxBar(ctx, dom, api) {
   prefixInput.type = 'text';
   prefixInput.value = prefix;
   prefixInput.placeholder = 'CT01.01.';
-  prefixInput.title = 'Fixed prefix (e.g. CT01.01. or BC-101-)';
+  prefixInput.title = 'Fixed prefix (e.g. CT01.01. or PT1.01.)';
   prefixInput.style.cssText =
-    'width:110px;background:#1e293b;color:#f8fafc;border:1px solid #475569;border-radius:4px;' +
+    'width:92px;background:#1e293b;color:#f8fafc;border:1px solid #475569;border-radius:4px;' +
     'padding:3px 6px;font:600 12px/1.2 monospace;';
 
   const startInput = document.createElement('input');
@@ -94,8 +94,8 @@ export function initTaggingAuxBar(ctx, dom, api) {
   startInput.value = String(currentSeq);
   startInput.title = 'Next sequence number';
   startInput.style.cssText =
-    'width:56px;background:#1e293b;color:#f8fafc;border:1px solid #475569;border-radius:4px;' +
-    'padding:3px 6px;font:600 12px/1.2 monospace;';
+    'width:44px;background:#1e293b;color:#f8fafc;border:1px solid #475569;border-radius:4px;' +
+    'padding:3px 5px;font:600 12px/1.2 monospace;';
 
   const digitsSelect = document.createElement('select');
   digitsSelect.title = 'Sequence zero-padding digits';
@@ -117,26 +117,26 @@ export function initTaggingAuxBar(ctx, dom, api) {
   const btnClickMode = document.createElement('button');
   btnClickMode.type = 'button';
   btnClickMode.style.cssText =
-    'border-radius:4px;padding:4px 9px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
+    'border-radius:4px;padding:3px 7px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
 
   const btnLabelsToggle = document.createElement('button');
   btnLabelsToggle.type = 'button';
   btnLabelsToggle.title = 'Toggle 3D floating tag labels visibility (keeps 3D elements visible)';
   btnLabelsToggle.style.cssText =
-    'border-radius:4px;padding:4px 9px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
+    'border-radius:4px;padding:3px 7px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
 
   const btnTagSelected = document.createElement('button');
   btnTagSelected.type = 'button';
   btnTagSelected.style.cssText =
     'background:#1e293b;color:#e2e8f0;border:1px solid #475569;border-radius:4px;' +
-    'padding:4px 9px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
+    'padding:3px 7px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
 
   const btnClearSelected = document.createElement('button');
   btnClearSelected.type = 'button';
   btnClearSelected.title = 'Remove tags from currently selected elements (Delete key; undoable with Ctrl+Z)';
   btnClearSelected.style.cssText =
     'background:#1e293b;color:#fca5a5;border:1px solid #7f1d1d;border-radius:4px;' +
-    'padding:4px 9px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
+    'padding:3px 7px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
 
   const btnUndo = document.createElement('button');
   btnUndo.type = 'button';
@@ -144,7 +144,7 @@ export function initTaggingAuxBar(ctx, dom, api) {
   btnUndo.title = 'Undo last tag change (Ctrl+Z)';
   btnUndo.style.cssText =
     'background:#1e293b;color:#cbd5e1;border:1px solid #334155;border-radius:4px;' +
-    'padding:4px 8px;font-size:11px;cursor:pointer;';
+    'padding:3px 7px;font-size:11px;cursor:pointer;white-space:nowrap;';
 
   const btnExportExcel = document.createElement('button');
   btnExportExcel.type = 'button';
@@ -152,7 +152,7 @@ export function initTaggingAuxBar(ctx, dom, api) {
   btnExportExcel.title = 'Export TAG UNICO, ANCHO, LONGITUD to Excel (.xlsx)';
   btnExportExcel.style.cssText =
     'background:#0284c7;color:#f8fafc;border:none;border-radius:4px;' +
-    'padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
+    'padding:3px 9px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
 
   const btnClose = document.createElement('button');
   btnClose.type = 'button';
@@ -225,7 +225,7 @@ export function initTaggingAuxBar(ctx, dom, api) {
       ? `Next: ${formatSequentialTag(prefix, nextSeq, digits)}`
       : 'Enter prefix';
 
-    btnClickMode.textContent = clickToTagActive ? 'Click-to-Tag: ON' : 'Click-to-Tag: OFF';
+    btnClickMode.textContent = clickToTagActive ? 'Click: ON' : 'Click: OFF';
     btnClickMode.style.background = clickToTagActive ? '#16a34a' : '#1e293b';
     btnClickMode.style.color = clickToTagActive ? '#052e16' : '#94a3b8';
     btnClickMode.style.border = clickToTagActive ? '1px solid #4ade80' : '1px solid #475569';
@@ -237,12 +237,12 @@ export function initTaggingAuxBar(ctx, dom, api) {
     btnLabelsToggle.style.border = labelsOn ? '1px solid #38bdf8' : '1px solid #475569';
 
     const selCount = getSelectedCount();
-    btnTagSelected.textContent = `Tag Selected (${selCount})`;
+    btnTagSelected.textContent = `Tag Sel (${selCount})`;
     btnTagSelected.disabled = selCount === 0 || !prefix.trim();
     btnTagSelected.style.opacity = btnTagSelected.disabled ? '0.5' : '1';
 
     const selTaggedCount = getSelectedTaggedEntries().length;
-    btnClearSelected.textContent = `Clear Tag (${selTaggedCount})`;
+    btnClearSelected.textContent = `Clear (${selTaggedCount})`;
     btnClearSelected.disabled = selTaggedCount === 0;
     btnClearSelected.style.opacity = btnClearSelected.disabled ? '0.45' : '1';
 
@@ -572,6 +572,15 @@ export function initTaggingAuxBar(ctx, dom, api) {
   // Input handlers
   prefixInput.addEventListener('input', () => {
     prefix = prefixInput.value;
+    // Automatically start a new prefix at its first available sequence (e.g., 01)
+    // so changing prefix never skips 01 due to a previous sequence's counter.
+    currentSeq = getNextAvailableSequence({
+      prefix,
+      startSequence: 1,
+      digits,
+      existingTags: getAllExistingTagStrings(),
+    });
+    startInput.value = String(currentSeq);
     savePattern({ prefix, start: currentSeq, digits });
     syncUi();
   });
