@@ -367,8 +367,11 @@ export function createTrayRibbonDef(ctx) {
                   keytip: 'TA',
                   tooltip: 'Apply batch tags to selected elements',
                   enabled: () => {
-                    if (dom.btnApplyBatchTags) return !dom.btnApplyBatchTags.disabled;
-                    return Boolean(ctx.batchPreviewAssignments?.length);
+                    const selCount = typeof api.getSelectedModelIdMap === 'function'
+                      ? Object.values(api.getSelectedModelIdMap() || {}).reduce((n, ids) => n + (ids?.size ?? ids?.length ?? 0), 0)
+                      : 0;
+                    if (ctx.batchPreviewAssignments?.length) return true;
+                    return selCount > 0;
                   },
                   run: () => {
                     if (typeof api.applyBatchTags === 'function') {
