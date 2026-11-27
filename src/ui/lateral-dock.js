@@ -269,7 +269,26 @@ export function initLateralDock(ctx, dom, api) {
     onEditType(element) {
       console.log('[Properties] Edit Type for:', element);
     },
-    onApply(pendingChanges, element) {
+    async onApply(pendingChanges, element) {
+      // Multi-element or single-element PLANO / SUB_TIPO assignment
+      if ('PLANO' in pendingChanges || 'SUB_TIPO' in pendingChanges) {
+        const propsPatch = {};
+        if ('PLANO' in pendingChanges && pendingChanges['PLANO'] !== '<Varies>') {
+          propsPatch.plano = String(pendingChanges['PLANO'] ?? '').trim();
+        }
+        if ('SUB_TIPO' in pendingChanges && pendingChanges['SUB_TIPO'] !== '<Varies>') {
+          propsPatch.subTipo = String(pendingChanges['SUB_TIPO'] ?? '').trim();
+        }
+        if ('plano' in propsPatch || 'subTipo' in propsPatch) {
+          const targets = (element?.id === 'multi' && typeof api.getCurrentSelectionElements === 'function')
+            ? await api.getCurrentSelectionElements()
+            : (ctx.selectedIfcElement ? [ctx.selectedIfcElement] : []);
+          if (targets?.length) {
+            api.setElementsProperties?.(targets, propsPatch);
+          }
+        }
+      }
+
       if (ctx.selectedIfcElement && ('Unique Tag' in pendingChanges || 'System Tag' in pendingChanges)) {
         const current = api.getAssignmentForElement?.(ctx.selectedIfcElement);
         const nextUniqueTag = 'Unique Tag' in pendingChanges
@@ -284,6 +303,7 @@ export function initLateralDock(ctx, dom, api) {
         });
         return;
       }
+      if ('PLANO' in pendingChanges || 'SUB_TIPO' in pendingChanges) return;
       if (typeof api.stagePropertyChange === 'function' && element?.id) {
         for (const [key, val] of Object.entries(pendingChanges)) {
           api.stagePropertyChange('BIM_TRACKER_EDIT', key, val);

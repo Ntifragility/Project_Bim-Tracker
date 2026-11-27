@@ -51,7 +51,7 @@ export function writeWorkbookBytes(sheetsMap) {
 
 /**
  * Builds the clean Cable Tray Excel (.xlsx) workbook bytes:
- *   Sheet 1 ("Bandejas"): TAG UNICO | ANCHO | LONGITUD
+ *   Sheet 1 ("Bandejas"): TAG UNICO | ANCHO | LONGITUD | PLANO | SUB_TIPO
  *   Sheet 2 ("Detalle"):  Optional BIM audit metadata
  */
 export function buildTrayScheduleWorkbook(rows = [], detailRows = []) {
@@ -61,17 +61,19 @@ export function buildTrayScheduleWorkbook(rows = [], detailRows = []) {
         "TAG UNICO": r.tagUnico ?? r["TAG UNICO"] ?? "",
         "ANCHO": r.ancho ?? r["ANCHO"] ?? "",
         "LONGITUD": r.longitud ?? r["LONGITUD"] ?? "",
+        "PLANO": r.plano ?? r["PLANO"] ?? "",
+        "SUB_TIPO": r.subTipo ?? r["SUB_TIPO"] ?? "",
       }))
-    : [{ "TAG UNICO": "", "ANCHO": "", "LONGITUD": "" }];
+    : [{ "TAG UNICO": "", "ANCHO": "", "LONGITUD": "", "PLANO": "", "SUB_TIPO": "" }];
 
   const wsMain = XLSX.utils.json_to_sheet(mainRows);
-  wsMain["!cols"] = [{ wch: 22 }, { wch: 14 }, { wch: 14 }];
+  wsMain["!cols"] = [{ wch: 22 }, { wch: 14 }, { wch: 14 }, { wch: 20 }, { wch: 22 }];
   XLSX.utils.book_append_sheet(workbook, wsMain, "Bandejas");
 
   if (Array.isArray(detailRows) && detailRows.length > 0) {
     const wsDetail = XLSX.utils.json_to_sheet(detailRows);
     wsDetail["!cols"] = [
-      { wch: 22 }, { wch: 26 }, { wch: 28 }, { wch: 24 }, { wch: 12 }, { wch: 24 },
+      { wch: 22 }, { wch: 20 }, { wch: 22 }, { wch: 26 }, { wch: 28 }, { wch: 24 }, { wch: 12 }, { wch: 24 },
     ];
     XLSX.utils.book_append_sheet(workbook, wsDetail, "Detalle");
   }

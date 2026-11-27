@@ -29,6 +29,8 @@ describe('Cable Tray Tier 1 Tag Session Cache (IndexedDB AutoRecover)', () => {
           componentId: 'CT01.01.01',
           systemTag: 'CT01.01',
           sequenceNumber: '01',
+          plano: 'E-301',
+          subTipo: 'ESCALERILLA',
           type: 'IFCCABLECARRIERSEGMENT',
           name: 'Tray-A',
         },
@@ -76,6 +78,8 @@ describe('Cable Tray Tier 1 Tag Session Cache (IndexedDB AutoRecover)', () => {
     assert.equal(restored[0].modelId, 'new-uuid-2');
     assert.equal(restored[0].localId, 901);
     assert.equal(restored[0].elementTag, 'CT01.01.01');
+    assert.equal(restored[0].plano, 'E-301');
+    assert.equal(restored[0].subTipo, 'ESCALERILLA');
     assert.equal(restored[1].localId, 102);
 
     // Clear cache removes both exact and baseName entries

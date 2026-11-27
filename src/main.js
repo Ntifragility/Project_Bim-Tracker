@@ -34,6 +34,7 @@ import { initAppearance } from './ui/appearance.js';
 import { initTaggingPanel } from './ui/tagging-panel.js';
 import { initTaggingAuxBar } from './ui/tagging-aux-bar.js';
 import { initSessionAutosave } from './ui/session-autosave.js';
+import { initTagFinderPanel } from './ui/tag-finder-panel.js';
 import { initSystemManager } from './ui/system-manager.js';
 import { initExcelPanel } from './ui/excel-panel.js';
 import { initEditing } from './ui/editing.js';
@@ -109,6 +110,7 @@ export async function initApp() {
   tagging.wireAssignmentControls();
   initTaggingAuxBar(ctx, dom, api);
   initSessionAutosave(ctx, dom, api);
+  initTagFinderPanel(ctx, dom, api);
 
   // 6. System manager (needs tagging + appearance fns).
   const systems = initSystemManager(ctx, dom, api);
