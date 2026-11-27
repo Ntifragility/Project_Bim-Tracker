@@ -152,6 +152,11 @@ export function initViewerChrome(ctx, dom, api) {
         section: ctx.engine.section,
         ruler: ctx.engine.ruler,
         getSelectionMap: () => (typeof api.getSelectedModelIdMap === 'function' ? api.getSelectedModelIdMap() : {}),
+        hideTaggedAction: {
+          isActive: () => Boolean(api.taggingAuxBar?.isHideTaggedActive?.()),
+          getCount: () => Number(api.taggingAuxBar?.getTaggedCount?.() || 0),
+          onToggle: () => api.taggingAuxBar?.toggleHideTagged?.(),
+        },
       });
       api.reviztoToolbar = reviztoToolbar;
       api.unhidePill = reviztoToolbar;

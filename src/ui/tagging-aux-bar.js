@@ -40,20 +40,29 @@ export function initTaggingAuxBar(ctx, dom, api) {
   const saved = loadSavedPattern();
   let isOpen = false;
   let clickToTagActive = true;
+  let hideTaggedActive = false;
   let prefix = saved.prefix;
   let currentSeq = saved.start;
   let digits = saved.digits;
   let statusText = 'Click elements in 3D to tag sequentially.';
-  const undoStack = []; // Array<{ prevSeq, entries: Array<{ key, previous }> }>
+  const undoStack = []; // Array<{ prevSeq, nextSeq, entries: Array<{ key, modelId, localId, previous, applied }> }>
+  const redoStack = [];
 
+  const mountTarget = document.getElementById('app') || document.body || container;
   const host = document.createElement('div');
   host.id = 'tray-tagging-aux-bar';
   host.style.cssText =
-    'position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:28;' +
-    'display:none;flex-direction:column;gap:4px;max-width:calc(100% - 24px);' +
-    'background:rgba(15,23,42,0.94);color:#e2e8f0;border:1px solid #334155;' +
-    'border-radius:8px;padding:7px 10px;font:12px/1.3 system-ui,-apple-system,sans-serif;' +
-    'box-shadow:0 10px 28px rgba(0,0,0,0.45);backdrop-filter:blur(8px);';
+    'position:fixed;top:154px;left:50%;transform:translateX(-50%);z-index:120;' +
+    'display:none;flex-direction:column;gap:4px;max-width:calc(100vw - 16px);' +
+    'background:rgba(15,23,42,0.96);color:#e2e8f0;border:1px solid #38bdf8;' +
+    'border-radius:8px;padding:6px 10px;font:12px/1.3 system-ui,-apple-system,sans-serif;' +
+    'box-shadow:0 12px 32px rgba(0,0,0,0.55);backdrop-filter:blur(8px);';
+
+  function positionBelowRibbon() {
+    const ribbonEl = document.getElementById('ribbon');
+    const bottom = ribbonEl ? Math.ceil(ribbonEl.getBoundingClientRect().bottom) : 148;
+    host.style.top = `${Math.max(12, bottom + 8)}px`;
+  }
 
   // Stop clicks/wheel inside bar from leaking to Three.js canvas / highlighter
   for (const ev of ['pointerdown', 'pointerup', 'click', 'dblclick', 'wheel', 'contextmenu']) {
@@ -61,7 +70,7 @@ export function initTaggingAuxBar(ctx, dom, api) {
   }
 
   const row = document.createElement('div');
-  row.style.cssText = 'display:flex;align-items:center;flex-wrap:wrap;gap:6px;';
+  row.style.cssText = 'display:flex;align-items:center;flex-wrap:nowrap;gap:5px;overflow-x:auto;';
 
   const mkLabel = (txt) => {
     const s = document.createElement('span');
@@ -74,9 +83,9 @@ export function initTaggingAuxBar(ctx, dom, api) {
   prefixInput.type = 'text';
   prefixInput.value = prefix;
   prefixInput.placeholder = 'CT01.01.';
-  prefixInput.title = 'Fixed prefix (e.g. CT01.01. or BC-101-)';
+  prefixInput.title = 'Fixed prefix (e.g. CT01.01. or PT1.01.)';
   prefixInput.style.cssText =
-    'width:110px;background:#1e293b;color:#f8fafc;border:1px solid #475569;border-radius:4px;' +
+    'width:92px;background:#1e293b;color:#f8fafc;border:1px solid #475569;border-radius:4px;' +
     'padding:3px 6px;font:600 12px/1.2 monospace;';
 
   const startInput = document.createElement('input');
@@ -85,8 +94,8 @@ export function initTaggingAuxBar(ctx, dom, api) {
   startInput.value = String(currentSeq);
   startInput.title = 'Next sequence number';
   startInput.style.cssText =
-    'width:56px;background:#1e293b;color:#f8fafc;border:1px solid #475569;border-radius:4px;' +
-    'padding:3px 6px;font:600 12px/1.2 monospace;';
+    'width:44px;background:#1e293b;color:#f8fafc;border:1px solid #475569;border-radius:4px;' +
+    'padding:3px 5px;font:600 12px/1.2 monospace;';
 
   const digitsSelect = document.createElement('select');
   digitsSelect.title = 'Sequence zero-padding digits';
@@ -108,20 +117,34 @@ export function initTaggingAuxBar(ctx, dom, api) {
   const btnClickMode = document.createElement('button');
   btnClickMode.type = 'button';
   btnClickMode.style.cssText =
-    'border-radius:4px;padding:4px 9px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
+    'border-radius:4px;padding:3px 7px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
+
+  const btnLabelsToggle = document.createElement('button');
+  btnLabelsToggle.type = 'button';
+  btnLabelsToggle.title = 'Toggle 3D floating tag labels visibility (keeps 3D elements visible)';
+  btnLabelsToggle.style.cssText =
+    'border-radius:4px;padding:3px 7px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
 
   const btnTagSelected = document.createElement('button');
   btnTagSelected.type = 'button';
   btnTagSelected.style.cssText =
     'background:#1e293b;color:#e2e8f0;border:1px solid #475569;border-radius:4px;' +
-    'padding:4px 9px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
+    'padding:3px 7px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
+
+  const btnClearSelected = document.createElement('button');
+  btnClearSelected.type = 'button';
+  btnClearSelected.title = 'Remove tags from currently selected elements (Delete key; undoable with Ctrl+Z)';
+  btnClearSelected.style.cssText =
+    'background:#1e293b;color:#fca5a5;border:1px solid #7f1d1d;border-radius:4px;' +
+    'padding:3px 7px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
 
   const btnUndo = document.createElement('button');
   btnUndo.type = 'button';
   btnUndo.textContent = 'Undo';
+  btnUndo.title = 'Undo last tag change (Ctrl+Z)';
   btnUndo.style.cssText =
     'background:#1e293b;color:#cbd5e1;border:1px solid #334155;border-radius:4px;' +
-    'padding:4px 8px;font-size:11px;cursor:pointer;';
+    'padding:3px 7px;font-size:11px;cursor:pointer;white-space:nowrap;';
 
   const btnExportExcel = document.createElement('button');
   btnExportExcel.type = 'button';
@@ -129,7 +152,7 @@ export function initTaggingAuxBar(ctx, dom, api) {
   btnExportExcel.title = 'Export TAG UNICO, ANCHO, LONGITUD to Excel (.xlsx)';
   btnExportExcel.style.cssText =
     'background:#0284c7;color:#f8fafc;border:none;border-radius:4px;' +
-    'padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
+    'padding:3px 9px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
 
   const btnClose = document.createElement('button');
   btnClose.type = 'button';
@@ -146,7 +169,9 @@ export function initTaggingAuxBar(ctx, dom, api) {
     digitsSelect,
     nextPreview,
     btnClickMode,
+    btnLabelsToggle,
     btnTagSelected,
+    btnClearSelected,
     btnUndo,
     btnExportExcel,
     btnClose,
@@ -156,7 +181,10 @@ export function initTaggingAuxBar(ctx, dom, api) {
   statusLine.style.cssText = 'font-size:11px;color:#94a3b8;display:flex;justify-content:space-between;gap:12px;';
 
   host.append(row, statusLine);
-  container.appendChild(host);
+  mountTarget.appendChild(host);
+  window.addEventListener('resize', () => {
+    if (isOpen) positionBelowRibbon();
+  });
 
   function getAllExistingTagStrings() {
     const effective = api.getEffectiveTaggedElements?.() || [];
@@ -172,7 +200,20 @@ export function initTaggingAuxBar(ctx, dom, api) {
     return total;
   }
 
+  function getSelectedTaggedEntries() {
+    const map = api.getSelectedModelIdMap?.() || {};
+    const selectedKeys = new Set();
+    for (const [modelId, ids] of Object.entries(map)) {
+      const list = ids instanceof Set ? Array.from(ids) : Array.isArray(ids) ? ids : [];
+      for (const localId of list) selectedKeys.add(getAssignmentKey(modelId, Number(localId)));
+    }
+    if (selectedKeys.size === 0) return [];
+    const effective = api.getEffectiveTaggedElements?.() || [];
+    return effective.filter((item) => selectedKeys.has(getAssignmentKey(item.modelId, item.localId)));
+  }
+
   function syncUi() {
+    if (isOpen) positionBelowRibbon();
     host.style.display = isOpen ? 'flex' : 'none';
     const nextSeq = getNextAvailableSequence({
       prefix,
@@ -184,15 +225,26 @@ export function initTaggingAuxBar(ctx, dom, api) {
       ? `Next: ${formatSequentialTag(prefix, nextSeq, digits)}`
       : 'Enter prefix';
 
-    btnClickMode.textContent = clickToTagActive ? 'Click-to-Tag: ON' : 'Click-to-Tag: OFF';
+    btnClickMode.textContent = clickToTagActive ? 'Click: ON' : 'Click: OFF';
     btnClickMode.style.background = clickToTagActive ? '#16a34a' : '#1e293b';
     btnClickMode.style.color = clickToTagActive ? '#052e16' : '#94a3b8';
     btnClickMode.style.border = clickToTagActive ? '1px solid #4ade80' : '1px solid #475569';
 
+    const labelsOn = Boolean(ctx.isFloatingLabelsActive);
+    btnLabelsToggle.textContent = labelsOn ? 'Labels: ON' : 'Labels: OFF';
+    btnLabelsToggle.style.background = labelsOn ? '#0c4a6e' : '#1e293b';
+    btnLabelsToggle.style.color = labelsOn ? '#bae6fd' : '#94a3b8';
+    btnLabelsToggle.style.border = labelsOn ? '1px solid #38bdf8' : '1px solid #475569';
+
     const selCount = getSelectedCount();
-    btnTagSelected.textContent = `Tag Selected (${selCount})`;
+    btnTagSelected.textContent = `Tag Sel (${selCount})`;
     btnTagSelected.disabled = selCount === 0 || !prefix.trim();
     btnTagSelected.style.opacity = btnTagSelected.disabled ? '0.5' : '1';
+
+    const selTaggedCount = getSelectedTaggedEntries().length;
+    btnClearSelected.textContent = `Clear (${selTaggedCount})`;
+    btnClearSelected.disabled = selTaggedCount === 0;
+    btnClearSelected.style.opacity = btnClearSelected.disabled ? '0.45' : '1';
 
     btnUndo.disabled = undoStack.length === 0;
     btnUndo.style.opacity = btnUndo.disabled ? '0.45' : '1';
@@ -204,7 +256,36 @@ export function initTaggingAuxBar(ctx, dom, api) {
     statusLine.textContent = `${statusText}  ·  Total tagged: ${totalTagged}`;
   }
 
-  function commitElements(elements) {
+  async function syncHideTaggedFilterLayer() {
+    if (!ctx.engine?.visibility?.setFilterLayer) return;
+    if (!hideTaggedActive) {
+      await ctx.engine.visibility.clearFilterLayer('tagged');
+    } else {
+      const effective = api.getEffectiveTaggedElements?.() || [];
+      const taggedMap = {};
+      for (const item of effective) {
+        if (!item.modelId || item.localId === undefined) continue;
+        if (!taggedMap[item.modelId]) taggedMap[item.modelId] = new Set();
+        taggedMap[item.modelId].add(Number(item.localId));
+      }
+      await ctx.engine.visibility.setFilterLayer('tagged', taggedMap);
+    }
+    await api.refreshFloatingLabels?.();
+    api.reviztoToolbar?.update?.();
+  }
+
+  async function toggleHideTagged() {
+    hideTaggedActive = !hideTaggedActive;
+    await syncHideTaggedFilterLayer();
+    const count = (api.getEffectiveTaggedElements?.() || []).length;
+    statusText = hideTaggedActive
+      ? `Hidden ${count} tagged element${count === 1 ? '' : 's'} (untagged remain visible).`
+      : 'Restored visibility of all tagged elements.';
+    syncUi();
+    return hideTaggedActive;
+  }
+
+  function commitElements(elements, { clearRedo = true } = {}) {
     if (!elements || elements.length === 0) return false;
     const result = allocateSequentialTags({
       elements,
@@ -219,19 +300,25 @@ export function initTaggingAuxBar(ctx, dom, api) {
       return false;
     }
 
+    if (clearRedo) redoStack.length = 0;
+
     const snapshotEntries = [];
     for (const assignment of result.assignments) {
       const key = getAssignmentKey(assignment.modelId, assignment.localId);
-      snapshotEntries.push({
-        key,
-        previous: ctx.tagAssignments.has(key) ? { ...ctx.tagAssignments.get(key) } : null,
-      });
-      ctx.tagAssignments.set(key, {
+      const applied = {
         ...assignment,
         excelRowIndex: ctx.selectedExcelRowIndex,
+      };
+      snapshotEntries.push({
+        key,
+        modelId: assignment.modelId,
+        localId: assignment.localId,
+        previous: ctx.tagAssignments.has(key) ? { ...ctx.tagAssignments.get(key) } : null,
+        applied,
       });
+      ctx.tagAssignments.set(key, applied);
     }
-    undoStack.push({ prevSeq: currentSeq, entries: snapshotEntries });
+    undoStack.push({ prevSeq: currentSeq, nextSeq: result.nextSequence, entries: snapshotEntries });
     if (undoStack.length > 50) undoStack.shift();
 
     currentSeq = result.nextSequence;
@@ -251,9 +338,18 @@ export function initTaggingAuxBar(ctx, dom, api) {
 
     api.renderExcelTable?.();
     api.updateTagAssignmentUi?.(statusText, 'success');
-    api.updateTaggedElementsHighlight?.();
-    api.updateFloatingTagLabels?.();
+    api.refreshTaggedTrayHighlights?.();
+    api.refreshFloatingLabels?.();
+    api.refreshSelectedPropertiesTag?.();
     api.refreshRibbon?.();
+    api.sessionAutosave?.scheduleSave?.();
+    if (hideTaggedActive) {
+      void syncHideTaggedFilterLayer().then(() => {
+        try { ctx.highlighter?.clear?.('select'); } catch { /* noop */ }
+      });
+    } else {
+      api.reviztoToolbar?.update?.();
+    }
     syncUi();
     return true;
   }
@@ -261,6 +357,9 @@ export function initTaggingAuxBar(ctx, dom, api) {
   function undoLast() {
     const batch = undoStack.pop();
     if (!batch) return false;
+    redoStack.push(batch);
+    if (redoStack.length > 50) redoStack.shift();
+
     for (const item of batch.entries) {
       if (item.previous) ctx.tagAssignments.set(item.key, item.previous);
       else ctx.tagAssignments.delete(item.key);
@@ -268,13 +367,165 @@ export function initTaggingAuxBar(ctx, dom, api) {
     currentSeq = batch.prevSeq;
     startInput.value = String(currentSeq);
     savePattern({ prefix, start: currentSeq, digits });
-    statusText = `Undid ${batch.entries.length} tag${batch.entries.length === 1 ? '' : 's'} (counter back to ${currentSeq}).`;
+    statusText = `Undid ${batch.entries.length} tag change${batch.entries.length === 1 ? '' : 's'} (counter back to ${currentSeq}).`;
+    const singleUndone = batch.entries.length === 1 ? batch.entries[0] : null;
+    commitProjection({ tone: 'success', selectAfter: singleUndone });
+    return true;
+  }
+
+  function commitProjection({ tone = 'success', clearSelectionWhenHidden = false, selectAfter = null } = {}) {
     api.renderExcelTable?.();
-    api.updateTagAssignmentUi?.(statusText, 'success');
-    api.updateTaggedElementsHighlight?.();
-    api.updateFloatingTagLabels?.();
+    api.updateTagAssignmentUi?.(statusText, tone);
+    api.refreshTaggedTrayHighlights?.();
+    api.refreshFloatingLabels?.();
+    api.refreshSelectedPropertiesTag?.();
     api.refreshRibbon?.();
+    api.sessionAutosave?.scheduleSave?.();
+
+    if (hideTaggedActive) {
+      void syncHideTaggedFilterLayer().then(() => {
+        if (clearSelectionWhenHidden) {
+          try { ctx.highlighter?.clear?.('select'); } catch { /* noop */ }
+        } else if (selectAfter?.modelId && selectAfter?.localId !== undefined) {
+          void api.selectElementFromUi?.(selectAfter.modelId, Number(selectAfter.localId), {
+            source: 'undo',
+            additive: false,
+            zoom: false,
+          });
+        }
+      });
+    } else {
+      api.reviztoToolbar?.update?.();
+    }
     syncUi();
+  }
+
+  function unassignElements(elements) {
+    if (!elements || elements.length === 0) return false;
+    const snapshotEntries = [];
+    for (const item of elements) {
+      if (!item?.modelId || item.localId === undefined) continue;
+      const key = getAssignmentKey(item.modelId, item.localId);
+      const prev = ctx.tagAssignments.has(key) ? { ...ctx.tagAssignments.get(key) } : null;
+      const existingSaved = api.findLoadedModelEntry?.(item.modelId)?.existingProjectTags?.get(Number(item.localId));
+      const applied = existingSaved
+        ? {
+            modelId: item.modelId,
+            localId: Number(item.localId),
+            globalId: item.globalId || existingSaved.globalId || '',
+            type: item.type || existingSaved.type || '',
+            name: item.name || existingSaved.name || '',
+            modelName: item.modelName || existingSaved.modelName || '',
+            delete: true,
+          }
+        : null;
+      snapshotEntries.push({
+        key,
+        modelId: item.modelId,
+        localId: Number(item.localId),
+        previous: prev,
+        applied,
+      });
+      if (applied) ctx.tagAssignments.set(key, applied);
+      else ctx.tagAssignments.delete(key);
+    }
+    if (!snapshotEntries.length) return false;
+
+    redoStack.length = 0;
+    undoStack.push({ type: 'unassign', prevSeq: currentSeq, nextSeq: currentSeq, entries: snapshotEntries });
+    if (undoStack.length > 50) undoStack.shift();
+
+    statusText = `Cleared tag${snapshotEntries.length === 1 ? '' : 's'} from ${snapshotEntries.length} element${snapshotEntries.length === 1 ? '' : 's'} (Ctrl+Z to undo).`;
+    commitProjection({ tone: 'success' });
+    return true;
+  }
+
+  function clearSelectedTags() {
+    const tagged = getSelectedTaggedEntries();
+    if (!tagged.length) {
+      statusText = 'No tagged elements in current selection.';
+      syncUi();
+      return false;
+    }
+    return unassignElements(tagged);
+  }
+
+  function editElementTag(element, { elementTag = '', systemTag = '' } = {}) {
+    if (!element?.modelId || element.localId === undefined) return false;
+    const cleanTag = String(elementTag ?? '').trim();
+    if (!cleanTag || cleanTag === '-') {
+      return unassignElements([element]);
+    }
+
+    const key = getAssignmentKey(element.modelId, element.localId);
+    const effective = api.getEffectiveTaggedElements?.() || [];
+    const duplicate = effective.find((item) => {
+      if (getAssignmentKey(item.modelId, item.localId) === key) return false;
+      const existingTag = String(item.elementTag || item.componentId || '').trim().toLowerCase();
+      return existingTag === cleanTag.toLowerCase();
+    });
+    if (duplicate) {
+      statusText = `Tag "${cleanTag}" is already assigned to element #${duplicate.localId}.`;
+      api.updateTagAssignmentUi?.(statusText, 'warning');
+      syncUi();
+      return false;
+    }
+
+    const prev = ctx.tagAssignments.has(key) ? { ...ctx.tagAssignments.get(key) } : null;
+    const derivedSystem = String(systemTag ?? '').trim()
+      || prev?.systemTag
+      || cleanTag.replace(/[.\-_]?\d+$/, '').replace(/[.\-_]+$/, '')
+      || cleanTag;
+    const seqMatch = cleanTag.match(/(\d+)$/);
+    const derivedSeq = seqMatch ? seqMatch[1] : (prev?.sequenceNumber || '01');
+
+    const applied = {
+      ...(prev || {}),
+      modelId: element.modelId,
+      localId: Number(element.localId),
+      globalId: element.globalId || prev?.globalId || '',
+      type: element.type || prev?.type || '',
+      name: element.name || prev?.name || '',
+      modelName: element.modelName || prev?.modelName || '',
+      elementTag: cleanTag,
+      componentId: cleanTag,
+      systemTag: derivedSystem,
+      sequenceNumber: derivedSeq,
+      source: 'pending',
+      delete: false,
+      excelRowIndex: prev?.excelRowIndex ?? ctx.selectedExcelRowIndex,
+    };
+
+    redoStack.length = 0;
+    undoStack.push({
+      type: 'edit',
+      prevSeq: currentSeq,
+      nextSeq: currentSeq,
+      entries: [{ key, modelId: element.modelId, localId: Number(element.localId), previous: prev, applied }],
+    });
+    if (undoStack.length > 50) undoStack.shift();
+
+    ctx.tagAssignments.set(key, applied);
+    statusText = `Updated tag on #${element.localId} → ${cleanTag}`;
+    commitProjection({ tone: 'success' });
+    return true;
+  }
+
+  function redoLast() {
+    const batch = redoStack.pop();
+    if (!batch) return false;
+    undoStack.push(batch);
+    if (undoStack.length > 50) undoStack.shift();
+
+    for (const item of batch.entries) {
+      if (item.applied) ctx.tagAssignments.set(item.key, { ...item.applied });
+      else ctx.tagAssignments.delete(item.key);
+    }
+    currentSeq = batch.nextSeq ?? currentSeq;
+    startInput.value = String(currentSeq);
+    savePattern({ prefix, start: currentSeq, digits });
+    statusText = `Redid ${batch.entries.length} tag change${batch.entries.length === 1 ? '' : 's'} (next #${currentSeq}).`;
+    commitProjection({ tone: 'success', clearSelectionWhenHidden: batch.type !== 'unassign' });
     return true;
   }
 
@@ -321,6 +572,15 @@ export function initTaggingAuxBar(ctx, dom, api) {
   // Input handlers
   prefixInput.addEventListener('input', () => {
     prefix = prefixInput.value;
+    // Automatically start a new prefix at its first available sequence (e.g., 01)
+    // so changing prefix never skips 01 due to a previous sequence's counter.
+    currentSeq = getNextAvailableSequence({
+      prefix,
+      startSequence: 1,
+      digits,
+      existingTags: getAllExistingTagStrings(),
+    });
+    startInput.value = String(currentSeq);
     savePattern({ prefix, start: currentSeq, digits });
     syncUi();
   });
@@ -341,6 +601,14 @@ export function initTaggingAuxBar(ctx, dom, api) {
       : 'Click-to-Tag OFF — select elements and click Tag Selected.';
     syncUi();
   });
+  btnLabelsToggle.addEventListener('click', async () => {
+    const next = !ctx.isFloatingLabelsActive;
+    await api.setFloatingLabelsActive?.(next);
+    statusText = next
+      ? 'Floating 3D tag labels shown.'
+      : 'Floating 3D tag labels hidden (elements remain visible).';
+    syncUi();
+  });
   btnTagSelected.addEventListener('click', async () => {
     const ordered = await api.getCurrentSelectionElements?.();
     if (!ordered?.length) {
@@ -350,6 +618,7 @@ export function initTaggingAuxBar(ctx, dom, api) {
     }
     commitElements(ordered);
   });
+  btnClearSelected.addEventListener('click', () => clearSelectedTags());
   btnUndo.addEventListener('click', () => undoLast());
   btnExportExcel.addEventListener('click', () => { exportExcelSchedule(); });
   btnClose.addEventListener('click', () => {
@@ -357,10 +626,10 @@ export function initTaggingAuxBar(ctx, dom, api) {
     syncUi();
   });
 
-  // Hook called by selection.js whenever user clicks an element in 3D
-  function onElementSelected(identity, multiList = []) {
+  // Hook called by selection.js whenever user selects an element
+  function onElementSelected(identity, multiList = [], { source = 'viewport' } = {}) {
     if (!isOpen) return;
-    if (clickToTagActive && identity && (!multiList || multiList.length <= 1)) {
+    if (source === 'viewport' && clickToTagActive && identity && (!multiList || multiList.length <= 1)) {
       const key = getAssignmentKey(identity.modelId, identity.localId);
       const already = ctx.tagAssignments.get(key);
       if (already && already.delete !== true) {
@@ -398,11 +667,39 @@ export function initTaggingAuxBar(ctx, dom, api) {
     onElementSelected,
     exportExcelSchedule,
     undoLast,
+    redoLast,
+    clearSelectedTags,
+    unassignElements,
+    editElementTag,
+    toggleHideTagged,
+    syncHideTaggedFilterLayer,
+    isHideTaggedActive: () => hideTaggedActive,
+    getTaggedCount: () => (api.getEffectiveTaggedElements?.() || []).length,
+    getSelectedTaggedCount: () => getSelectedTaggedEntries().length,
+    getPattern: () => ({ prefix, start: currentSeq, digits }),
+    applyPattern(nextPattern) {
+      if (!nextPattern) return;
+      if (typeof nextPattern.prefix === 'string' && nextPattern.prefix.trim()) {
+        prefix = nextPattern.prefix;
+        prefixInput.value = prefix;
+      }
+      if (Number.isFinite(Number(nextPattern.start))) {
+        currentSeq = Math.max(1, Number.parseInt(nextPattern.start, 10) || 1);
+        startInput.value = String(currentSeq);
+      }
+      if (Number.isFinite(Number(nextPattern.digits))) {
+        digits = Math.max(1, Math.min(6, Number.parseInt(nextPattern.digits, 10) || 2));
+        digitsSelect.value = String(digits);
+      }
+      savePattern({ prefix, start: currentSeq, digits });
+      syncUi();
+    },
     syncUi,
   };
 
   api.taggingAuxBar = barApi;
   api.onElementSelectedForTagging = onElementSelected;
   api.exportTrayScheduleExcel = exportExcelSchedule;
+  api.editElementTag = editElementTag;
   return barApi;
 }

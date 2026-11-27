@@ -109,6 +109,7 @@ export function computeToolbarPresentationState({
 
 const ICONS = {
   hide: `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="2" y1="2" x2="22" y2="22"/></svg>`,
+  hideTagged: `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><circle cx="7" cy="7" r="1.5"/><line x1="2" y1="22" x2="22" y2="2"/></svg>`,
   unhide: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`,
   isolate: `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="1.5" stroke-dasharray="3 3"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg>`,
   section: `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7l8-4 8 4v10l-8 4-8-4V7z"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="12" x2="12" y2="21"/></svg>`,
@@ -139,6 +140,7 @@ export function createReviztoToolbar(
     ruler,
     getSelectionMap = null,
     onToolFocus = null,
+    hideTaggedAction = null,
   } = {},
 ) {
   if (!container || typeof document === "undefined") {
@@ -704,6 +706,36 @@ export function createReviztoToolbar(
     capsule.appendChild(hideBtn);
 
     capsule.appendChild(el("span", "rc-capsule-sep"));
+
+    // 1b. Optional Hide Tagged button (injected by Cable Tray Viewer between Hide and Isolate)
+    if (hideTaggedAction && typeof hideTaggedAction.onToggle === "function") {
+      const active = Boolean(hideTaggedAction.isActive?.());
+      const taggedCount = Number(hideTaggedAction.getCount?.() || 0);
+      const disabled = !active && taggedCount === 0;
+      const hideTaggedBtn = el(
+        "button",
+        `rc-revizto-btn${active ? " is-active" : ""}`,
+        {
+          type: "button",
+          title: active
+            ? "Show Tagged Elements (currently hidden)"
+            : taggedCount > 0
+              ? `Hide ${taggedCount} Tagged Element${taggedCount === 1 ? "" : "s"}`
+              : "No tagged elements to hide yet",
+          "data-action": "hide-tagged",
+        },
+      );
+      hideTaggedBtn.disabled = disabled;
+      const labelText = active ? "Tagged Hidden" : "Hide Tagged";
+      const badgeHtml = taggedCount > 0 ? `<span class="rc-revizto-badge">${taggedCount}</span>` : "";
+      hideTaggedBtn.innerHTML = `${ICONS.hideTagged}<span>${labelText}</span>${badgeHtml}`;
+      hideTaggedBtn.addEventListener("click", async () => {
+        await hideTaggedAction.onToggle();
+        render();
+      });
+      capsule.appendChild(hideTaggedBtn);
+      capsule.appendChild(el("span", "rc-capsule-sep"));
+    }
 
     // 2. Isolate
     const isoBtn = el("button", "rc-revizto-btn", {

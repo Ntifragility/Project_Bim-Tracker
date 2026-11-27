@@ -283,6 +283,7 @@ export function initModelLoader(ctx, dom, hooks, api = {}) {
         uuid: model.uuid || Math.random().toString(36).substring(7),
         name,
         size: sizeFormatted,
+        byteLength: bytes.byteLength,
         model,
         sourceIfcBytes,
         existingProjectTags: extractTraySystemAssignmentsFromIfc(bytes),
@@ -290,6 +291,7 @@ export function initModelLoader(ctx, dom, hooks, api = {}) {
       };
 
       ctx.loadedModels.push(modelEntry);
+      await api?.sessionAutosave?.restoreForModelEntry?.(modelEntry);
       hooks.renderExcelTable();
       hooks.renderTraySystemManager();
       hooks.refreshValidationReportIfOpen();
@@ -354,6 +356,7 @@ export function initModelLoader(ctx, dom, hooks, api = {}) {
         uuid: model.uuid || Math.random().toString(36).substring(7),
         name,
         size: sizeFormatted || formatBytes(buffer.byteLength),
+        byteLength: buffer.byteLength,
         model,
         sourceIfcBytes: null,
         existingProjectTags: new Map(),
@@ -361,6 +364,7 @@ export function initModelLoader(ctx, dom, hooks, api = {}) {
       };
 
       ctx.loadedModels.push(modelEntry);
+      await api?.sessionAutosave?.restoreForModelEntry?.(modelEntry);
       hooks.renderExcelTable?.();
       hooks.renderTraySystemManager?.();
       hooks.refreshValidationReportIfOpen?.();

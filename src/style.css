@@ -1829,8 +1829,8 @@ section.control-group[data-sidebar-panel].active {
 }
 
 .tag-3d-label:hover {
-  transform: translate(-50%, -105%) scale(1.06);
-  border-color: rgba(255, 255, 255, 0.3);
+  transform: translate(-50%, -100%) scale(1.04);
+  border-color: rgba(255, 255, 255, 0.35);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.8), 0 0 16px var(--label-accent, #10b981);
   z-index: 9999 !important;
 }
