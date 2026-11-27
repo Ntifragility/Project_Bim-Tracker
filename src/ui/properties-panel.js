@@ -75,6 +75,8 @@ export function initPropertiesPanel(ctx, dom, api) {
     const systemTag = assignment?.delete
       ? ''
       : (assignment?.systemTag || existing?.systemTag || '');
+    const plano = assignment?.delete ? '' : (assignment?.plano || '');
+    const subTipo = assignment?.delete ? '' : (assignment?.subTipo || '');
     const service = assignment?.service || 'Power';
     const status = assignment?.status || 'Active';
 
@@ -99,6 +101,8 @@ export function initPropertiesPanel(ctx, dom, api) {
         'Electrical': [
           { name: 'Unique Tag', value: uniqueTag, type: 'text', readonly: false },
           { name: 'System Tag', value: systemTag, type: 'text', readonly: false },
+          { name: 'PLANO', value: plano, type: 'text', readonly: false },
+          { name: 'SUB_TIPO', value: subTipo, type: 'text', readonly: false },
           { name: 'Service', value: service, readonly: true },
           { name: 'Status', value: status, readonly: true },
         ],
@@ -608,6 +612,16 @@ export function initPropertiesPanel(ctx, dom, api) {
     if (models.size !== 1) dom.propModel.classList.add('prop-value-varies'); else dom.propModel.classList.remove('prop-value-varies');
 
     if (api.propertiesPalette) {
+      const planoValues = new Set();
+      const subTipoValues = new Set();
+      for (const el of elements) {
+        const a = api.getAssignmentForElement?.(el);
+        planoValues.add(a && !a.delete ? (a.plano || '') : '');
+        subTipoValues.add(a && !a.delete ? (a.subTipo || '') : '');
+      }
+      const planoText = planoValues.size === 1 ? Array.from(planoValues)[0] : '<Varies>';
+      const subTipoText = subTipoValues.size === 1 ? Array.from(subTipoValues)[0] : '<Varies>';
+
       api.propertiesPalette.setElement({
         id: 'multi',
         name: `${elements.length} Elements`,
@@ -619,17 +633,19 @@ export function initPropertiesPanel(ctx, dom, api) {
         parameters: {
           'Constraints': [
             { name: 'Reference Level', value: '<Varies>', readonly: true },
-            { name: 'Elevation', value: '<Varies>', readonly: false },
+            { name: 'Elevation', value: '<Varies>', readonly: true },
           ],
           'Dimensions': [
-            { name: 'Width', value: '<Varies>', readonly: false },
-            { name: 'Height', value: '<Varies>', readonly: false },
+            { name: 'Width', value: '<Varies>', readonly: true },
+            { name: 'Height', value: '<Varies>', readonly: true },
             { name: 'Length', value: '<Varies>', readonly: true },
           ],
           'Electrical': [
-            { name: 'System Tag', value: tagText || '<Varies>', readonly: false },
-            { name: 'Service', value: '<Varies>', readonly: false },
-            { name: 'Status', value: '<Varies>', readonly: false },
+            { name: 'System Tag', value: tagText || '<Varies>', readonly: true },
+            { name: 'PLANO', value: planoText, type: 'text', readonly: false },
+            { name: 'SUB_TIPO', value: subTipoText, type: 'text', readonly: false },
+            { name: 'Service', value: '<Varies>', readonly: true },
+            { name: 'Status', value: '<Varies>', readonly: true },
           ],
           'Identity Data': [
             { name: 'Entity', value: typeText, readonly: true },

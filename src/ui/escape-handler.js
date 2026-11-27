@@ -113,6 +113,16 @@ export function initEscapeHandler(ctx, dom, api) {
       }
     }
 
+    // Tag Finder toggle (Ctrl + F)
+    if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'f') {
+      if (isTypingTarget(event.target)) return;
+      if (api.tagFinder) {
+        event.preventDefault();
+        api.tagFinder.toggle();
+        return;
+      }
+    }
+
     // Revizto-style Hide (Ctrl + H) and Unhide (Ctrl + Shift + H)
     if (event.ctrlKey && event.key.toLowerCase() === 'h') {
       if (isTypingTarget(event.target)) return;
@@ -218,6 +228,11 @@ export function initEscapeHandler(ctx, dom, api) {
     if (dom.tagValidationReport && !dom.tagValidationReport.hidden) {
       event.preventDefault();
       dom.tagValidationReport.hidden = true;
+      return;
+    }
+    if (api.tagFinder?.isOpen?.()) {
+      event.preventDefault();
+      api.tagFinder.close();
       return;
     }
 

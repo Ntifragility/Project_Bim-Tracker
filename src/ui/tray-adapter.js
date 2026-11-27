@@ -470,9 +470,20 @@ export function createTrayRibbonDef(ctx) {
           },
           {
             id: 'tag-validate',
-            label: 'Validate',
+            label: 'Search & Validate',
             items: [
               [
+                {
+                  id: 'tray.find-tags',
+                  label: 'Find\nTags',
+                  icon: 'highlight',
+                  size: 'big',
+                  keytip: 'TF',
+                  tooltip: 'Open Buscador de TAGs (search by TAG UNICO, PLANO, SUB_TIPO — Ctrl+F)',
+                  run: () => {
+                    api.tagFinder?.toggle?.();
+                  },
+                },
                 {
                   id: 'tray.validate',
                   label: 'Validate\nTags',

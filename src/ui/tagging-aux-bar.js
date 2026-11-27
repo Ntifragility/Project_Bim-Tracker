@@ -138,6 +138,22 @@ export function initTaggingAuxBar(ctx, dom, api) {
     'background:#1e293b;color:#fca5a5;border:1px solid #7f1d1d;border-radius:4px;' +
     'padding:3px 7px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
 
+  const btnPropsToggle = document.createElement('button');
+  btnPropsToggle.type = 'button';
+  btnPropsToggle.textContent = 'Props';
+  btnPropsToggle.title = 'Assign PLANO and SUB_TIPO properties to selected elements';
+  btnPropsToggle.style.cssText =
+    'background:#1e293b;color:#cbd5e1;border:1px solid #475569;border-radius:4px;' +
+    'padding:3px 7px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
+
+  const btnFindTags = document.createElement('button');
+  btnFindTags.type = 'button';
+  btnFindTags.textContent = 'Find';
+  btnFindTags.title = 'Open Buscador de TAGs (Ctrl+F)';
+  btnFindTags.style.cssText =
+    'background:#1e293b;color:#7dd3fc;border:1px solid #0369a1;border-radius:4px;' +
+    'padding:3px 7px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
+
   const btnUndo = document.createElement('button');
   btnUndo.type = 'button';
   btnUndo.textContent = 'Undo';
@@ -172,15 +188,78 @@ export function initTaggingAuxBar(ctx, dom, api) {
     btnLabelsToggle,
     btnTagSelected,
     btnClearSelected,
+    btnPropsToggle,
+    btnFindTags,
     btnUndo,
     btnExportExcel,
     btnClose,
   );
 
+  // Collapsible PLANO & SUB_TIPO bulk property assignment drawer (keeps main bar single-row)
+  let propsDrawerOpen = false;
+  const propsRow = document.createElement('div');
+  propsRow.style.cssText =
+    'display:none;align-items:center;gap:6px;flex-wrap:wrap;padding-top:5px;border-top:1px solid #334155;';
+
+  const planoListId = 'tray-plano-datalist';
+  const subTipoListId = 'tray-subtipo-datalist';
+  const planoDatalist = document.createElement('datalist');
+  planoDatalist.id = planoListId;
+  const subTipoDatalist = document.createElement('datalist');
+  subTipoDatalist.id = subTipoListId;
+
+  const planoInput = document.createElement('input');
+  planoInput.type = 'text';
+  planoInput.setAttribute('list', planoListId);
+  planoInput.placeholder = 'e.g. E-301';
+  planoInput.title = 'PLANO property value for selected elements';
+  planoInput.style.cssText =
+    'width:110px;background:#1e293b;color:#f8fafc;border:1px solid #475569;border-radius:4px;' +
+    'padding:3px 6px;font:600 11px/1.2 monospace;';
+
+  const btnApplyPlano = document.createElement('button');
+  btnApplyPlano.type = 'button';
+  btnApplyPlano.textContent = 'Set PLANO';
+  btnApplyPlano.style.cssText =
+    'background:#0f766e;color:#f0fdfa;border:none;border-radius:4px;padding:3px 8px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
+
+  const subTipoInput = document.createElement('input');
+  subTipoInput.type = 'text';
+  subTipoInput.setAttribute('list', subTipoListId);
+  subTipoInput.placeholder = 'e.g. CURVA 90';
+  subTipoInput.title = 'SUB_TIPO property value for selected elements';
+  subTipoInput.style.cssText =
+    'width:130px;background:#1e293b;color:#f8fafc;border:1px solid #475569;border-radius:4px;' +
+    'padding:3px 6px;font:600 11px/1.2 monospace;';
+
+  const btnApplySubTipo = document.createElement('button');
+  btnApplySubTipo.type = 'button';
+  btnApplySubTipo.textContent = 'Set SUB_TIPO';
+  btnApplySubTipo.style.cssText =
+    'background:#0f766e;color:#f0fdfa;border:none;border-radius:4px;padding:3px 8px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
+
+  const btnApplyBothProps = document.createElement('button');
+  btnApplyBothProps.type = 'button';
+  btnApplyBothProps.textContent = 'Apply Both';
+  btnApplyBothProps.style.cssText =
+    'background:#0284c7;color:#f8fafc;border:none;border-radius:4px;padding:3px 8px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
+
+  propsRow.append(
+    mkLabel('PLANO:'),
+    planoInput,
+    btnApplyPlano,
+    mkLabel('SUB_TIPO:'),
+    subTipoInput,
+    btnApplySubTipo,
+    btnApplyBothProps,
+    planoDatalist,
+    subTipoDatalist,
+  );
+
   const statusLine = document.createElement('div');
   statusLine.style.cssText = 'font-size:11px;color:#94a3b8;display:flex;justify-content:space-between;gap:12px;';
 
-  host.append(row, statusLine);
+  host.append(row, propsRow, statusLine);
   mountTarget.appendChild(host);
   window.addEventListener('resize', () => {
     if (isOpen) positionBelowRibbon();
@@ -249,6 +328,41 @@ export function initTaggingAuxBar(ctx, dom, api) {
     btnUndo.disabled = undoStack.length === 0;
     btnUndo.style.opacity = btnUndo.disabled ? '0.45' : '1';
 
+    btnPropsToggle.style.background = propsDrawerOpen ? '#0f766e' : '#1e293b';
+    btnPropsToggle.style.color = propsDrawerOpen ? '#f0fdfa' : '#cbd5e1';
+    propsRow.style.display = propsDrawerOpen ? 'flex' : 'none';
+
+    btnApplyPlano.textContent = `Set PLANO (${selCount})`;
+    btnApplySubTipo.textContent = `Set SUB_TIPO (${selCount})`;
+    btnApplyBothProps.textContent = `Apply Both (${selCount})`;
+    for (const b of [btnApplyPlano, btnApplySubTipo, btnApplyBothProps]) {
+      b.disabled = selCount === 0;
+      b.style.opacity = selCount === 0 ? '0.45' : '1';
+    }
+
+    // Refresh autocomplete datalists from current assignments
+    if (propsDrawerOpen) {
+      const planos = new Set();
+      const subTipos = new Set();
+      for (const a of ctx.tagAssignments.values()) {
+        if (a?.delete === true) continue;
+        if (a?.plano) planos.add(a.plano);
+        if (a?.subTipo) subTipos.add(a.subTipo);
+      }
+      planoDatalist.innerHTML = '';
+      for (const p of Array.from(planos).sort()) {
+        const o = document.createElement('option');
+        o.value = p;
+        planoDatalist.appendChild(o);
+      }
+      subTipoDatalist.innerHTML = '';
+      for (const s of Array.from(subTipos).sort()) {
+        const o = document.createElement('option');
+        o.value = s;
+        subTipoDatalist.appendChild(o);
+      }
+    }
+
     const totalTagged = (api.getEffectiveTaggedElements?.() || []).length;
     btnExportExcel.disabled = totalTagged === 0;
     btnExportExcel.style.opacity = btnExportExcel.disabled ? '0.5' : '1';
@@ -305,15 +419,18 @@ export function initTaggingAuxBar(ctx, dom, api) {
     const snapshotEntries = [];
     for (const assignment of result.assignments) {
       const key = getAssignmentKey(assignment.modelId, assignment.localId);
+      const prev = ctx.tagAssignments.has(key) ? { ...ctx.tagAssignments.get(key) } : null;
       const applied = {
         ...assignment,
+        plano: prev?.plano || '',
+        subTipo: prev?.subTipo || '',
         excelRowIndex: ctx.selectedExcelRowIndex,
       };
       snapshotEntries.push({
         key,
         modelId: assignment.modelId,
         localId: assignment.localId,
-        previous: ctx.tagAssignments.has(key) ? { ...ctx.tagAssignments.get(key) } : null,
+        previous: prev,
         applied,
       });
       ctx.tagAssignments.set(key, applied);
@@ -342,6 +459,7 @@ export function initTaggingAuxBar(ctx, dom, api) {
     api.refreshFloatingLabels?.();
     api.refreshSelectedPropertiesTag?.();
     api.refreshRibbon?.();
+    api.tagFinder?.refresh?.();
     api.sessionAutosave?.scheduleSave?.();
     if (hideTaggedActive) {
       void syncHideTaggedFilterLayer().then(() => {
@@ -380,6 +498,7 @@ export function initTaggingAuxBar(ctx, dom, api) {
     api.refreshFloatingLabels?.();
     api.refreshSelectedPropertiesTag?.();
     api.refreshRibbon?.();
+    api.tagFinder?.refresh?.();
     api.sessionAutosave?.scheduleSave?.();
 
     if (hideTaggedActive) {
@@ -511,6 +630,65 @@ export function initTaggingAuxBar(ctx, dom, api) {
     return true;
   }
 
+  function setElementsProperties(elements, { plano, subTipo } = {}) {
+    if (!elements || elements.length === 0) return false;
+    const hasPlano = plano !== undefined;
+    const hasSubTipo = subTipo !== undefined;
+    if (!hasPlano && !hasSubTipo) return false;
+
+    const cleanPlano = hasPlano ? String(plano ?? '').trim() : undefined;
+    const cleanSubTipo = hasSubTipo ? String(subTipo ?? '').trim() : undefined;
+    const snapshotEntries = [];
+
+    for (const el of elements) {
+      if (!el?.modelId || el.localId === undefined) continue;
+      const key = getAssignmentKey(el.modelId, el.localId);
+      const prev = ctx.tagAssignments.has(key) ? { ...ctx.tagAssignments.get(key) } : null;
+      const applied = {
+        ...(prev || {}),
+        modelId: el.modelId,
+        localId: Number(el.localId),
+        globalId: el.globalId || prev?.globalId || '',
+        type: el.type || prev?.type || '',
+        name: el.name || prev?.name || '',
+        modelName: el.modelName || prev?.modelName || '',
+        elementTag: prev?.elementTag || prev?.componentId || '',
+        componentId: prev?.componentId || prev?.elementTag || '',
+        systemTag: prev?.systemTag || '',
+        sequenceNumber: prev?.sequenceNumber || '',
+        plano: hasPlano ? cleanPlano : (prev?.plano || ''),
+        subTipo: hasSubTipo ? cleanSubTipo : (prev?.subTipo || ''),
+        source: prev?.source || 'pending',
+        delete: false,
+      };
+      snapshotEntries.push({
+        key,
+        modelId: el.modelId,
+        localId: Number(el.localId),
+        previous: prev,
+        applied,
+      });
+      ctx.tagAssignments.set(key, applied);
+    }
+
+    if (!snapshotEntries.length) return false;
+    redoStack.length = 0;
+    undoStack.push({
+      type: 'props',
+      prevSeq: currentSeq,
+      nextSeq: currentSeq,
+      entries: snapshotEntries,
+    });
+    if (undoStack.length > 50) undoStack.shift();
+
+    const parts = [];
+    if (hasPlano) parts.push(`PLANO="${cleanPlano || '(cleared)'}"`);
+    if (hasSubTipo) parts.push(`SUB_TIPO="${cleanSubTipo || '(cleared)'}"`);
+    statusText = `Assigned ${parts.join(', ')} to ${snapshotEntries.length} element${snapshotEntries.length === 1 ? '' : 's'} (Ctrl+Z to undo).`;
+    commitProjection({ tone: 'success' });
+    return true;
+  }
+
   function redoLast() {
     const batch = redoStack.pop();
     if (!batch) return false;
@@ -550,9 +728,13 @@ export function initTaggingAuxBar(ctx, dom, api) {
         tagUnico,
         ancho: dims.Width ?? '',
         longitud: dims.Length ?? '',
+        plano: item.plano || '',
+        subTipo: item.subTipo || '',
       });
       detailRows.push({
         'TAG UNICO': tagUnico,
+        'PLANO': item.plano || '',
+        'SUB_TIPO': item.subTipo || '',
         'IFC_Type': item.type || '',
         'Element_Name': item.name || '',
         'IFC_GlobalId': item.globalId || '',
@@ -564,7 +746,7 @@ export function initTaggingAuxBar(ctx, dom, api) {
     const baseName = String(ctx.loadedModels?.[0]?.name || 'Bandejas').replace(/\.(ifc|frag)$/i, '');
     const fileName = `${baseName}_Tags.xlsx`;
     exportTrayScheduleExcel(mainRows, detailRows, fileName);
-    statusText = `Exported ${mainRows.length} rows (TAG UNICO, ANCHO, LONGITUD) to ${fileName}.`;
+    statusText = `Exported ${mainRows.length} rows (TAG UNICO, ANCHO, LONGITUD, PLANO, SUB_TIPO) to ${fileName}.`;
     syncUi();
     return true;
   }
@@ -619,6 +801,35 @@ export function initTaggingAuxBar(ctx, dom, api) {
     commitElements(ordered);
   });
   btnClearSelected.addEventListener('click', () => clearSelectedTags());
+  btnPropsToggle.addEventListener('click', () => {
+    propsDrawerOpen = !propsDrawerOpen;
+    syncUi();
+    if (propsDrawerOpen) planoInput.focus();
+  });
+  btnFindTags.addEventListener('click', () => {
+    api.tagFinder?.toggle?.();
+  });
+  btnApplyPlano.addEventListener('click', async () => {
+    const selected = await api.getCurrentSelectionElements?.();
+    if (!selected?.length) return;
+    setElementsProperties(selected, { plano: planoInput.value });
+  });
+  btnApplySubTipo.addEventListener('click', async () => {
+    const selected = await api.getCurrentSelectionElements?.();
+    if (!selected?.length) return;
+    setElementsProperties(selected, { subTipo: subTipoInput.value });
+  });
+  btnApplyBothProps.addEventListener('click', async () => {
+    const selected = await api.getCurrentSelectionElements?.();
+    if (!selected?.length) return;
+    setElementsProperties(selected, { plano: planoInput.value, subTipo: subTipoInput.value });
+  });
+  planoInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); btnApplyPlano.click(); }
+  });
+  subTipoInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); btnApplySubTipo.click(); }
+  });
   btnUndo.addEventListener('click', () => undoLast());
   btnExportExcel.addEventListener('click', () => { exportExcelSchedule(); });
   btnClose.addEventListener('click', () => {
@@ -671,6 +882,7 @@ export function initTaggingAuxBar(ctx, dom, api) {
     clearSelectedTags,
     unassignElements,
     editElementTag,
+    setElementsProperties,
     toggleHideTagged,
     syncHideTaggedFilterLayer,
     isHideTaggedActive: () => hideTaggedActive,
@@ -701,5 +913,6 @@ export function initTaggingAuxBar(ctx, dom, api) {
   api.onElementSelectedForTagging = onElementSelected;
   api.exportTrayScheduleExcel = exportExcelSchedule;
   api.editElementTag = editElementTag;
+  api.setElementsProperties = setElementsProperties;
   return barApi;
 }
