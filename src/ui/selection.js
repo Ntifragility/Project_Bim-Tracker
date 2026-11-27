@@ -94,6 +94,7 @@ export function initSelection(ctx, dom, api) {
       entry.uuid === modelId
     );
     if (direct) return direct;
+    // Fallback for chunked .fragbundle models loaded via FragmentsManager
     const fragModel =
       ctx.fragments?.list?.get?.(modelId) ||
       ctx.engine?.fragments?.list?.get?.(modelId) ||
