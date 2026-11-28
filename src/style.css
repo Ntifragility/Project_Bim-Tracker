@@ -136,27 +136,38 @@ body {
 
 #sidebar.rc-dock-left.collapsed {
   transform: translateX(-100%);
+  overflow: visible;
+}
+
+#sidebar.rc-dock-left:not(.collapsed) > .rc-dock-toggle {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#sidebar.rc-dock-left.collapsed .rc-dock-toggle span {
+  transform: rotate(180deg);
+  display: inline-block;
 }
 
 .rc-dock-toggle {
   position: absolute;
-  top: 40px;
-  right: -22px;
-  width: 22px;
-  height: 48px;
+  top: 6px;
+  right: -24px;
+  width: 24px;
+  height: 36px;
   background: var(--rc-chrome-bg, #F0F0F0);
   border: 1px solid var(--rc-panel-border, #CCCCCC);
   border-left: none;
-  border-radius: 0 4px 4px 0;
+  border-radius: 0 3px 3px 0;
   color: #444444;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 11px;
-  z-index: 16;
-  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.1);
-  transition: background 0.15s ease, color 0.15s ease;
+  z-index: 55;
+  box-shadow: 2px 0 5px rgba(0, 0, 0, 0.08);
+  transition: background 0.15s ease, color 0.15s ease, opacity 0.15s ease;
 }
 
 .rc-dock-toggle:hover {

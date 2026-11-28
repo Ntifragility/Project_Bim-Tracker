@@ -286,16 +286,11 @@ export function initViewerChrome(ctx, dom, api) {
       ctx.world.scene.three.background = color;
     });
 
-    // Toggle Sidebar Collapse
+    // Toggle Sidebar Collapse (reopen button only visible when sidebar is closed)
     if (dom.btnSidebarToggle && dom.sidebar) {
       dom.btnSidebarToggle.addEventListener('click', () => {
         dom.sidebar.classList.toggle('collapsed');
-
-        const isCollapsed = dom.sidebar.classList.contains('collapsed');
-        const toggleSpan = dom.btnSidebarToggle.querySelector('span');
-        if (toggleSpan) {
-          toggleSpan.innerText = isCollapsed ? '▶' : '◀';
-        }
+        document.body.classList.toggle('sidebar-is-collapsed', dom.sidebar.classList.contains('collapsed'));
 
         if (ctx.world.renderer && ctx.world.renderer.resize) {
           ctx.world.renderer.resize();

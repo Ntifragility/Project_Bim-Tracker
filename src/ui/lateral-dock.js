@@ -259,6 +259,15 @@ export function initLateralDock(ctx, dom, api) {
     return null;
   }
 
+  function closeSidebar() {
+    if (!sidebar) return;
+    sidebar.classList.add('collapsed');
+    document.body.classList.add('sidebar-is-collapsed');
+    if (ctx.world?.renderer?.resize) {
+      ctx.world.renderer.resize();
+    }
+  }
+
   // 1. Properties Palette
   // Pin Electrical at the top; all remaining categories (Constraints, Dimensions,
   // Identity Data, IFC Attributes, native IFC Psets) sort alphabetically below.
@@ -320,6 +329,7 @@ export function initLateralDock(ctx, dom, api) {
     onCancel(element) {
       console.log('[Properties] Cancelled changes for:', element);
     },
+    onClose: closeSidebar,
   });
 
   function setIdleProperties() {
@@ -389,6 +399,7 @@ export function initLateralDock(ctx, dom, api) {
     onVisibilityToggle(node, visible) {
       handleVisibilityToggle(node, visible, ctx, api);
     },
+    onClose: closeSidebar,
   });
 
   // 3. Resizer and Tabs
