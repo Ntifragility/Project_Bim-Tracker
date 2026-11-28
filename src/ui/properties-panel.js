@@ -82,9 +82,15 @@ export function initPropertiesPanel(ctx, dom, api) {
     const subTipo = assignment?.subTipo !== undefined
       ? assignment.subTipo
       : (existing?.subTipo || '');
-    const escAcc = assignment?.escAcc !== undefined
+    const escAcc = assignment?.escAcc !== undefined && assignment.escAcc !== ''
       ? assignment.escAcc
-      : (existing?.escAcc || '');
+      : existing?.escAcc
+        ? existing.escAcc
+        : uniqueTag.includes('.02.')
+          ? 'ACC'
+          : uniqueTag.includes('.01.')
+            ? 'ESC'
+            : '';
     const tension = assignment?.tension !== undefined
       ? assignment.tension
       : (existing?.tension || '');

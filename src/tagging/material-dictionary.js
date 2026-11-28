@@ -76,26 +76,24 @@ const ESC_TOKENS = [
 ];
 
 /**
- * Automatically detects 'ESC' (Escalerilla / Tray Segment) or 'ACC' (Accesorio / Fitting)
- * from SUB_TIPO in both Spanish and English. Returns '' when subTipo is empty.
- * Note: The returned value is an automatic default; user edits to ESC/ACC always take precedence.
+ * Automatically derives 'ESC' or 'ACC' from the Unique Tag (e.g. CT01.01.05 -> 'ESC', CT01.02.05 -> 'ACC'):
+ *   - If there is '.02.' inside the Unique Tag -> 'ACC'
+ *   - If there is '.01.' inside the Unique Tag -> 'ESC'
+ *   - Otherwise returns '' (user can still edit ESC/ACC manually).
  */
-export function deriveEscAccFromSubTipo(subTipo = '', ifcType = '') {
-  const norm = normalizeToken(subTipo);
-  if (!norm) return '';
+export function deriveEscAccFromUniqueTag(uniqueTag = '') {
+  const tag = String(uniqueTag ?? '').trim();
+  if (!tag) return '';
+  if (tag.includes('.02.')) return 'ACC';
+  if (tag.includes('.01.')) return 'ESC';
+  return '';
+}
 
-  // Check ACC tokens first so e.g. "CURVA BANDEJA" or "TRAY ELBOW" classifies as 'ACC'
-  for (const tok of ACC_TOKENS) {
-    if (norm.includes(tok)) return 'ACC';
-  }
-  if (/^TE(\b|\s|-|_)/.test(norm)) return 'ACC';
-
-  for (const tok of ESC_TOKENS) {
-    if (norm.includes(tok)) return 'ESC';
-  }
-
-  if (String(ifcType || '').toUpperCase().includes('FITTING')) return 'ACC';
-  return 'ESC';
+/**
+ * Legacy alias kept for compatibility — derives ESC/ACC strictly from `.01.` / `.02.` in the tag/prefix.
+ */
+export function deriveEscAccFromSubTipo(uniqueTagOrSubTipo = '') {
+  return deriveEscAccFromUniqueTag(uniqueTagOrSubTipo);
 }
 
 /**
