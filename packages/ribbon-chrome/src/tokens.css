@@ -1915,3 +1915,22 @@
   background: #ef4444;
   color: #ffffff;
 }
+
+/* Suite-wide Ribbon Collapse Sync (--rc-ribbon-height) */
+:root {
+  --rc-ribbon-height: 148px;
+}
+
+#app:has(#ribbon[data-rc-collapsed="true"]) {
+  --rc-ribbon-height: 52px;
+}
+
+#app:has(#ribbon[data-rc-collapsed="true"]) #sidebar,
+#app:has(#ribbon[data-rc-collapsed="true"]) #sidebar.rc-dock-left,
+#app:has(#ribbon[data-rc-collapsed="true"]) #excel-panel.rc-schedule-panel,
+#ribbon[data-rc-collapsed="true"] ~ #sidebar,
+#ribbon[data-rc-collapsed="true"] ~ #sidebar.rc-dock-left,
+#ribbon[data-rc-collapsed="true"] ~ #excel-panel.rc-schedule-panel {
+  top: 52px !important;
+}
+

@@ -84,6 +84,16 @@ function normalizeParameters(rawParams, categoryList = DEFAULT_CATEGORIES) {
     }
   }
 
+  // Pin 'Electrical' / 'Electrical / MEP' to the very bottom of the category order
+  // so editable electrical/tagging properties always appear at the bottom below native IFC Psets.
+  for (const bottomCat of ['Electrical', 'Electrical / MEP', 'Electrical / Takeoff']) {
+    if (result.has(bottomCat)) {
+      const items = result.get(bottomCat);
+      result.delete(bottomCat);
+      result.set(bottomCat, items);
+    }
+  }
+
   return result;
 }
 

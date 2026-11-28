@@ -304,7 +304,7 @@ export function createVisibilityController({
 
   const visibility = {
     registerExternalAdapter(id, adapter) {
-      if (!id || !adapter) return () => {};
+      if (!id || !adapter) return () => { };
       externalAdapters.set(id, adapter);
       if (!hiddenExternalMap.has(id)) hiddenExternalMap.set(id, new Set());
       if (!isolatedExternalMap.has(id)) isolatedExternalMap.set(id, new Set());

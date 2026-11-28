@@ -262,7 +262,7 @@ export function initLateralDock(ctx, dom, api) {
   // 1. Properties Palette
   const propertiesPalette = createPropertiesPalette(propsPane, {
     title: 'Properties',
-    categories: ['Constraints', 'Dimensions', 'Electrical', 'Identity Data'],
+    categories: ['Constraints', 'Dimensions', 'Identity Data', 'Electrical'],
     onTypeChange(newType, element) {
       console.log('[Properties] Type changed to:', newType, element);
     },
@@ -270,27 +270,31 @@ export function initLateralDock(ctx, dom, api) {
       console.log('[Properties] Edit Type for:', element);
     },
     async onApply(pendingChanges, element) {
-      // Multi-element or single-element PLANO / SUB_TIPO assignment
-      if ('PLANO' in pendingChanges || 'SUB_TIPO' in pendingChanges) {
-        const propsPatch = {};
-        if ('PLANO' in pendingChanges && pendingChanges['PLANO'] !== '<Varies>') {
-          propsPatch.plano = String(pendingChanges['PLANO'] ?? '').trim();
+      // Multi-element or single-element IFC custom properties (PLANO, SUB_TIPO, ESC/ACC, TENSION, TIPO DE MATERIAL)
+      const propKeys = [
+        ['PLANO', 'plano'],
+        ['SUB_TIPO', 'subTipo'],
+        ['ESC/ACC', 'escAcc'],
+        ['TENSION', 'tension'],
+        ['TIPO DE MATERIAL', 'tipoMaterial'],
+      ];
+      const propsPatch = {};
+      for (const [uiName, fieldKey] of propKeys) {
+        if (uiName in pendingChanges && pendingChanges[uiName] !== '<Varies>') {
+          propsPatch[fieldKey] = String(pendingChanges[uiName] ?? '').trim();
         }
-        if ('SUB_TIPO' in pendingChanges && pendingChanges['SUB_TIPO'] !== '<Varies>') {
-          propsPatch.subTipo = String(pendingChanges['SUB_TIPO'] ?? '').trim();
-        }
-        if ('plano' in propsPatch || 'subTipo' in propsPatch) {
-          const targets = (element?.id === 'multi' && typeof api.getCurrentSelectionElements === 'function')
-            ? await api.getCurrentSelectionElements()
-            : (ctx.selectedIfcElement ? [ctx.selectedIfcElement] : []);
-          if (targets?.length) {
-            api.setElementsProperties?.(targets, propsPatch);
-          }
+      }
+      if (Object.keys(propsPatch).length > 0) {
+        const targets = (element?.id === 'multi' && typeof api.getCurrentSelectionElements === 'function')
+          ? await api.getCurrentSelectionElements()
+          : (ctx.selectedIfcElement ? [ctx.selectedIfcElement] : []);
+        if (targets?.length) {
+          api.setElementsProperties?.(targets, propsPatch);
         }
       }
 
       if (ctx.selectedIfcElement && ('Unique Tag' in pendingChanges || 'System Tag' in pendingChanges)) {
-        const current = api.getAssignmentForElement?.(ctx.selectedIfcElement);
+        const current = api.getEffectiveElementRecord?.(ctx.selectedIfcElement) || api.getAssignmentForElement?.(ctx.selectedIfcElement);
         const nextUniqueTag = 'Unique Tag' in pendingChanges
           ? String(pendingChanges['Unique Tag'] ?? '').trim()
           : (current?.elementTag || current?.componentId || '');
@@ -303,7 +307,7 @@ export function initLateralDock(ctx, dom, api) {
         });
         return;
       }
-      if ('PLANO' in pendingChanges || 'SUB_TIPO' in pendingChanges) return;
+      if (Object.keys(propsPatch).length > 0) return;
       if (typeof api.stagePropertyChange === 'function' && element?.id) {
         for (const [key, val] of Object.entries(pendingChanges)) {
           api.stagePropertyChange('BIM_TRACKER_EDIT', key, val);

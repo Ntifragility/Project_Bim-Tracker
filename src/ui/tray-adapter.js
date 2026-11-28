@@ -728,8 +728,12 @@ export function createTrayRibbonDef(ctx) {
                   icon: 'export',
                   size: 'small',
                   keytip: 'SET',
-                  tooltip: 'Export IFC with applied tag assignments',
-                  enabled: () => (ctx.tagAssignments?.size ?? 0) > 0,
+                  tooltip: 'Export IFC with applied tag and property assignments',
+                  enabled: () =>
+                    (ctx.tagAssignments?.size ?? 0) > 0 ||
+                    (ctx.pendingIfcPropertyEdits?.size ?? 0) > 0 ||
+                    (ctx.pendingIfcColorEdits?.size ?? 0) > 0 ||
+                    (api.getAllAnnotatedElements?.()?.length ?? 0) > 0,
                   run: () => {
                     if (typeof api.exportUnifiedIfcLocal === 'function') {
                       api.exportUnifiedIfcLocal();

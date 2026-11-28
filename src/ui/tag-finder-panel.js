@@ -185,8 +185,14 @@ export function initTagFinderPanel(ctx, dom, api) {
   window.addEventListener('resize', () => {
     if (isOpen) positionBelowRibbon();
   });
+  window.addEventListener('rc:ribbon-collapse-changed', () => {
+    if (isOpen) positionBelowRibbon();
+  });
 
   function getAllSearchableItems() {
+    if (typeof api.getAllAnnotatedElements === 'function') {
+      return api.getAllAnnotatedElements();
+    }
     const byKey = new Map();
     const effective = api.getEffectiveTaggedElements?.() || [];
     for (const item of effective) {

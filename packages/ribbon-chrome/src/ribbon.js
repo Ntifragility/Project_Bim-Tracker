@@ -664,6 +664,15 @@ export function createRibbon(host, def, ctx) {
   function updateCollapseButton() {
     collapseBtn.setAttribute('aria-expanded', String(!isCollapsed));
     collapseBtn.innerHTML = `<svg class="rc-icon rc-icon-16" aria-hidden="true"><use href="#icon-${isCollapsed ? 'chevron-down' : 'chevron-up'}-16"></use></svg>`;
+    if (winObj && typeof winObj.dispatchEvent === 'function' && typeof winObj.CustomEvent === 'function') {
+      try {
+        winObj.dispatchEvent(
+          new winObj.CustomEvent('rc:ribbon-collapse-changed', {
+            detail: { collapsed: isCollapsed },
+          }),
+        );
+      } catch { /* noop */ }
+    }
   }
 
   // Define API object
