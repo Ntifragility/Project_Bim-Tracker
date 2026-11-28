@@ -13,16 +13,29 @@ export const DEFAULT_CATEGORIES = [
 
 /**
  * Normalizes input element parameters into a Category -> Array of params Map.
+ * Preserves `categoryList` as leading priority categories in exact caller order.
+ * When `sortOtherCategories` is `'asc'` or `true`, all remaining categories
+ * outside `categoryList` are sorted alphabetically (case-insensitive) below them.
+ *
  * Supports:
  *   1. parameters: { 'Dimensions': [{ name: 'Width', value: '300 mm' }] }
  *   2. parameters: [{ name: 'Width', value: '300 mm', category: 'Dimensions' }]
  *   3. parameters: { 'Width': '300 mm' }
  */
-function normalizeParameters(rawParams, categoryList = DEFAULT_CATEGORIES) {
+function normalizeParameters(rawParams, categoryList = DEFAULT_CATEGORIES, sortOtherCategories = false) {
+  const pinnedList = Array.isArray(categoryList) ? categoryList : DEFAULT_CATEGORIES;
+  const pinnedSet = new Set(pinnedList);
   const result = new Map();
-  for (const cat of categoryList) {
+  for (const cat of pinnedList) {
     result.set(cat, []);
   }
+
+  const ensureCategory = (cat) => {
+    if (!result.has(cat)) {
+      result.set(cat, []);
+    }
+    return result.get(cat);
+  };
 
   if (!rawParams) {
     return result;
@@ -31,10 +44,7 @@ function normalizeParameters(rawParams, categoryList = DEFAULT_CATEGORIES) {
   if (Array.isArray(rawParams)) {
     for (const item of rawParams) {
       const cat = item.category || 'Identity Data';
-      if (!result.has(cat)) {
-        result.set(cat, []);
-      }
-      result.get(cat).push({
+      ensureCategory(cat).push({
         name: item.name,
         value: item.value ?? '',
         readonly: Boolean(item.readonly),
@@ -46,11 +56,9 @@ function normalizeParameters(rawParams, categoryList = DEFAULT_CATEGORIES) {
     for (const [key, val] of Object.entries(rawParams)) {
       if (Array.isArray(val)) {
         // key is category, val is array of param items
-        if (!result.has(key)) {
-          result.set(key, []);
-        }
+        const target = ensureCategory(key);
         for (const item of val) {
-          result.get(key).push({
+          target.push({
             name: item.name,
             value: item.value ?? '',
             readonly: Boolean(item.readonly),
@@ -60,10 +68,7 @@ function normalizeParameters(rawParams, categoryList = DEFAULT_CATEGORIES) {
         }
       } else if (val && typeof val === 'object' && val.name) {
         const cat = val.category || 'Identity Data';
-        if (!result.has(cat)) {
-          result.set(cat, []);
-        }
-        result.get(cat).push({
+        ensureCategory(cat).push({
           name: val.name,
           value: val.value ?? '',
           readonly: Boolean(val.readonly),
@@ -73,7 +78,7 @@ function normalizeParameters(rawParams, categoryList = DEFAULT_CATEGORIES) {
       } else {
         // key is param name, val is value
         const cat = 'Identity Data';
-        result.get(cat).push({
+        ensureCategory(cat).push({
           name: key,
           value: val ?? '',
           readonly: false,
@@ -84,14 +89,20 @@ function normalizeParameters(rawParams, categoryList = DEFAULT_CATEGORIES) {
     }
   }
 
-  // Pin 'Electrical' / 'Electrical / MEP' to the very bottom of the category order
-  // so editable electrical/tagging properties always appear at the bottom below native IFC Psets.
-  for (const bottomCat of ['Electrical', 'Electrical / MEP', 'Electrical / Takeoff']) {
-    if (result.has(bottomCat)) {
-      const items = result.get(bottomCat);
-      result.delete(bottomCat);
-      result.set(bottomCat, items);
+  if (sortOtherCategories === 'asc' || sortOtherCategories === true) {
+    const ordered = new Map();
+    for (const cat of pinnedList) {
+      if (result.has(cat)) {
+        ordered.set(cat, result.get(cat));
+      }
     }
+    const otherKeys = Array.from(result.keys())
+      .filter((cat) => !pinnedSet.has(cat))
+      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    for (const cat of otherKeys) {
+      ordered.set(cat, result.get(cat));
+    }
+    return ordered;
   }
 
   return result;
@@ -102,6 +113,8 @@ function normalizeParameters(rawParams, categoryList = DEFAULT_CATEGORIES) {
  *
  * @param {HTMLElement} container
  * @param {Object} [options]
+ * @param {string[]} [options.categories] Ordered priority categories pinned at the top
+ * @param {boolean|'asc'} [options.sortOtherCategories=false] Alphabetically sort categories not in `options.categories`
  * @returns {Object} PropertiesPaletteApi
  */
 export function createPropertiesPalette(container, options = {}) {
@@ -118,7 +131,8 @@ export function createPropertiesPalette(container, options = {}) {
 
   let currentElement = options.initialData || null;
   let pendingChanges = {};
-  const categoriesList = options.categories || DEFAULT_CATEGORIES;
+  const categoriesList = options.categories ?? DEFAULT_CATEGORIES;
+  const sortOtherCategories = options.sortOtherCategories ?? false;
 
   // Root element
   const root = doc.createElement('div');
@@ -317,7 +331,11 @@ export function createPropertiesPalette(container, options = {}) {
     // Clear grid
     gridContainer.replaceChildren();
 
-    const paramMap = normalizeParameters(currentElement ? currentElement.parameters : null, categoriesList);
+    const paramMap = normalizeParameters(
+      currentElement ? currentElement.parameters : null,
+      categoriesList,
+      sortOtherCategories
+    );
 
     for (const [catName, params] of paramMap.entries()) {
       const groupEl = doc.createElement('div');

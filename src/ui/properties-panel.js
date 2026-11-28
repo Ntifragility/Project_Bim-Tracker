@@ -135,7 +135,7 @@ export function initPropertiesPanel(ctx, dom, api) {
       }
     }
 
-    // Electrical group is always pinned at the bottom of the Properties Palette
+    // Editable electrical & tagging group (pinned at the top by Properties Palette)
     parameters['Electrical'] = [
       { name: 'Unique Tag', value: uniqueTag, type: 'text', readonly: false },
       { name: 'System Tag', value: systemTag, type: 'text', readonly: false },

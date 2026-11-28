@@ -260,9 +260,12 @@ export function initLateralDock(ctx, dom, api) {
   }
 
   // 1. Properties Palette
+  // Pin Electrical at the top; all remaining categories (Constraints, Dimensions,
+  // Identity Data, IFC Attributes, native IFC Psets) sort alphabetically below.
   const propertiesPalette = createPropertiesPalette(propsPane, {
     title: 'Properties',
-    categories: ['Constraints', 'Dimensions', 'Identity Data', 'Electrical'],
+    categories: ['Electrical'],
+    sortOtherCategories: 'asc',
     onTypeChange(newType, element) {
       console.log('[Properties] Type changed to:', newType, element);
     },
@@ -346,7 +349,7 @@ export function initLateralDock(ctx, dom, api) {
           { name: 'Rung Spacing', value: '228 mm (9")', readonly: true },
           { name: 'Bend Radius', value: '300 mm (12")', readonly: true },
         ],
-        'Electrical / Takeoff': [
+        'Electrical': [
           { name: 'Fill Ratio Limit', value: '40% (NEC 392.22)', readonly: true },
           { name: 'System Class', value: 'Power & Control (LV)', readonly: true },
           { name: 'Grounding Conductor', value: 'Required (NEC 392.60)', readonly: true },

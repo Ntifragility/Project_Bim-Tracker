@@ -564,3 +564,89 @@ test('Conduit Takeoff Lateral Dock: Properties Palette categories and Project Br
 
   browser.destroy();
 });
+
+test('Properties Palette: preserves caller category order without hardcoded domain overrides', () => {
+  const { doc } = setupMockDom();
+  const container = doc.createElement('div');
+
+  const palette = createPropertiesPalette(container, {
+    title: 'Properties',
+    categories: ['Electrical', 'Dimensions', 'Constraints'],
+  });
+
+  palette.setElement({
+    id: 'tray-1',
+    name: 'Tray #1',
+    parameters: {
+      'Constraints': [{ name: 'Elevation', value: '3.0 m', readonly: true }],
+      'Pset_CableCarrierSegmentCommon': [{ name: 'Reference', value: 'CT-1', readonly: true }],
+      'Dimensions': [{ name: 'Width', value: '300 mm', readonly: true }],
+      'Electrical': [{ name: 'Unique Tag', value: 'PT1.01.01' }],
+    },
+  });
+
+  const renderedCategories = Array.from(container.querySelectorAll('.rc-param-group'))
+    .map((el) => el.getAttribute('data-category'));
+
+  assert.deepEqual(renderedCategories, [
+    'Electrical',
+    'Dimensions',
+    'Constraints',
+    'Pset_CableCarrierSegmentCommon',
+  ]);
+
+  palette.destroy();
+});
+
+test('Properties Palette: pins configured categories first and sorts remaining alphabetically when sortOtherCategories is asc', () => {
+  const { doc } = setupMockDom();
+  const container = doc.createElement('div');
+
+  const palette = createPropertiesPalette(container, {
+    title: 'Properties',
+    categories: ['Electrical'],
+    sortOtherCategories: 'asc',
+  });
+
+  palette.setElement({
+    id: 'tray-2',
+    name: 'Tray #2',
+    parameters: {
+      'Identity Data': [{ name: 'Entity', value: 'IfcCableTraySegment', readonly: true }],
+      'Pset_Zeta': [{ name: 'Z', value: '1', readonly: true }],
+      'Constraints': [{ name: 'Level', value: 'L1', readonly: true }],
+      'IFC Attributes': [{ name: 'ObjectType', value: 'Ladder', readonly: true }],
+      'BaseQuantities': [{ name: 'Length', value: '3.0', readonly: true }],
+      'Dimensions': [{ name: 'Width', value: '300 mm', readonly: true }],
+      'Electrical': [{ name: 'PLANO', value: 'E-101' }],
+    },
+  });
+
+  const renderedCategories = Array.from(container.querySelectorAll('.rc-param-group'))
+    .map((el) => el.getAttribute('data-category'));
+
+  assert.deepEqual(renderedCategories, [
+    'Electrical',
+    'BaseQuantities',
+    'Constraints',
+    'Dimensions',
+    'Identity Data',
+    'IFC Attributes',
+    'Pset_Zeta',
+  ]);
+
+  // Flat key/value payload should not throw even when 'Identity Data' is not in categories
+  palette.setElement({
+    id: 'flat-1',
+    name: 'Flat',
+    parameters: {
+      CustomField: 'ABC',
+    },
+  });
+
+  const flatCategories = Array.from(container.querySelectorAll('.rc-param-group'))
+    .map((el) => el.getAttribute('data-category'));
+  assert.deepEqual(flatCategories, ['Electrical', 'Identity Data']);
+
+  palette.destroy();
+});
