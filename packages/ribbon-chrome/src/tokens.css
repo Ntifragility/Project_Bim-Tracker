@@ -847,7 +847,7 @@
 [data-rc-host] .rc-param-row,
 .rc-param-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   border-bottom: 1px solid #F0F0F0;
   min-height: 22px;
   align-items: stretch;
@@ -1947,6 +1947,21 @@
 #sidebar:not(.collapsed) > .sidebar-toggle {
   opacity: 0 !important;
   pointer-events: none !important;
+}
+
+/* Suite-wide Fixed Lateral Dock Width (320px — Cable Tray standard) */
+:root {
+  --rc-sidebar-width: 320px;
+}
+
+#sidebar,
+#sidebar.rc-dock-left,
+#sidebar.rc-lateral-dock,
+#sidebar.dock {
+  width: 320px !important;
+  min-width: 320px !important;
+  max-width: 320px !important;
+  flex: 0 0 320px !important;
 }
 
 #sidebar.collapsed > .rc-dock-toggle,

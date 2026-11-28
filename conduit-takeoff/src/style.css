@@ -168,7 +168,9 @@ body {
 #sidebar.rc-lateral-dock,
 #sidebar.dock,
 #sidebar {
-  width: 300px;
+  width: 320px;
+  min-width: 320px;
+  max-width: 320px;
   position: absolute;
   top: 148px;
   bottom: 22px;
