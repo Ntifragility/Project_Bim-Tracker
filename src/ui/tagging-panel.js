@@ -333,6 +333,7 @@ export function initTaggingPanel(ctx, dom, api) {
 
     if (pending?.delete === true) {
       const plano = pending.plano ?? '';
+      const rev = pending.rev ?? '';
       const subTipo = pending.subTipo ?? '';
       const escAcc = pending.escAcc ?? '';
       const tension = pending.tension ?? '';
@@ -352,6 +353,7 @@ export function initTaggingPanel(ctx, dom, api) {
         sequenceNumber: '',
         schemeVersion: '',
         plano,
+        rev,
         subTipo,
         escAcc,
         tension,
@@ -377,6 +379,13 @@ export function initTaggingPanel(ctx, dom, api) {
             ? pending.elementTag
             : (existing?.componentId || existing?.elementTag || ''));
 
+    const rawEscAcc = pending?.escAcc !== undefined ? pending.escAcc : (existing?.escAcc || '');
+    const autoEscAcc = elementTag.includes('.02.')
+      ? 'Accesorio'
+      : elementTag.includes('.01.')
+        ? 'Bandeja'
+        : '';
+
     return {
       modelId,
       modelName: pending?.modelName || modelEntry.name || '',
@@ -392,8 +401,9 @@ export function initTaggingPanel(ctx, dom, api) {
       sequenceNumber: pending?.sequenceNumber !== undefined ? pending.sequenceNumber : (existing?.sequenceNumber || ''),
       schemeVersion: pick(pending?.schemeVersion, existing?.schemeVersion),
       plano: pending?.plano !== undefined ? pending.plano : (existing?.plano || ''),
+      rev: pending?.rev !== undefined ? pending.rev : (existing?.rev || ''),
       subTipo: pending?.subTipo !== undefined ? pending.subTipo : (existing?.subTipo || ''),
-      escAcc: pending?.escAcc !== undefined ? pending.escAcc : (existing?.escAcc || ''),
+      escAcc: rawEscAcc || autoEscAcc,
       tension: pending?.tension !== undefined ? pending.tension : (existing?.tension || ''),
       tipoMaterial: pending?.tipoMaterial !== undefined ? pending.tipoMaterial : (existing?.tipoMaterial || ''),
       excelRowIndex: pending?.excelRowIndex ?? null,
@@ -426,6 +436,7 @@ export function initTaggingPanel(ctx, dom, api) {
           rec.componentId ||
           rec.systemTag ||
           rec.plano ||
+          rec.rev ||
           rec.subTipo ||
           rec.escAcc ||
           rec.tension ||

@@ -282,9 +282,10 @@ export function initLateralDock(ctx, dom, api) {
       console.log('[Properties] Edit Type for:', element);
     },
     async onApply(pendingChanges, element) {
-      // Multi-element or single-element IFC custom properties (PLANO, SUB_TIPO, ESC/ACC, TENSION, TIPO DE MATERIAL)
+      // Multi-element or single-element IFC custom properties (PLANO, REV, SUB_TIPO, ESC/ACC, TENSION, TIPO DE MATERIAL)
       const propKeys = [
         ['PLANO', 'plano'],
+        ['REV', 'rev'],
         ['SUB_TIPO', 'subTipo'],
         ['ESC/ACC', 'escAcc'],
         ['TENSION', 'tension'],
