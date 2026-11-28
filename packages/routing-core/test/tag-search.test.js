@@ -13,6 +13,7 @@ import {
   extractTraySystemAssignmentsFromIfc,
 } from '../../../src/ifc/ifc-tag-exporter.js';
 import {
+  deriveEscAccFromUniqueTag,
   deriveEscAccFromSubTipo,
   parseMaterialDictionaryRows,
   resolveMaterialDescription,
@@ -171,14 +172,16 @@ describe('Cable Tray Buscador de TAGs (Revizto / Navisworks search & filters)', 
     assert.equal(parsed2.get(20).escAcc, 'ACC-CUSTOM');
   });
 
-  it('derives ESC/ACC in Spanish and English and resolves DESCRIPCION DE MATERIAL from built-in catalog + Excel override', () => {
-    assert.equal(deriveEscAccFromSubTipo('ESCALERILLA'), 'ESC');
-    assert.equal(deriveEscAccFromSubTipo('Cable Ladder'), 'ESC');
-    assert.equal(deriveEscAccFromSubTipo('CURVA 90'), 'ACC');
-    assert.equal(deriveEscAccFromSubTipo('Horizontal Bend 90'), 'ACC');
-    assert.equal(deriveEscAccFromSubTipo('Horizontal Tee'), 'ACC');
-    assert.equal(deriveEscAccFromSubTipo('CUSTOM-CODE', 'IFCCABLECARRIERFITTING'), 'ACC');
-    assert.equal(deriveEscAccFromSubTipo('CUSTOM-CODE', 'IFCCABLECARRIERSEGMENT'), 'ESC');
+  it('derives ESC/ACC from .01. (ESC) and .02. (ACC) inside Unique Tag and resolves DESCRIPCION DE MATERIAL from built-in catalog + Excel override', () => {
+    assert.equal(deriveEscAccFromUniqueTag('CT01.01.01'), 'ESC');
+    assert.equal(deriveEscAccFromUniqueTag('PT1.01.15'), 'ESC');
+    assert.equal(deriveEscAccFromUniqueTag('CT01.02.01'), 'ACC');
+    assert.equal(deriveEscAccFromUniqueTag('PT1.02.09'), 'ACC');
+    assert.equal(deriveEscAccFromUniqueTag('CT01.03.01'), '');
+    assert.equal(deriveEscAccFromUniqueTag(''), '');
+    // Alias check
+    assert.equal(deriveEscAccFromSubTipo('CT01.01.05'), 'ESC');
+    assert.equal(deriveEscAccFromSubTipo('CT01.02.05'), 'ACC');
 
     // Built-in catalog match (Spanish + English)
     assert.equal(

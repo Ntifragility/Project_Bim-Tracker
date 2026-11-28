@@ -377,6 +377,13 @@ export function initTaggingPanel(ctx, dom, api) {
             ? pending.elementTag
             : (existing?.componentId || existing?.elementTag || ''));
 
+    const rawEscAcc = pending?.escAcc !== undefined ? pending.escAcc : (existing?.escAcc || '');
+    const autoEscAcc = elementTag.includes('.02.')
+      ? 'ACC'
+      : elementTag.includes('.01.')
+        ? 'ESC'
+        : '';
+
     return {
       modelId,
       modelName: pending?.modelName || modelEntry.name || '',
@@ -393,7 +400,7 @@ export function initTaggingPanel(ctx, dom, api) {
       schemeVersion: pick(pending?.schemeVersion, existing?.schemeVersion),
       plano: pending?.plano !== undefined ? pending.plano : (existing?.plano || ''),
       subTipo: pending?.subTipo !== undefined ? pending.subTipo : (existing?.subTipo || ''),
-      escAcc: pending?.escAcc !== undefined ? pending.escAcc : (existing?.escAcc || ''),
+      escAcc: rawEscAcc || autoEscAcc,
       tension: pending?.tension !== undefined ? pending.tension : (existing?.tension || ''),
       tipoMaterial: pending?.tipoMaterial !== undefined ? pending.tipoMaterial : (existing?.tipoMaterial || ''),
       excelRowIndex: pending?.excelRowIndex ?? null,

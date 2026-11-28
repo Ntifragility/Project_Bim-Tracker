@@ -11,7 +11,7 @@ import {
   compareNaturalTags,
 } from '../tagging/sequential-tagger.js';
 import {
-  deriveEscAccFromSubTipo,
+  deriveEscAccFromUniqueTag,
   parseMaterialDictionaryRows,
   resolveMaterialDescription,
 } from '../tagging/material-dictionary.js';
@@ -255,7 +255,7 @@ export function initTaggingAuxBar(ctx, dom, api) {
   subTipoInput.type = 'text';
   subTipoInput.setAttribute('list', subTipoListId);
   subTipoInput.placeholder = 'e.g. CURVA 90';
-  subTipoInput.title = 'SUB_TIPO (IFC Property) — auto-derives ESC/ACC (ES/EN)';
+  subTipoInput.title = 'SUB_TIPO (IFC Property) — entered manually';
   subTipoInput.style.cssText =
     'width:110px;background:#1e293b;color:#f8fafc;border:1px solid #475569;border-radius:4px;' +
     'padding:3px 6px;font:600 11px/1.2 monospace;';
@@ -269,7 +269,7 @@ export function initTaggingAuxBar(ctx, dom, api) {
   const escAccInput = document.createElement('input');
   escAccInput.type = 'text';
   escAccInput.placeholder = 'ESC/ACC';
-  escAccInput.title = 'ESC/ACC (IFC Property) — auto-detected from SUB_TIPO, editable';
+  escAccInput.title = 'ESC/ACC (IFC Property) — auto-filled from .01. (ESC) / .02. (ACC) in Unique Tag, editable';
   escAccInput.style.cssText =
     'width:60px;background:#1e293b;color:#f8fafc;border:1px solid #475569;border-radius:4px;' +
     'padding:3px 6px;font:600 11px/1.2 monospace;';
@@ -309,11 +309,6 @@ export function initTaggingAuxBar(ctx, dom, api) {
   btnDictUpload.title = 'Upload local Excel dictionary (SUB_TIPO -> DESCRIPCION DE MATERIAL) used when exporting Excel schedule';
   btnDictUpload.style.cssText =
     'background:#1e293b;color:#fcd34d;border:1px solid #b45309;border-radius:4px;padding:3px 7px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
-
-  subTipoInput.addEventListener('input', () => {
-    const auto = deriveEscAccFromSubTipo(subTipoInput.value);
-    if (auto) escAccInput.value = auto;
-  });
 
   btnDictUpload.addEventListener('click', () => dictFileInput.click());
   dictFileInput.addEventListener('change', async (e) => {
@@ -456,7 +451,7 @@ export function initTaggingAuxBar(ctx, dom, api) {
     // Refresh autocomplete datalists from current assignments
     if (propsDrawerOpen) {
       const planos = new Set();
-      const subTipos = new Set(['ESCALERILLA', 'BANDEJA', 'CURVA 90', 'CURVA 45', 'TEE', 'CRUZ', 'REDUCCION']);
+      const subTipos = new Set();
       const tensiones = new Set(['MT', 'BT', 'CONTROL', 'COMUNICACIONES', '22.9kV', '10kV', '480V', '220V']);
       const tiposMat = new Set(['F°G°', 'HDG', 'INOX 304', 'INOX 316', 'ALUMINIO', 'FRP']);
       const allAnnotated = api.getAllAnnotatedElements?.() || Array.from(ctx.tagAssignments.values());
@@ -539,11 +534,12 @@ export function initTaggingAuxBar(ctx, dom, api) {
       const key = getAssignmentKey(assignment.modelId, assignment.localId);
       const prev = ctx.tagAssignments.has(key) ? { ...ctx.tagAssignments.get(key) } : null;
       const base = api.getEffectiveElementRecord?.(assignment.modelId, assignment.localId) || prev;
+      const autoEscAcc = deriveEscAccFromUniqueTag(assignment.elementTag || assignment.componentId || '');
       const applied = {
         ...assignment,
         plano: base?.plano || '',
         subTipo: base?.subTipo || '',
-        escAcc: base?.escAcc || deriveEscAccFromSubTipo(base?.subTipo || '', assignment.type || base?.type || ''),
+        escAcc: autoEscAcc || base?.escAcc || '',
         tension: base?.tension || '',
         tipoMaterial: base?.tipoMaterial || '',
         excelRowIndex: ctx.selectedExcelRowIndex,
@@ -738,6 +734,7 @@ export function initTaggingAuxBar(ctx, dom, api) {
     const seqMatch = cleanTag.match(/(\d+)$/);
     const derivedSeq = seqMatch ? seqMatch[1] : (base?.sequenceNumber || '01');
 
+    const autoEscAcc = deriveEscAccFromUniqueTag(cleanTag);
     const applied = {
       ...(base || {}),
       modelId: element.modelId,
@@ -752,7 +749,7 @@ export function initTaggingAuxBar(ctx, dom, api) {
       sequenceNumber: derivedSeq,
       plano: base?.plano || '',
       subTipo: base?.subTipo || '',
-      escAcc: base?.escAcc || deriveEscAccFromSubTipo(base?.subTipo || '', element.type || base?.type || ''),
+      escAcc: autoEscAcc || base?.escAcc || '',
       tension: base?.tension || '',
       tipoMaterial: base?.tipoMaterial || '',
       source: 'pending',
@@ -796,12 +793,11 @@ export function initTaggingAuxBar(ctx, dom, api) {
       const key = getAssignmentKey(el.modelId, el.localId);
       const prev = ctx.tagAssignments.has(key) ? { ...ctx.tagAssignments.get(key) } : null;
       const base = api.getEffectiveElementRecord?.(el.modelId, el.localId) || prev;
+      const currentUniqueTag = base?.elementTag || base?.componentId || '';
       const nextSubTipo = hasSubTipo ? cleanSubTipo : (base?.subTipo || '');
       const nextEscAcc = hasEscAcc
         ? cleanEscAcc
-        : hasSubTipo
-          ? deriveEscAccFromSubTipo(cleanSubTipo, el.type || base?.type || '')
-          : (base?.escAcc || deriveEscAccFromSubTipo(nextSubTipo, el.type || base?.type || ''));
+        : (base?.escAcc || deriveEscAccFromUniqueTag(currentUniqueTag));
       const applied = {
         ...(base || {}),
         modelId: el.modelId,
@@ -892,7 +888,7 @@ export function initTaggingAuxBar(ctx, dom, api) {
         item.systemTag ||
         uniqueTag.replace(/[.\-_]?\d+$/, '').replace(/[.\-_]+$/, '') ||
         '';
-      const escAcc = item.escAcc || deriveEscAccFromSubTipo(item.subTipo || '', item.type || '');
+      const escAcc = item.escAcc || deriveEscAccFromUniqueTag(uniqueTag);
       const tension = item.tension || '';
       const tipoMaterial = item.tipoMaterial || '';
       const descripcionMaterial = resolveMaterialDescription(item, customDictRules);
