@@ -119,10 +119,30 @@ export function createLateralDock({ state, els, api }) {
     return state.network.runs[runId] || null;
   }
 
+  function formatPropValue(value) {
+    if (value === null || value === undefined || value === '') return '-';
+    if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+    if (typeof value === 'number') {
+      return Number.isInteger(value) ? String(value) : value.toFixed(3);
+    }
+    const str = String(value).trim();
+    if (str === '.T.') return 'Yes';
+    if (str === '.F.') return 'No';
+    if (str === '.U.') return 'Unknown';
+    if (/^-?\d+\.\d{4,}$/.test(str)) {
+      const n = Number(str);
+      if (Number.isFinite(n)) return n.toFixed(3);
+    }
+    return str;
+  }
+
   if (propertiesContainer) {
+    // Universal Properties Palette layout matching Cable Tray:
+    // Pin Electrical at the very top; sort all remaining categories A-Z below.
     palette = createPropertiesPalette(propertiesContainer, {
       title: 'Properties',
-      categories: ['Constraints', 'Dimensions', 'IFC Properties', 'Takeoff / BOM', 'Identity Data'],
+      categories: ['Electrical'],
+      sortOtherCategories: 'asc',
       onTypeChange(selectedTypeVal, currentElement) {
         // Selected trade size e.g. "3/4\"" or type id
         const cleanSize = selectedTypeVal.replace(/^EMT\s*-\s*/, '').split(' ')[0];
@@ -176,20 +196,21 @@ export function createLateralDock({ state, els, api }) {
           api.renderSummary?.();
         }
 
-        // 3. Identity Data: System Type
-        if (committedChanges['System Type'] !== undefined) {
-          const sys = committedChanges['System Type'];
+        // 3. Electrical / Identity Data: System Type
+        const sysVal = committedChanges['System Type'] ?? committedChanges['System Tag'];
+        if (sysVal !== undefined) {
           if (run) {
-            run.system = sys;
+            run.system = sysVal;
           }
           if (els.topSystemSelect) {
-            els.topSystemSelect.value = sys;
+            els.topSystemSelect.value = sysVal;
           }
         }
 
-        // 4. Identity Data: Tag & Comments
-        if (committedChanges['Tag'] !== undefined && run) {
-          run.tag = String(committedChanges['Tag'] || '').trim();
+        // 4. Electrical / Identity Data: Unique Tag / Tag & Comments
+        const tagVal = committedChanges['Unique Tag'] ?? committedChanges['Tag'];
+        if (tagVal !== undefined && run) {
+          run.tag = String(tagVal || '').trim();
           state.hasUnsavedChanges = true;
         }
         if (committedChanges['Comments'] !== undefined && run) {
@@ -279,6 +300,12 @@ export function createLateralDock({ state, els, api }) {
         type: run.size,
         types: typeOptions,
         parameters: {
+          'Electrical': [
+            { name: 'Unique Tag', value: run.tag || run.name || `Run ${run.id}`, type: 'text' },
+            { name: 'System Type', value: run.system || els.topSystemSelect?.value || 'Power', options: ['Power', 'Lighting', 'Controls', 'Fire Alarm', 'Low Voltage'] },
+            { name: 'Trade Size', value: run.size, options: allDiameters.map((d) => d.label) },
+            { name: 'NEC 358.26 (Bends Limit)', value: `${bendAnalysis.totalDegrees}° / 360° (${bendAnalysis.exceedsNec360 ? 'NON-COMPLIANT' : 'COMPLIANT'})`, readonly: true },
+          ],
           'Constraints': constraintParams,
           'Dimensions': [
             { name: 'Trade Size', value: run.size, options: allDiameters.map((d) => d.label) },
@@ -338,6 +365,11 @@ export function createLateralDock({ state, els, api }) {
         type: selectedDiam.label,
         types: typeOptions,
         parameters: {
+          'Electrical': [
+            { name: 'System Type', value: els.topSystemSelect?.value || 'Power', options: ['Power', 'Lighting', 'Controls', 'Fire Alarm', 'Low Voltage'] },
+            { name: 'Trade Size', value: selectedDiam.label, options: allDiameters.map((d) => d.label) },
+            { name: 'NEC 358.26 (Bends Limit)', value: `${bendAnalysis.totalDegrees}° / 360° (${bendAnalysis.exceedsNec360 ? 'NON-COMPLIANT' : 'COMPLIANT'})`, readonly: true },
+          ],
           'Constraints': [
             { name: 'Coordinate System', value: state.coordinateMode === 'shared' ? 'Shared (IFC Survey Point)' : 'Project Base Point (Local)', readonly: true },
             { name: 'Reference Elevation', value: `${activeElev.toFixed(2)} m`, type: 'text' },
@@ -380,6 +412,11 @@ export function createLateralDock({ state, els, api }) {
         type: selectedDiam.label,
         types: typeOptions,
         parameters: {
+          'Electrical': [
+            { name: 'System Type', value: els.topSystemSelect?.value || 'Power', options: ['Power', 'Lighting', 'Controls', 'Fire Alarm', 'Low Voltage'] },
+            { name: 'Trade Size', value: selectedDiam.label, options: allDiameters.map((d) => d.label) },
+            { name: 'NEC Standard Limit', value: '360° max cumulative bends (NEC 358.26)', readonly: true },
+          ],
           'Constraints': [
             { name: 'Coordinate System', value: state.coordinateMode === 'shared' ? 'Shared (IFC Survey Point)' : 'Project Base Point (Local)', readonly: true },
             { name: 'Reference Elevation', value: `${activeElev.toFixed(2)} m`, type: 'text' },
@@ -528,21 +565,48 @@ export function createLateralDock({ state, els, api }) {
     if (!palette || !ifcInfo) return;
     const groups = {};
     const identity = [];
-    if (ifcInfo.name) identity.push({ name: 'Name', value: String(ifcInfo.name), readonly: true });
-    if (ifcInfo.description) identity.push({ name: 'Description', value: String(ifcInfo.description), readonly: true });
-    if (ifcInfo.category) identity.push({ name: 'IFC Class', value: String(ifcInfo.category), readonly: true });
-    if (ifcInfo.expressId != null) identity.push({ name: 'Express ID', value: `#${ifcInfo.expressId}`, readonly: true });
+    if (ifcInfo.category) identity.push({ name: 'Entity', value: String(ifcInfo.category), readonly: true });
+    if (ifcInfo.name) identity.push({ name: 'Name', value: formatPropValue(ifcInfo.name), readonly: true });
+    if (ifcInfo.globalId) identity.push({ name: 'GlobalId', value: String(ifcInfo.globalId), readonly: true });
+    if (ifcInfo.description) identity.push({ name: 'Description', value: formatPropValue(ifcInfo.description), readonly: true });
+    if (ifcInfo.expressId != null) identity.push({ name: 'Express ID', value: String(ifcInfo.expressId), readonly: true });
+    if (state.sourceModel?.name) identity.push({ name: 'Model', value: String(state.sourceModel.name), readonly: true });
     if (identity.length > 0) groups['Identity Data'] = identity;
 
+    // Extract CCP_TRAY_SYSTEM or Electrical properties if present on the IFC element
+    const ccpMap = {};
     for (const [psetName, props] of Object.entries(ifcInfo.psets || {})) {
-      if (Array.isArray(props) && props.length > 0) {
-        groups[psetName] = props.map((p) => ({
-          name: String(p.name),
-          value: String(p.value),
-          readonly: true,
-        }));
+      if (!Array.isArray(props) || props.length === 0) continue;
+      if (psetName.trim().toUpperCase() === 'CCP_TRAY_SYSTEM') {
+        for (const p of props) {
+          ccpMap[String(p.name || '').trim()] = formatPropValue(p.value);
+        }
+        continue;
       }
+      groups[psetName] = props.map((p) => ({
+        name: String(p.name),
+        value: formatPropValue(p.value),
+        readonly: true,
+      }));
     }
+
+    const getCcp = (...keys) => {
+      for (const k of keys) {
+        if (ccpMap[k] && ccpMap[k] !== '-') return ccpMap[k];
+      }
+      return '';
+    };
+
+    // Universal Electrical group pinned at the top (read-only inspector in Conduit Takeoff)
+    groups['Electrical'] = [
+      { name: 'Unique Tag', value: getCcp('ElementTag', 'ComponentId', 'Unique Tag'), readonly: true },
+      { name: 'System Tag', value: getCcp('SystemTag', 'System Tag'), readonly: true },
+      { name: 'PLANO', value: getCcp('Plano', 'PLANO'), readonly: true },
+      { name: 'SUB_TIPO', value: getCcp('SubTipo', 'SUB_TIPO'), readonly: true },
+      { name: 'ESC/ACC', value: getCcp('EscAcc', 'ESC/ACC'), readonly: true },
+      { name: 'TENSION', value: getCcp('Tension', 'TENSION'), readonly: true },
+      { name: 'TIPO DE MATERIAL', value: getCcp('TipoMaterial', 'TIPO DE MATERIAL'), readonly: true },
+    ];
 
     const conduitRunProps = ifcInfo.psets?.Pset_ConduitRun || [];
     const totalFt = conduitRunProps.find((p) => p.name === 'TotalLengthFt')?.value;
@@ -551,12 +615,14 @@ export function createLateralDock({ state, els, api }) {
 
     palette.setElement({
       id: `ifc-${ifcInfo.expressId ?? 'item'}`,
-      name: ifcInfo.name || 'Imported IFC Element',
+      name: ifcInfo.name || `Element #${ifcInfo.expressId ?? ''}`,
       family: conduitRunProps.length > 0 ? 'Imported Conduit Run (IFC)' : (ifcInfo.category || 'IFC Element'),
       count: 1,
-      filterLabel: totalFt ? `${ifcInfo.name || 'Conduit'} (${totalFt} ft / ${totalM || ''} m)` : (ifcInfo.name || 'IFC Element'),
+      filterLabel: totalFt
+        ? `${ifcInfo.name || 'Conduit'} (${totalFt} ft / ${totalM || ''} m)`
+        : `${ifcInfo.category || 'IFC Element'} (1)`,
       type: sizeVal,
-      types: [],
+      types: [sizeVal],
       parameters: groups,
     });
   }

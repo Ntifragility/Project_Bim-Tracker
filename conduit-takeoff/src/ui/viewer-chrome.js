@@ -489,28 +489,51 @@ export function createViewerChrome({ state, els, api }) {
 
         const [itemData] = await model.getItemsData([Number(firstId)], {
           attributesDefault: true,
-          relations: { IsDefinedBy: { attributes: true, relations: true } },
+          relations: {
+            IsDefinedBy: { attributes: true, relations: true },
+            IsTypedBy: { attributes: true, relations: true },
+            DefinesOccurrence: { attributes: true, relations: true },
+          },
         });
         if (!itemData) return;
 
         const psets = {};
-        const defs = Array.isArray(itemData.IsDefinedBy) ? itemData.IsDefinedBy : [];
-        for (const pset of defs) {
-          const psetName = String(unwrapVal(pset?.Name) || 'PropertySet');
-          const hasProps = Array.isArray(pset?.HasProperties) ? pset.HasProperties : [];
-          const rows = [];
-          for (const prop of hasProps) {
-            const pName = unwrapVal(prop?.Name);
-            const pVal = unwrapVal(prop?.NominalValue);
-            if (pName != null && pVal != null && String(pVal) !== '') {
-              rows.push({ name: String(pName), value: String(pVal) });
+        const collectFromDefs = (defs) => {
+          if (!Array.isArray(defs)) return;
+          for (const pset of defs) {
+            const psetName = String(unwrapVal(pset?.Name) || 'PropertySet');
+            const hasProps = Array.isArray(pset?.HasProperties)
+              ? pset.HasProperties
+              : Array.isArray(pset?.Quantities)
+                ? pset.Quantities
+                : [];
+            const rows = [];
+            for (const prop of hasProps) {
+              const pName = unwrapVal(prop?.Name);
+              const pVal =
+                unwrapVal(prop?.NominalValue) ??
+                unwrapVal(prop?.LengthValue) ??
+                unwrapVal(prop?.AreaValue) ??
+                unwrapVal(prop?.VolumeValue) ??
+                unwrapVal(prop?.CountValue) ??
+                unwrapVal(prop?.WeightValue);
+              if (pName != null && pVal != null && String(pVal) !== '') {
+                rows.push({ name: String(pName), value: pVal });
+              }
             }
+            if (rows.length > 0) psets[psetName] = rows;
           }
-          if (rows.length > 0) psets[psetName] = rows;
+        };
+        collectFromDefs(itemData.IsDefinedBy);
+        if (Array.isArray(itemData.IsTypedBy)) {
+          for (const t of itemData.IsTypedBy) {
+            collectFromDefs(t?.HasPropertySets);
+          }
         }
 
         api.showIfcElementProperties?.({
           expressId: Number(firstId),
+          globalId: unwrapVal(itemData.GlobalId) || unwrapVal(itemData._guid) || '',
           name: unwrapVal(itemData.Name) || '',
           description: unwrapVal(itemData.Description) || '',
           category: unwrapVal(itemData._category) || '',
