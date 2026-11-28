@@ -187,7 +187,11 @@ export function initSessionAutosave(ctx, dom, api) {
     const sessionKey = computeSessionKey(modelEntry.name, byteLength);
     const baseName = normalizeModelBaseName(modelEntry.name);
 
-    const saved = await store.load(sessionKey, baseName);
+    // Match strictly by exact sessionKey (name::byteLength) when byteLength > 0 so an older
+    // cached session from a previous file never overwrites a newly exported *_edited.ifc file.
+    const saved = byteLength > 0
+      ? await store.load(sessionKey, '')
+      : await store.load(sessionKey, baseName);
     if (!saved || !Array.isArray(saved.tags) || saved.tags.length === 0) {
       return 0;
     }

@@ -69,6 +69,7 @@ export function initTaggingAuxBar(ctx, dom, api) {
   let statusText = 'Click elements in 3D to tag sequentially.';
   const undoStack = []; // Array<{ prevSeq, nextSeq, entries: Array<{ key, modelId, localId, previous, applied }> }>
   const redoStack = [];
+  const justClearedKeys = new Set(); // Prevents Click-to-Tag from immediately re-tagging an element whose tag was just deleted
 
   const mountTarget = document.getElementById('app') || document.body || container;
   const host = document.createElement('div');
@@ -227,12 +228,18 @@ export function initTaggingAuxBar(ctx, dom, api) {
   const planoListId = 'tray-plano-datalist';
   const revListId = 'tray-rev-datalist';
   const subTipoListId = 'tray-subtipo-datalist';
+  const tensionListId = 'tray-tension-datalist';
+  const tipoMatListId = 'tray-tipomat-datalist';
   const planoDatalist = document.createElement('datalist');
   planoDatalist.id = planoListId;
   const revDatalist = document.createElement('datalist');
   revDatalist.id = revListId;
   const subTipoDatalist = document.createElement('datalist');
   subTipoDatalist.id = subTipoListId;
+  const tensionDatalist = document.createElement('datalist');
+  tensionDatalist.id = tensionListId;
+  const tipoMatDatalist = document.createElement('datalist');
+  tipoMatDatalist.id = tipoMatListId;
 
   const planoInput = document.createElement('input');
   planoInput.type = 'text';
@@ -281,29 +288,23 @@ export function initTaggingAuxBar(ctx, dom, api) {
     'width:78px;background:#1e293b;color:#f8fafc;border:1px solid #475569;border-radius:4px;' +
     'padding:3px 6px;font:600 11px/1.2 monospace;';
 
-  const tensionInput = document.createElement('select');
-  tensionInput.title = 'TENSION (IFC Property)';
+  const tensionInput = document.createElement('input');
+  tensionInput.type = 'text';
+  tensionInput.setAttribute('list', tensionListId);
+  tensionInput.placeholder = 'MT / BT / CTRL / INST';
+  tensionInput.title = 'TENSION (IFC Property — type MT, BT, CTRL, INST and press Enter)';
   tensionInput.style.cssText =
-    'background:#1e293b;color:#f8fafc;border:1px solid #475569;border-radius:4px;' +
-    'padding:3px 6px;font:600 11px/1.2 monospace;cursor:pointer;';
-  for (const [val, lbl] of [['', '— TENSION —'], ['MT', 'MT'], ['BT', 'BT'], ['CTRL', 'CTRL'], ['INST', 'INST']]) {
-    const o = document.createElement('option');
-    o.value = val;
-    o.textContent = lbl;
-    tensionInput.appendChild(o);
-  }
+    'width:76px;background:#1e293b;color:#f8fafc;border:1px solid #475569;border-radius:4px;' +
+    'padding:3px 6px;font:600 11px/1.2 monospace;';
 
-  const tipoMaterialInput = document.createElement('select');
-  tipoMaterialInput.title = 'TIPO DE MATERIAL (IFC Property)';
+  const tipoMaterialInput = document.createElement('input');
+  tipoMaterialInput.type = 'text';
+  tipoMaterialInput.setAttribute('list', tipoMatListId);
+  tipoMaterialInput.placeholder = 'FRP / GALVANIZADO';
+  tipoMaterialInput.title = 'TIPO DE MATERIAL (IFC Property — type FRP or GALVANIZADO and press Enter)';
   tipoMaterialInput.style.cssText =
-    'background:#1e293b;color:#f8fafc;border:1px solid #475569;border-radius:4px;' +
-    'padding:3px 6px;font:600 11px/1.2 monospace;cursor:pointer;';
-  for (const [val, lbl] of [['', '— MATERIAL —'], ['FRP', 'FRP'], ['GALVANIZADO', 'GALVANIZADO']]) {
-    const o = document.createElement('option');
-    o.value = val;
-    o.textContent = lbl;
-    tipoMaterialInput.appendChild(o);
-  }
+    'width:96px;background:#1e293b;color:#f8fafc;border:1px solid #475569;border-radius:4px;' +
+    'padding:3px 6px;font:600 11px/1.2 monospace;';
 
   const btnApplyBothProps = document.createElement('button');
   btnApplyBothProps.type = 'button';
@@ -370,6 +371,8 @@ export function initTaggingAuxBar(ctx, dom, api) {
     planoDatalist,
     revDatalist,
     subTipoDatalist,
+    tensionDatalist,
+    tipoMatDatalist,
   );
 
   const statusLine = document.createElement('div');
@@ -467,12 +470,16 @@ export function initTaggingAuxBar(ctx, dom, api) {
       const planos = new Set();
       const revs = new Set();
       const subTipos = new Set();
+      const tensiones = new Set(['MT', 'BT', 'CTRL', 'INST']);
+      const tiposMat = new Set(['FRP', 'GALVANIZADO']);
       const allAnnotated = api.getAllAnnotatedElements?.() || Array.from(ctx.tagAssignments.values());
       for (const a of allAnnotated) {
         if (!a || a.delete === true) continue;
         if (a.plano) planos.add(a.plano);
         if (a.rev) revs.add(a.rev);
         if (a.subTipo) subTipos.add(a.subTipo);
+        if (a.tension) tensiones.add(a.tension);
+        if (a.tipoMaterial) tiposMat.add(a.tipoMaterial);
       }
       const fillDatalist = (dl, values) => {
         dl.innerHTML = '';
@@ -485,6 +492,8 @@ export function initTaggingAuxBar(ctx, dom, api) {
       fillDatalist(planoDatalist, planos);
       fillDatalist(revDatalist, revs);
       fillDatalist(subTipoDatalist, subTipos);
+      fillDatalist(tensionDatalist, tensiones);
+      fillDatalist(tipoMatDatalist, tiposMat);
     }
 
     const totalTagged = (api.getEffectiveTaggedElements?.() || []).length;
@@ -651,14 +660,16 @@ export function initTaggingAuxBar(ctx, dom, api) {
 
   function unassignElements(elements) {
     if (!elements || elements.length === 0) return false;
+    const prevSeq = currentSeq;
     const snapshotEntries = [];
     for (const item of elements) {
       if (!item?.modelId || item.localId === undefined) continue;
       const key = getAssignmentKey(item.modelId, item.localId);
+      justClearedKeys.add(key);
       const prev = ctx.tagAssignments.has(key) ? { ...ctx.tagAssignments.get(key) } : null;
       const existingSaved = api.findLoadedModelEntry?.(item.modelId)?.existingProjectTags?.get(Number(item.localId));
       const hasCustomProps = Boolean(
-        prev?.plano || prev?.rev || prev?.subTipo || prev?.escAcc || prev?.tension || prev?.tipoMaterial,
+        prev?.plano || prev?.rev || prev?.subTipo || prev?.tension || prev?.tipoMaterial,
       );
       const applied = existingSaved
         ? {
@@ -668,12 +679,16 @@ export function initTaggingAuxBar(ctx, dom, api) {
             type: item.type || existingSaved.type || '',
             name: item.name || existingSaved.name || '',
             modelName: item.modelName || existingSaved.modelName || '',
-            plano: prev?.plano || '',
-            rev: prev?.rev || '',
-            subTipo: prev?.subTipo || '',
-            escAcc: prev?.escAcc || '',
-            tension: prev?.tension || '',
-            tipoMaterial: prev?.tipoMaterial || '',
+            plano: prev?.plano ?? existingSaved.plano ?? '',
+            rev: prev?.rev ?? existingSaved.rev ?? '',
+            subTipo: prev?.subTipo ?? existingSaved.subTipo ?? '',
+            escAcc: '',
+            tension: prev?.tension ?? existingSaved.tension ?? '',
+            tipoMaterial: prev?.tipoMaterial ?? existingSaved.tipoMaterial ?? '',
+            elementTag: '',
+            componentId: '',
+            systemTag: '',
+            sequenceNumber: '',
             delete: true,
           }
         : hasCustomProps
@@ -683,6 +698,7 @@ export function initTaggingAuxBar(ctx, dom, api) {
               componentId: '',
               systemTag: '',
               sequenceNumber: '',
+              escAcc: '',
               delete: false,
             }
           : null;
@@ -698,11 +714,22 @@ export function initTaggingAuxBar(ctx, dom, api) {
     }
     if (!snapshotEntries.length) return false;
 
+    // Recalculate next available sequence from 1 so deleting the latest tag (e.g. .01)
+    // reclaims that sequence number instead of climbing 02 -> 03 -> 04.
+    currentSeq = getNextAvailableSequence({
+      prefix,
+      startSequence: 1,
+      digits,
+      existingTags: getAllExistingTagStrings(),
+    });
+    startInput.value = String(currentSeq);
+    savePattern({ prefix, start: currentSeq, digits });
+
     redoStack.length = 0;
-    undoStack.push({ type: 'unassign', prevSeq: currentSeq, nextSeq: currentSeq, entries: snapshotEntries });
+    undoStack.push({ type: 'unassign', prevSeq, nextSeq: currentSeq, entries: snapshotEntries });
     if (undoStack.length > 50) undoStack.shift();
 
-    statusText = `Cleared tag${snapshotEntries.length === 1 ? '' : 's'} from ${snapshotEntries.length} element${snapshotEntries.length === 1 ? '' : 's'} (Ctrl+Z to undo).`;
+    statusText = `Cleared tag${snapshotEntries.length === 1 ? '' : 's'} from ${snapshotEntries.length} element${snapshotEntries.length === 1 ? '' : 's'} (next #${currentSeq}; Ctrl+Z to undo).`;
     commitProjection({ tone: 'success' });
     return true;
   }
@@ -1065,6 +1092,13 @@ export function initTaggingAuxBar(ctx, dom, api) {
     if (!isOpen) return;
     if (source === 'viewport' && clickToTagActive && identity && (!multiList || multiList.length <= 1)) {
       const key = getAssignmentKey(identity.modelId, identity.localId);
+      if (justClearedKeys.has(key)) {
+        justClearedKeys.delete(key);
+        statusText = `Selected cleared element #${identity.localId} (click again or press Tag Sel to re-tag).`;
+        syncUi();
+        return;
+      }
+      justClearedKeys.clear();
       const already = api.getEffectiveElementRecord?.(identity.modelId, identity.localId) || ctx.tagAssignments.get(key);
       const existingUniqueTag = already && already.delete !== true
         ? String(already.elementTag || already.componentId || '').trim()
@@ -1076,6 +1110,7 @@ export function initTaggingAuxBar(ctx, dom, api) {
       }
       commitElements([identity]);
     } else {
+      justClearedKeys.clear();
       syncUi();
     }
   }
