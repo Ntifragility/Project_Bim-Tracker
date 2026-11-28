@@ -1934,3 +1934,25 @@
   top: 52px !important;
 }
 
+/* Universal Lateral Dock Close (✕) & Reopen (▶) Handle Behavior:
+   - While sidebar is open: hide the protruding side arrow tab (close via titlebar ✕ only).
+   - When sidebar is closed (.collapsed): allow overflow so the reopen tab (▶) is visible on the left edge. */
+#sidebar.rc-dock-left.collapsed,
+#sidebar.rc-lateral-dock.collapsed,
+#sidebar.collapsed {
+  overflow: visible !important;
+}
+
+#sidebar:not(.collapsed) > .rc-dock-toggle,
+#sidebar:not(.collapsed) > .sidebar-toggle {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+#sidebar.collapsed > .rc-dock-toggle,
+#sidebar.collapsed > .sidebar-toggle {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+
