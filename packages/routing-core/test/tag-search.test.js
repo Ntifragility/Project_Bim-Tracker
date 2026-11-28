@@ -12,6 +12,11 @@ import {
   addTraySystemAssignmentsToIfc,
   extractTraySystemAssignmentsFromIfc,
 } from '../../../src/ifc/ifc-tag-exporter.js';
+import {
+  deriveEscAccFromSubTipo,
+  parseMaterialDictionaryRows,
+  resolveMaterialDescription,
+} from '../../../src/tagging/material-dictionary.js';
 
 describe('Cable Tray Buscador de TAGs (Revizto / Navisworks search & filters)', () => {
   const sample = [
@@ -72,7 +77,7 @@ describe('Cable Tray Buscador de TAGs (Revizto / Navisworks search & filters)', 
     assert.deepEqual(Array.from(sel.m2), [50]);
   });
 
-  it('roundtrips PLANO and SUB_TIPO inside exported IFC CCP_TRAY_SYSTEM PropertySet (tagged and untagged)', () => {
+  it('roundtrips PLANO, SUB_TIPO, ESC/ACC, TENSION, and TIPO DE MATERIAL inside exported IFC CCP_TRAY_SYSTEM PropertySet (tagged and untagged)', () => {
     const sampleIfc = [
       'ISO-10303-21;',
       'HEADER;',
@@ -85,7 +90,7 @@ describe('Cable Tray Buscador de TAGs (Revizto / Navisworks search & filters)', 
     ].join('\r\n');
     const sourceBytes = new TextEncoder().encode(sampleIfc);
 
-    // 1. First export: #10 has full tag + PLANO + SUB_TIPO; #20 has ONLY PLANO + SUB_TIPO (no Unique Tag yet)
+    // 1. First export: #10 has full tag + all 5 custom properties; #20 has ONLY properties (no Unique Tag yet)
     const exp1 = addTraySystemAssignmentsToIfc(sourceBytes, [
       {
         localId: 10,
@@ -95,6 +100,9 @@ describe('Cable Tray Buscador de TAGs (Revizto / Navisworks search & filters)', 
         sequenceNumber: '01',
         plano: 'E-301',
         subTipo: 'ESCALERILLA',
+        escAcc: 'ESC',
+        tension: 'MT / 22.9kV',
+        tipoMaterial: 'F°G°',
       },
       {
         localId: 20,
@@ -104,6 +112,9 @@ describe('Cable Tray Buscador de TAGs (Revizto / Navisworks search & filters)', 
         sequenceNumber: '',
         plano: 'E-302',
         subTipo: 'CURVA 90',
+        escAcc: 'ACC',
+        tension: 'BT / 480V',
+        tipoMaterial: 'INOX 316',
       },
     ]);
     assert.equal(exp1.applied.length, 2);
@@ -114,12 +125,18 @@ describe('Cable Tray Buscador de TAGs (Revizto / Navisworks search & filters)', 
     assert.equal(parsed1.get(10).elementTag, 'PT1.01.01');
     assert.equal(parsed1.get(10).plano, 'E-301');
     assert.equal(parsed1.get(10).subTipo, 'ESCALERILLA');
+    assert.equal(parsed1.get(10).escAcc, 'ESC');
+    assert.equal(parsed1.get(10).tension, 'MT / 22.9kV');
+    assert.equal(parsed1.get(10).tipoMaterial, 'F°G°');
 
     assert.equal(parsed1.get(20).elementTag, '');
     assert.equal(parsed1.get(20).plano, 'E-302');
     assert.equal(parsed1.get(20).subTipo, 'CURVA 90');
+    assert.equal(parsed1.get(20).escAcc, 'ACC');
+    assert.equal(parsed1.get(20).tension, 'BT / 480V');
+    assert.equal(parsed1.get(20).tipoMaterial, 'INOX 316');
 
-    // 3. Second export on already-exported IFC: update #10 PLANO in-place and add Unique Tag to #20 while keeping PLANO/SUB_TIPO
+    // 3. Second export on already-exported IFC: update #10 properties in-place and add Unique Tag to #20
     const exp2 = addTraySystemAssignmentsToIfc(exp1.bytes, [
       {
         localId: 10,
@@ -129,6 +146,9 @@ describe('Cable Tray Buscador de TAGs (Revizto / Navisworks search & filters)', 
         sequenceNumber: '01',
         plano: 'E-301-REV2',
         subTipo: 'ESCALERILLA',
+        escAcc: 'ESC',
+        tension: '10kV',
+        tipoMaterial: 'HDG',
       },
       {
         localId: 20,
@@ -138,14 +158,50 @@ describe('Cable Tray Buscador de TAGs (Revizto / Navisworks search & filters)', 
         sequenceNumber: '02',
         plano: 'E-302',
         subTipo: 'CURVA 90',
+        escAcc: 'ACC-CUSTOM',
+        tension: 'BT / 480V',
+        tipoMaterial: 'INOX 316',
       },
     ]);
     const parsed2 = extractTraySystemAssignmentsFromIfc(exp2.bytes);
     assert.equal(parsed2.get(10).plano, 'E-301-REV2');
-    assert.equal(parsed2.get(10).subTipo, 'ESCALERILLA');
+    assert.equal(parsed2.get(10).tension, '10kV');
+    assert.equal(parsed2.get(10).tipoMaterial, 'HDG');
     assert.equal(parsed2.get(20).elementTag, 'PT1.01.02');
-    assert.equal(parsed2.get(20).plano, 'E-302');
-    assert.equal(parsed2.get(20).subTipo, 'CURVA 90');
+    assert.equal(parsed2.get(20).escAcc, 'ACC-CUSTOM');
+  });
+
+  it('derives ESC/ACC in Spanish and English and resolves DESCRIPCION DE MATERIAL from built-in catalog + Excel override', () => {
+    assert.equal(deriveEscAccFromSubTipo('ESCALERILLA'), 'ESC');
+    assert.equal(deriveEscAccFromSubTipo('Cable Ladder'), 'ESC');
+    assert.equal(deriveEscAccFromSubTipo('CURVA 90'), 'ACC');
+    assert.equal(deriveEscAccFromSubTipo('Horizontal Bend 90'), 'ACC');
+    assert.equal(deriveEscAccFromSubTipo('Horizontal Tee'), 'ACC');
+    assert.equal(deriveEscAccFromSubTipo('CUSTOM-CODE', 'IFCCABLECARRIERFITTING'), 'ACC');
+    assert.equal(deriveEscAccFromSubTipo('CUSTOM-CODE', 'IFCCABLECARRIERSEGMENT'), 'ESC');
+
+    // Built-in catalog match (Spanish + English)
+    assert.equal(
+      resolveMaterialDescription({ subTipo: 'ESCALERILLA' }),
+      'BANDEJA PORTACABLES TIPO ESCALERILLA',
+    );
+    assert.equal(
+      resolveMaterialDescription({ subTipo: 'CURVA 90' }),
+      'CURVA HORIZONTAL 90 GRADOS PARA BANDEJA PORTACABLES',
+    );
+    assert.equal(
+      resolveMaterialDescription({ subTipo: 'ELBOW 90' }),
+      'ELBOW FITTING FOR CABLE TRAY',
+    );
+
+    // Custom Excel override takes precedence over built-in catalog
+    const customRules = parseMaterialDictionaryRows([
+      { SUB_TIPO: 'ESCALERILLA', 'DESCRIPCION DE MATERIAL': 'ESCALERILLA F°G° PESADA NEMA 20B' },
+    ]);
+    assert.equal(
+      resolveMaterialDescription({ subTipo: 'ESCALERILLA' }, customRules),
+      'ESCALERILLA F°G° PESADA NEMA 20B',
+    );
   });
 });
 

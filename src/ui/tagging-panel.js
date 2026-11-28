@@ -334,6 +334,9 @@ export function initTaggingPanel(ctx, dom, api) {
     if (pending?.delete === true) {
       const plano = pending.plano ?? '';
       const subTipo = pending.subTipo ?? '';
+      const escAcc = pending.escAcc ?? '';
+      const tension = pending.tension ?? '';
+      const tipoMaterial = pending.tipoMaterial ?? '';
       return {
         modelId,
         modelName: pending.modelName || modelEntry.name || '',
@@ -350,6 +353,9 @@ export function initTaggingPanel(ctx, dom, api) {
         schemeVersion: '',
         plano,
         subTipo,
+        escAcc,
+        tension,
+        tipoMaterial,
         delete: true,
         source: 'pending',
       };
@@ -387,6 +393,9 @@ export function initTaggingPanel(ctx, dom, api) {
       schemeVersion: pick(pending?.schemeVersion, existing?.schemeVersion),
       plano: pending?.plano !== undefined ? pending.plano : (existing?.plano || ''),
       subTipo: pending?.subTipo !== undefined ? pending.subTipo : (existing?.subTipo || ''),
+      escAcc: pending?.escAcc !== undefined ? pending.escAcc : (existing?.escAcc || ''),
+      tension: pending?.tension !== undefined ? pending.tension : (existing?.tension || ''),
+      tipoMaterial: pending?.tipoMaterial !== undefined ? pending.tipoMaterial : (existing?.tipoMaterial || ''),
       excelRowIndex: pending?.excelRowIndex ?? null,
       source: pending ? 'pending' : 'ifc',
       delete: false,
@@ -412,7 +421,17 @@ export function initTaggingPanel(ctx, dom, api) {
       const rec = getEffectiveElementRecord(modelId, localId);
       if (!rec) continue;
       const hasAny = Boolean(
-        String(rec.elementTag || rec.componentId || rec.systemTag || rec.plano || rec.subTipo || '').trim(),
+        String(
+          rec.elementTag ||
+          rec.componentId ||
+          rec.systemTag ||
+          rec.plano ||
+          rec.subTipo ||
+          rec.escAcc ||
+          rec.tension ||
+          rec.tipoMaterial ||
+          '',
+        ).trim(),
       );
       if (hasAny) results.push(rec);
     }

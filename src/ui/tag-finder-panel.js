@@ -185,6 +185,9 @@ export function initTagFinderPanel(ctx, dom, api) {
   window.addEventListener('resize', () => {
     if (isOpen) positionBelowRibbon();
   });
+  window.addEventListener('rc:ribbon-collapse-changed', () => {
+    if (isOpen) positionBelowRibbon();
+  });
 
   function getAllSearchableItems() {
     if (typeof api.getAllAnnotatedElements === 'function') {

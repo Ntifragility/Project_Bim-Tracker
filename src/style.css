@@ -1,4 +1,5 @@
 @import 'ribbon-chrome/tokens.css';
+
 /* Design System Variables */
 :root {
   --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
@@ -10,17 +11,18 @@
   --bg-sidebar: rgba(18, 20, 28, 0.75);
   --glass-border: rgba(255, 255, 255, 0.08);
   --glass-shadow: rgba(0, 0, 0, 0.4);
-  
+
   --text-primary: #f3f4f6;
   --text-secondary: #9ca3af;
   --text-muted: #6b7280;
 
   /* Accent Colors */
-  --accent: #6366f1; /* Indigo */
+  --accent: #6366f1;
+  /* Indigo */
   --accent-hover: #4f46e5;
   --accent-light: rgba(99, 102, 241, 0.15);
   --accent-border: rgba(99, 102, 241, 0.4);
-  
+
   --success: #10b981;
   --warning: #f59e0b;
   --error: #ef4444;
@@ -99,17 +101,12 @@ body {
 #app:has(#ribbon) #sidebar.rc-dock-left,
 #app:has(#ribbon) #excel-panel.rc-schedule-panel,
 #sidebar.rc-dock-left {
-  top: 148px;
-}
-
-#ribbon[data-rc-collapsed="true"] ~ #sidebar.rc-dock-left,
-#ribbon[data-rc-collapsed="true"] ~ #excel-panel.rc-schedule-panel {
-  top: 52px;
+  top: var(--rc-ribbon-height, 148px);
 }
 
 #sidebar.rc-dock-left {
   position: absolute;
-  top: 148px;
+  top: var(--rc-ribbon-height, 148px);
   bottom: 0;
   left: 0;
   width: 320px;
@@ -127,7 +124,14 @@ body {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   overflow: hidden;
-  transition: transform 0.25s ease;
+  transition: transform 0.25s ease, top 0.15s ease;
+}
+
+#app:has(#ribbon[data-rc-collapsed="true"]) #sidebar.rc-dock-left,
+#app:has(#ribbon[data-rc-collapsed="true"]) #excel-panel.rc-schedule-panel,
+#ribbon[data-rc-collapsed="true"] ~ #sidebar.rc-dock-left,
+#ribbon[data-rc-collapsed="true"] ~ #excel-panel.rc-schedule-panel {
+  top: 52px;
 }
 
 #sidebar.rc-dock-left.collapsed {
@@ -214,6 +218,7 @@ body {
   flex: 1 1 100%;
   border-bottom: none;
 }
+
 #sidebar[data-dock-mode="properties"] .rc-dock-resizer,
 #sidebar[data-dock-mode="properties"] .rc-pane-browser {
   display: none !important;
@@ -222,6 +227,7 @@ body {
 #sidebar[data-dock-mode="browser"] .rc-pane-browser {
   flex: 1 1 100%;
 }
+
 #sidebar[data-dock-mode="browser"] .rc-dock-resizer,
 #sidebar[data-dock-mode="browser"] .rc-pane-properties {
   display: none !important;
@@ -591,6 +597,7 @@ section.control-group[data-sidebar-panel].active {
     opacity: 0;
     transform: translateY(4px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -776,12 +783,12 @@ section.control-group[data-sidebar-panel].active {
   flex-shrink: 0;
 }
 
-.toggle-option input[type="checkbox"]:checked + .custom-checkbox {
+.toggle-option input[type="checkbox"]:checked+.custom-checkbox {
   background-color: var(--accent);
   border-color: var(--accent);
 }
 
-.toggle-option input[type="checkbox"]:checked + .custom-checkbox::after {
+.toggle-option input[type="checkbox"]:checked+.custom-checkbox::after {
   content: "";
   position: absolute;
   left: 5px;
@@ -1500,8 +1507,13 @@ section.control-group[data-sidebar-panel].active {
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 .loader-card h2 {
@@ -1617,6 +1629,7 @@ section.control-group[data-sidebar-panel].active {
     left: 16px;
     bottom: auto;
   }
+
   #excel-panel {
     width: 300px;
     max-width: calc(100vw - 32px);
@@ -1632,7 +1645,8 @@ section.control-group[data-sidebar-panel].active {
 .excel-panel-close {
   position: absolute;
   top: 24px;
-  left: -42px; /* Protrude outside the left boundary */
+  left: -42px;
+  /* Protrude outside the left boundary */
   width: 42px;
   height: 48px;
   background: var(--bg-sidebar);
@@ -1953,8 +1967,8 @@ section.control-group[data-sidebar-panel].active {
 }
 
 .batch-kicker,
-.batch-field > span,
-.batch-pattern-preview > span {
+.batch-field>span,
+.batch-pattern-preview>span {
   color: var(--text-muted);
   font-size: 0.66rem;
   font-weight: 700;
@@ -2228,9 +2242,17 @@ section.control-group[data-sidebar-panel].active {
   background: rgba(255, 255, 255, 0.025);
 }
 
-.tag-validation-report[data-tone="success"] { border-color: rgba(34, 197, 94, 0.45); }
-.tag-validation-report[data-tone="warning"] { border-color: rgba(245, 158, 11, 0.45); }
-.tag-validation-report[data-tone="error"] { border-color: rgba(239, 68, 68, 0.5); }
+.tag-validation-report[data-tone="success"] {
+  border-color: rgba(34, 197, 94, 0.45);
+}
+
+.tag-validation-report[data-tone="warning"] {
+  border-color: rgba(245, 158, 11, 0.45);
+}
+
+.tag-validation-report[data-tone="error"] {
+  border-color: rgba(239, 68, 68, 0.5);
+}
 
 .tag-validation-heading {
   display: flex;
@@ -2268,13 +2290,21 @@ section.control-group[data-sidebar-panel].active {
   line-height: 1.45;
 }
 
-.tag-validation-issues li + li {
+.tag-validation-issues li+li {
   margin-top: 4px;
 }
 
-.tag-validation-issues .validation-error { color: #fca5a5; }
-.tag-validation-issues .validation-warning { color: #fcd34d; }
-.tag-validation-issues .validation-success { color: #86efac; }
+.tag-validation-issues .validation-error {
+  color: #fca5a5;
+}
+
+.tag-validation-issues .validation-warning {
+  color: #fcd34d;
+}
+
+.tag-validation-issues .validation-success {
+  color: #86efac;
+}
 
 .tag-assignment-actions {
   display: flex;
@@ -2964,7 +2994,7 @@ section.control-group[data-sidebar-panel].active {
   gap: 9px;
 }
 
-.routing-controls > label {
+.routing-controls>label {
   color: var(--text-muted);
   font-size: 0.72rem;
   font-weight: 600;
@@ -3008,9 +3038,20 @@ section.control-group[data-sidebar-panel].active {
   line-height: 1.4;
 }
 
-.routing-status[data-tone="success"] { border-color: rgba(34, 197, 94, 0.45); color: #86efac; }
-.routing-status[data-tone="warning"] { border-color: rgba(245, 158, 11, 0.45); color: #fcd34d; }
-.routing-status[data-tone="error"] { border-color: rgba(239, 68, 68, 0.45); color: #fca5a5; }
+.routing-status[data-tone="success"] {
+  border-color: rgba(34, 197, 94, 0.45);
+  color: #86efac;
+}
+
+.routing-status[data-tone="warning"] {
+  border-color: rgba(245, 158, 11, 0.45);
+  color: #fcd34d;
+}
+
+.routing-status[data-tone="error"] {
+  border-color: rgba(239, 68, 68, 0.45);
+  color: #fca5a5;
+}
 
 .routing-summary {
   color: var(--text-muted);
@@ -3027,13 +3068,42 @@ section.control-group[data-sidebar-panel].active {
   font-size: 0.66rem;
 }
 
-.routing-legend span { display: flex; align-items: center; gap: 6px; }
-.legend-line { width: 16px; height: 2px; display: inline-block; border-radius: 2px; }
-.legend-dot { width: 6px; height: 6px; display: inline-block; border-radius: 50%; }
-.legend-line.connected { background: #22c55e; }
-.legend-line.uncertain { background: #f59e0b; }
-.legend-dot.open { background: #ef4444; }
-.legend-line.route { background: #facc15; height: 3px; }
+.routing-legend span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-line {
+  width: 16px;
+  height: 2px;
+  display: inline-block;
+  border-radius: 2px;
+}
+
+.legend-dot {
+  width: 6px;
+  height: 6px;
+  display: inline-block;
+  border-radius: 50%;
+}
+
+.legend-line.connected {
+  background: #22c55e;
+}
+
+.legend-line.uncertain {
+  background: #f59e0b;
+}
+
+.legend-dot.open {
+  background: #ef4444;
+}
+
+.legend-line.route {
+  background: #facc15;
+  height: 3px;
+}
 
 /* Loaded Models Section Styles */
 .loaded-models-list-panel {
@@ -3190,15 +3260,19 @@ section.control-group[data-sidebar-panel].active {
   color: #a5b4fc;
   box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
   animation: pulse-glow 2s infinite ease-in-out;
-  pointer-events: none; /* Let clicks pass through to canvas underneath */
+  pointer-events: none;
+  /* Let clicks pass through to canvas underneath */
   transition: opacity 0.3s ease, visibility 0.3s ease;
 }
 
 @keyframes pulse-glow {
-  0%, 100% {
+
+  0%,
+  100% {
     box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4), 0 0 10px rgba(99, 102, 241, 0.2);
     border-color: rgba(99, 102, 241, 0.4);
   }
+
   50% {
     box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4), 0 0 20px rgba(99, 102, 241, 0.5);
     border-color: rgba(99, 102, 241, 0.7);
@@ -3215,6 +3289,7 @@ section.control-group[data-sidebar-panel].active {
 }
 
 @media (max-width: 360px) {
+
   .batch-form-grid,
   .batch-primary-actions {
     grid-template-columns: minmax(0, 1fr);

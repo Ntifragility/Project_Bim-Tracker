@@ -35,6 +35,7 @@ export function initPropertiesPanel(ctx, dom, api) {
     name,
     globalId,
     modelName,
+    attributes = {},
     groups = new Map(),
     assignment = null,
     existing = null,
@@ -51,19 +52,19 @@ export function initPropertiesPanel(ctx, dom, api) {
     for (const group of groups.values()) {
       for (const [k, v] of Object.entries(group.entries || {})) {
         const keyLower = k.toLowerCase();
-        if (!width && (keyLower === 'width' || keyLower === 'nominalwidth' || keyLower === 'overallwidth' || keyLower === 'crosssectionwidth')) {
+        if (!width && (keyLower === 'width' || keyLower === 'nominalwidth' || keyLower === 'overallwidth' || keyLower === 'crosssectionwidth' || keyLower === 'ancho')) {
           width = formatPropValue(v);
         }
-        if (!height && (keyLower === 'height' || keyLower === 'nominalheight' || keyLower === 'overallheight' || keyLower === 'crosssectionheight')) {
+        if (!height && (keyLower === 'height' || keyLower === 'nominalheight' || keyLower === 'overallheight' || keyLower === 'crosssectionheight' || keyLower === 'alto' || keyLower === 'altura')) {
           height = formatPropValue(v);
         }
-        if (!length && (keyLower === 'length' || keyLower === 'nominallength' || keyLower === 'grosslength')) {
+        if (!length && (keyLower === 'length' || keyLower === 'nominallength' || keyLower === 'grosslength' || keyLower === 'longitud' || keyLower === 'largo')) {
           length = formatPropValue(v);
         }
-        if (!level && (keyLower.includes('level') || keyLower.includes('storey') || keyLower.includes('story'))) {
+        if (!level && (keyLower.includes('level') || keyLower.includes('storey') || keyLower.includes('story') || keyLower.includes('nivel'))) {
           level = formatPropValue(v);
         }
-        if (!elevation && (keyLower.includes('elevation') || keyLower.includes('offset'))) {
+        if (!elevation && (keyLower.includes('elevation') || keyLower.includes('offset') || keyLower.includes('elevacion'))) {
           elevation = formatPropValue(v);
         }
       }
@@ -81,8 +82,69 @@ export function initPropertiesPanel(ctx, dom, api) {
     const subTipo = assignment?.subTipo !== undefined
       ? assignment.subTipo
       : (existing?.subTipo || '');
-    const service = assignment?.service || 'Power';
-    const status = assignment?.status || 'Active';
+    const escAcc = assignment?.escAcc !== undefined
+      ? assignment.escAcc
+      : (existing?.escAcc || '');
+    const tension = assignment?.tension !== undefined
+      ? assignment.tension
+      : (existing?.tension || '');
+    const tipoMaterial = assignment?.tipoMaterial !== undefined
+      ? assignment.tipoMaterial
+      : (existing?.tipoMaterial || '');
+
+    const parameters = {
+      'Constraints': [
+        { name: 'Reference Level', value: level || '-', readonly: true },
+        { name: 'Elevation', value: elevation || '-', readonly: true },
+      ],
+      'Dimensions': [
+        { name: 'Width', value: width || '-', readonly: true },
+        { name: 'Height', value: height || '-', readonly: true },
+        { name: 'Length', value: length || '-', readonly: true },
+      ],
+      'Identity Data': [
+        { name: 'Entity', value: typeName || 'IfcElement', readonly: true },
+        { name: 'Name', value: formatPropValue(name), readonly: true },
+        { name: 'GlobalId', value: globalId || '-', readonly: true },
+        { name: 'Express ID', value: String(expressId), readonly: true },
+        { name: 'Model', value: modelName || '-', readonly: true },
+      ],
+    };
+
+    // Include raw IFC Attributes if present
+    const attrEntries = Object.entries(attributes || {});
+    if (attrEntries.length > 0) {
+      parameters['IFC Attributes'] = attrEntries.map(([k, v]) => ({
+        name: k,
+        value: formatPropValue(v),
+        readonly: true,
+      }));
+    }
+
+    // Forward ALL native IFC Property Sets & Quantities from the model (full Revizto parity)
+    for (const group of groups.values()) {
+      if (!group?.name || !group.entries) continue;
+      if (group.name.trim().toUpperCase() === 'CCP_TRAY_SYSTEM') continue;
+      const rows = Object.entries(group.entries).map(([k, v]) => ({
+        name: k,
+        value: formatPropValue(v),
+        readonly: true,
+      }));
+      if (rows.length > 0) {
+        parameters[group.name] = rows;
+      }
+    }
+
+    // Electrical group is always pinned at the bottom of the Properties Palette
+    parameters['Electrical'] = [
+      { name: 'Unique Tag', value: uniqueTag, type: 'text', readonly: false },
+      { name: 'System Tag', value: systemTag, type: 'text', readonly: false },
+      { name: 'PLANO', value: plano, type: 'text', readonly: false },
+      { name: 'SUB_TIPO', value: subTipo, type: 'text', readonly: false },
+      { name: 'ESC/ACC', value: escAcc, type: 'text', readonly: false },
+      { name: 'TENSION', value: tension, type: 'text', readonly: false },
+      { name: 'TIPO DE MATERIAL', value: tipoMaterial, type: 'text', readonly: false },
+    ];
 
     const paletteData = {
       id: String(expressId),
@@ -92,31 +154,7 @@ export function initPropertiesPanel(ctx, dom, api) {
       types: [typeName || 'IfcCableTraySegment', 'IfcCableTrayFitting', 'IfcFlowSegment'],
       count: count || 1,
       filterLabel: `${typeName || 'IfcCableTraySegment'} (${count || 1})`,
-      parameters: {
-        'Constraints': [
-          { name: 'Reference Level', value: level || 'Level 1', readonly: true },
-          { name: 'Elevation', value: elevation || '2.750 m', readonly: true },
-        ],
-        'Dimensions': [
-          { name: 'Width', value: width || '300 mm', readonly: true },
-          { name: 'Height', value: height || '100 mm', readonly: true },
-          { name: 'Length', value: length || '3.048 m', readonly: true },
-        ],
-        'Electrical': [
-          { name: 'Unique Tag', value: uniqueTag, type: 'text', readonly: false },
-          { name: 'System Tag', value: systemTag, type: 'text', readonly: false },
-          { name: 'PLANO', value: plano, type: 'text', readonly: false },
-          { name: 'SUB_TIPO', value: subTipo, type: 'text', readonly: false },
-          { name: 'Service', value: service, readonly: true },
-          { name: 'Status', value: status, readonly: true },
-        ],
-        'Identity Data': [
-          { name: 'Entity', value: typeName || 'IfcElement', readonly: true },
-          { name: 'GlobalId', value: globalId || '-', readonly: true },
-          { name: 'Express ID', value: String(expressId), readonly: true },
-          { name: 'Model', value: modelName || '-', readonly: true },
-        ],
-      },
+      parameters,
     };
 
     ctx._lastRevitPaletteArgs = {
@@ -125,6 +163,7 @@ export function initPropertiesPanel(ctx, dom, api) {
       name,
       globalId,
       modelName,
+      attributes,
       groups,
       count,
     };
@@ -242,8 +281,11 @@ export function initPropertiesPanel(ctx, dom, api) {
     const typeCode = assignment?.delete ? '' : (assignment?.typeCode || existing?.typeCode || '');
     const plano = assignment?.plano !== undefined ? assignment.plano : (existing?.plano || '');
     const subTipo = assignment?.subTipo !== undefined ? assignment.subTipo : (existing?.subTipo || '');
+    const escAcc = assignment?.escAcc !== undefined ? assignment.escAcc : (existing?.escAcc || '');
+    const tension = assignment?.tension !== undefined ? assignment.tension : (existing?.tension || '');
+    const tipoMaterial = assignment?.tipoMaterial !== undefined ? assignment.tipoMaterial : (existing?.tipoMaterial || '');
 
-    if (!systemTag && !elementTag && !plano && !subTipo) {
+    if (!systemTag && !elementTag && !plano && !subTipo && !escAcc && !tension && !tipoMaterial) {
       dom.propPsetsContainer.querySelector('[data-pset-name="CCP_TRAY_SYSTEM"]')?.remove();
       return;
     }
@@ -253,6 +295,9 @@ export function initPropertiesPanel(ctx, dom, api) {
       ComponentId: componentId,
       Plano: plano,
       SubTipo: subTipo,
+      EscAcc: escAcc,
+      Tension: tension,
+      TipoMaterial: tipoMaterial,
       ElementKind: elementKind,
       TypeCode: typeCode,
       SequenceNumber: sequenceNumber,
@@ -370,7 +415,10 @@ export function initPropertiesPanel(ctx, dom, api) {
       attributesDefault: true,
       relations: {
         IsDefinedBy: { attributes: true, relations: true },
+        IsTypedBy: { attributes: true, relations: true },
         DefinesOccurrence: { attributes: true, relations: true },
+        ContainedInStructure: { attributes: true, relations: false },
+        HasAssociations: { attributes: true, relations: true },
       },
       relationsDefault: { attributes: false, relations: false },
     });
@@ -424,6 +472,7 @@ export function initPropertiesPanel(ctx, dom, api) {
       name,
       globalId,
       modelName,
+      attributes,
       groups,
       assignment,
       existing,
@@ -626,13 +675,22 @@ export function initPropertiesPanel(ctx, dom, api) {
     if (api.propertiesPalette) {
       const planoValues = new Set();
       const subTipoValues = new Set();
+      const escAccValues = new Set();
+      const tensionValues = new Set();
+      const tipoMaterialValues = new Set();
       for (const el of elements) {
         const a = api.getEffectiveElementRecord?.(el) || api.getAssignmentForElement?.(el);
         planoValues.add(a ? (a.plano || '') : '');
         subTipoValues.add(a ? (a.subTipo || '') : '');
+        escAccValues.add(a ? (a.escAcc || '') : '');
+        tensionValues.add(a ? (a.tension || '') : '');
+        tipoMaterialValues.add(a ? (a.tipoMaterial || '') : '');
       }
       const planoText = planoValues.size === 1 ? Array.from(planoValues)[0] : '<Varies>';
       const subTipoText = subTipoValues.size === 1 ? Array.from(subTipoValues)[0] : '<Varies>';
+      const escAccText = escAccValues.size === 1 ? Array.from(escAccValues)[0] : '<Varies>';
+      const tensionText = tensionValues.size === 1 ? Array.from(tensionValues)[0] : '<Varies>';
+      const tipoMaterialText = tipoMaterialValues.size === 1 ? Array.from(tipoMaterialValues)[0] : '<Varies>';
 
       api.propertiesPalette.setElement({
         id: 'multi',
@@ -652,18 +710,19 @@ export function initPropertiesPanel(ctx, dom, api) {
             { name: 'Height', value: '<Varies>', readonly: true },
             { name: 'Length', value: '<Varies>', readonly: true },
           ],
-          'Electrical': [
-            { name: 'System Tag', value: tagText || '<Varies>', readonly: true },
-            { name: 'PLANO', value: planoText, type: 'text', readonly: false },
-            { name: 'SUB_TIPO', value: subTipoText, type: 'text', readonly: false },
-            { name: 'Service', value: '<Varies>', readonly: true },
-            { name: 'Status', value: '<Varies>', readonly: true },
-          ],
           'Identity Data': [
             { name: 'Entity', value: typeText, readonly: true },
             { name: 'GlobalId', value: '<Varies>', readonly: true },
             { name: 'Express ID', value: '<Varies>', readonly: true },
             { name: 'Model', value: modelText, readonly: true },
+          ],
+          'Electrical': [
+            { name: 'System Tag', value: tagText || '<Varies>', readonly: true },
+            { name: 'PLANO', value: planoText, type: 'text', readonly: false },
+            { name: 'SUB_TIPO', value: subTipoText, type: 'text', readonly: false },
+            { name: 'ESC/ACC', value: escAccText, type: 'text', readonly: false },
+            { name: 'TENSION', value: tensionText, type: 'text', readonly: false },
+            { name: 'TIPO DE MATERIAL', value: tipoMaterialText, type: 'text', readonly: false },
           ],
         },
       });

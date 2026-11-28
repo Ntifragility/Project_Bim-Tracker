@@ -51,7 +51,7 @@ export function writeWorkbookBytes(sheetsMap) {
 
 /**
  * Builds the clean Cable Tray Excel (.xlsx) workbook bytes:
- *   Sheet 1 ("Bandejas"): TAG UNICO | ANCHO | LONGITUD | PLANO | SUB_TIPO
+ *   Sheet 1 ("Bandejas"): TAG UNICO | ANCHO | LONGITUD | PLANO | SUB_TIPO | ESC/ACC | TENSION | TIPO DE MATERIAL | DESCRIPCION DE MATERIAL
  *   Sheet 2 ("Detalle"):  Optional BIM audit metadata
  */
 export function buildTrayScheduleWorkbook(rows = [], detailRows = []) {
@@ -63,11 +63,35 @@ export function buildTrayScheduleWorkbook(rows = [], detailRows = []) {
         "LONGITUD": r.longitud ?? r["LONGITUD"] ?? "",
         "PLANO": r.plano ?? r["PLANO"] ?? "",
         "SUB_TIPO": r.subTipo ?? r["SUB_TIPO"] ?? "",
+        "ESC/ACC": r.escAcc ?? r["ESC/ACC"] ?? "",
+        "TENSION": r.tension ?? r["TENSION"] ?? "",
+        "TIPO DE MATERIAL": r.tipoMaterial ?? r["TIPO DE MATERIAL"] ?? "",
+        "DESCRIPCION DE MATERIAL": r.descripcionMaterial ?? r["DESCRIPCION DE MATERIAL"] ?? "",
       }))
-    : [{ "TAG UNICO": "", "ANCHO": "", "LONGITUD": "", "PLANO": "", "SUB_TIPO": "" }];
+    : [{
+        "TAG UNICO": "",
+        "ANCHO": "",
+        "LONGITUD": "",
+        "PLANO": "",
+        "SUB_TIPO": "",
+        "ESC/ACC": "",
+        "TENSION": "",
+        "TIPO DE MATERIAL": "",
+        "DESCRIPCION DE MATERIAL": "",
+      }];
 
   const wsMain = XLSX.utils.json_to_sheet(mainRows);
-  wsMain["!cols"] = [{ wch: 22 }, { wch: 14 }, { wch: 14 }, { wch: 20 }, { wch: 22 }];
+  wsMain["!cols"] = [
+    { wch: 22 },
+    { wch: 12 },
+    { wch: 12 },
+    { wch: 18 },
+    { wch: 20 },
+    { wch: 10 },
+    { wch: 16 },
+    { wch: 22 },
+    { wch: 36 },
+  ];
   XLSX.utils.book_append_sheet(workbook, wsMain, "Bandejas");
 
   if (Array.isArray(detailRows) && detailRows.length > 0) {

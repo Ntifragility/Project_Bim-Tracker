@@ -3,16 +3,37 @@
 // Zero browser prompts — define Fixed prefix + Variable counter, click elements in sequence
 // (Click-to-Tag mode) or tag multi-selection in one click, and export Excel (TAG UNICO | ANCHO | LONGITUD).
 
-import { exportTrayScheduleExcel } from 'excel-io';
+import { exportTrayScheduleExcel, readWorkbook } from 'excel-io';
 import {
   formatSequentialTag,
   getNextAvailableSequence,
   allocateSequentialTags,
   compareNaturalTags,
 } from '../tagging/sequential-tagger.js';
+import {
+  deriveEscAccFromSubTipo,
+  parseMaterialDictionaryRows,
+  resolveMaterialDescription,
+} from '../tagging/material-dictionary.js';
 import { getAssignmentKey } from './helpers.js';
 
 const STORAGE_KEY = 'covillaf:trayAuxTagPattern';
+const DICT_STORAGE_KEY = 'covillaf:trayMaterialDictRules';
+
+function loadSavedDictRules() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(DICT_STORAGE_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveDictRules(rules) {
+  try {
+    localStorage.setItem(DICT_STORAGE_KEY, JSON.stringify(rules || []));
+  } catch { /* noop */ }
+}
 
 function loadSavedPattern() {
   try {
@@ -195,54 +216,130 @@ export function initTaggingAuxBar(ctx, dom, api) {
     btnClose,
   );
 
-  // Collapsible PLANO & SUB_TIPO bulk property assignment drawer (keeps main bar single-row)
+  // Collapsible PLANO, SUB_TIPO, ESC/ACC, TENSION & TIPO DE MATERIAL bulk property assignment drawer
   let propsDrawerOpen = false;
+  let customDictRules = loadSavedDictRules();
   const propsRow = document.createElement('div');
   propsRow.style.cssText =
     'display:none;align-items:center;gap:6px;flex-wrap:wrap;padding-top:5px;border-top:1px solid #334155;';
 
   const planoListId = 'tray-plano-datalist';
   const subTipoListId = 'tray-subtipo-datalist';
+  const tensionListId = 'tray-tension-datalist';
+  const tipoMatListId = 'tray-tipomat-datalist';
   const planoDatalist = document.createElement('datalist');
   planoDatalist.id = planoListId;
   const subTipoDatalist = document.createElement('datalist');
   subTipoDatalist.id = subTipoListId;
+  const tensionDatalist = document.createElement('datalist');
+  tensionDatalist.id = tensionListId;
+  const tipoMatDatalist = document.createElement('datalist');
+  tipoMatDatalist.id = tipoMatListId;
 
   const planoInput = document.createElement('input');
   planoInput.type = 'text';
   planoInput.setAttribute('list', planoListId);
   planoInput.placeholder = 'e.g. E-301';
-  planoInput.title = 'PLANO property value for selected elements';
+  planoInput.title = 'PLANO (IFC Property)';
   planoInput.style.cssText =
-    'width:110px;background:#1e293b;color:#f8fafc;border:1px solid #475569;border-radius:4px;' +
+    'width:90px;background:#1e293b;color:#f8fafc;border:1px solid #475569;border-radius:4px;' +
     'padding:3px 6px;font:600 11px/1.2 monospace;';
 
   const btnApplyPlano = document.createElement('button');
   btnApplyPlano.type = 'button';
   btnApplyPlano.textContent = 'Set PLANO';
   btnApplyPlano.style.cssText =
-    'background:#0f766e;color:#f0fdfa;border:none;border-radius:4px;padding:3px 8px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
+    'background:#0f766e;color:#f0fdfa;border:none;border-radius:4px;padding:3px 7px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
 
   const subTipoInput = document.createElement('input');
   subTipoInput.type = 'text';
   subTipoInput.setAttribute('list', subTipoListId);
   subTipoInput.placeholder = 'e.g. CURVA 90';
-  subTipoInput.title = 'SUB_TIPO property value for selected elements';
+  subTipoInput.title = 'SUB_TIPO (IFC Property) — auto-derives ESC/ACC (ES/EN)';
   subTipoInput.style.cssText =
-    'width:130px;background:#1e293b;color:#f8fafc;border:1px solid #475569;border-radius:4px;' +
+    'width:110px;background:#1e293b;color:#f8fafc;border:1px solid #475569;border-radius:4px;' +
     'padding:3px 6px;font:600 11px/1.2 monospace;';
 
   const btnApplySubTipo = document.createElement('button');
   btnApplySubTipo.type = 'button';
   btnApplySubTipo.textContent = 'Set SUB_TIPO';
   btnApplySubTipo.style.cssText =
-    'background:#0f766e;color:#f0fdfa;border:none;border-radius:4px;padding:3px 8px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
+    'background:#0f766e;color:#f0fdfa;border:none;border-radius:4px;padding:3px 7px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
+
+  const escAccInput = document.createElement('input');
+  escAccInput.type = 'text';
+  escAccInput.placeholder = 'ESC/ACC';
+  escAccInput.title = 'ESC/ACC (IFC Property) — auto-detected from SUB_TIPO, editable';
+  escAccInput.style.cssText =
+    'width:60px;background:#1e293b;color:#f8fafc;border:1px solid #475569;border-radius:4px;' +
+    'padding:3px 6px;font:600 11px/1.2 monospace;';
+
+  const tensionInput = document.createElement('input');
+  tensionInput.type = 'text';
+  tensionInput.setAttribute('list', tensionListId);
+  tensionInput.placeholder = 'e.g. 22.9kV';
+  tensionInput.title = 'TENSION (IFC Property)';
+  tensionInput.style.cssText =
+    'width:85px;background:#1e293b;color:#f8fafc;border:1px solid #475569;border-radius:4px;' +
+    'padding:3px 6px;font:600 11px/1.2 monospace;';
+
+  const tipoMaterialInput = document.createElement('input');
+  tipoMaterialInput.type = 'text';
+  tipoMaterialInput.setAttribute('list', tipoMatListId);
+  tipoMaterialInput.placeholder = 'e.g. F°G°';
+  tipoMaterialInput.title = 'TIPO DE MATERIAL (IFC Property)';
+  tipoMaterialInput.style.cssText =
+    'width:85px;background:#1e293b;color:#f8fafc;border:1px solid #475569;border-radius:4px;' +
+    'padding:3px 6px;font:600 11px/1.2 monospace;';
 
   const btnApplyBothProps = document.createElement('button');
   btnApplyBothProps.type = 'button';
-  btnApplyBothProps.textContent = 'Apply Both';
+  btnApplyBothProps.textContent = 'Apply Props';
+  btnApplyBothProps.title = 'Apply filled IFC properties (PLANO, SUB_TIPO, ESC/ACC, TENSION, TIPO DE MATERIAL) to selected elements';
   btnApplyBothProps.style.cssText =
     'background:#0284c7;color:#f8fafc;border:none;border-radius:4px;padding:3px 8px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
+
+  const dictFileInput = document.createElement('input');
+  dictFileInput.type = 'file';
+  dictFileInput.accept = '.xlsx,.xls';
+  dictFileInput.style.display = 'none';
+
+  const btnDictUpload = document.createElement('button');
+  btnDictUpload.type = 'button';
+  btnDictUpload.title = 'Upload local Excel dictionary (SUB_TIPO -> DESCRIPCION DE MATERIAL) used when exporting Excel schedule';
+  btnDictUpload.style.cssText =
+    'background:#1e293b;color:#fcd34d;border:1px solid #b45309;border-radius:4px;padding:3px 7px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
+
+  subTipoInput.addEventListener('input', () => {
+    const auto = deriveEscAccFromSubTipo(subTipoInput.value);
+    if (auto) escAccInput.value = auto;
+  });
+
+  btnDictUpload.addEventListener('click', () => dictFileInput.click());
+  dictFileInput.addEventListener('change', async (e) => {
+    const file = e.target?.files?.[0];
+    if (!file) return;
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = readWorkbook(new Uint8Array(buf));
+      const rows = wb.readSheet();
+      const parsed = parseMaterialDictionaryRows(rows);
+      if (!parsed.length) {
+        statusText = `No valid SUB_TIPO -> DESCRIPCION DE MATERIAL rows found in ${file.name}.`;
+        syncUi();
+        return;
+      }
+      customDictRules = parsed;
+      saveDictRules(customDictRules);
+      statusText = `Loaded ${parsed.length} material description rules from ${file.name} (applied on Excel export).`;
+      syncUi();
+    } catch (err) {
+      statusText = `Could not parse dictionary Excel: ${err?.message || err}`;
+      syncUi();
+    } finally {
+      dictFileInput.value = '';
+    }
+  });
 
   propsRow.append(
     mkLabel('PLANO:'),
@@ -251,9 +348,19 @@ export function initTaggingAuxBar(ctx, dom, api) {
     mkLabel('SUB_TIPO:'),
     subTipoInput,
     btnApplySubTipo,
+    mkLabel('ESC/ACC:'),
+    escAccInput,
+    mkLabel('TENSION:'),
+    tensionInput,
+    mkLabel('MATERIAL:'),
+    tipoMaterialInput,
     btnApplyBothProps,
+    btnDictUpload,
+    dictFileInput,
     planoDatalist,
     subTipoDatalist,
+    tensionDatalist,
+    tipoMatDatalist,
   );
 
   const statusLine = document.createElement('div');
@@ -262,6 +369,9 @@ export function initTaggingAuxBar(ctx, dom, api) {
   host.append(row, propsRow, statusLine);
   mountTarget.appendChild(host);
   window.addEventListener('resize', () => {
+    if (isOpen) positionBelowRibbon();
+  });
+  window.addEventListener('rc:ribbon-collapse-changed', () => {
     if (isOpen) positionBelowRibbon();
   });
 
@@ -334,7 +444,10 @@ export function initTaggingAuxBar(ctx, dom, api) {
 
     btnApplyPlano.textContent = `Set PLANO (${selCount})`;
     btnApplySubTipo.textContent = `Set SUB_TIPO (${selCount})`;
-    btnApplyBothProps.textContent = `Apply Both (${selCount})`;
+    btnApplyBothProps.textContent = `Apply Props (${selCount})`;
+    btnDictUpload.textContent = customDictRules.length > 0
+      ? `Dict: ${customDictRules.length} (.xlsx)`
+      : 'Dict (.xlsx)';
     for (const b of [btnApplyPlano, btnApplySubTipo, btnApplyBothProps]) {
       b.disabled = selCount === 0;
       b.style.opacity = selCount === 0 ? '0.45' : '1';
@@ -343,24 +456,29 @@ export function initTaggingAuxBar(ctx, dom, api) {
     // Refresh autocomplete datalists from current assignments
     if (propsDrawerOpen) {
       const planos = new Set();
-      const subTipos = new Set();
-      for (const a of ctx.tagAssignments.values()) {
-        if (a?.delete === true) continue;
-        if (a?.plano) planos.add(a.plano);
-        if (a?.subTipo) subTipos.add(a.subTipo);
+      const subTipos = new Set(['ESCALERILLA', 'BANDEJA', 'CURVA 90', 'CURVA 45', 'TEE', 'CRUZ', 'REDUCCION']);
+      const tensiones = new Set(['MT', 'BT', 'CONTROL', 'COMUNICACIONES', '22.9kV', '10kV', '480V', '220V']);
+      const tiposMat = new Set(['F°G°', 'HDG', 'INOX 304', 'INOX 316', 'ALUMINIO', 'FRP']);
+      const allAnnotated = api.getAllAnnotatedElements?.() || Array.from(ctx.tagAssignments.values());
+      for (const a of allAnnotated) {
+        if (!a || a.delete === true) continue;
+        if (a.plano) planos.add(a.plano);
+        if (a.subTipo) subTipos.add(a.subTipo);
+        if (a.tension) tensiones.add(a.tension);
+        if (a.tipoMaterial) tiposMat.add(a.tipoMaterial);
       }
-      planoDatalist.innerHTML = '';
-      for (const p of Array.from(planos).sort()) {
-        const o = document.createElement('option');
-        o.value = p;
-        planoDatalist.appendChild(o);
-      }
-      subTipoDatalist.innerHTML = '';
-      for (const s of Array.from(subTipos).sort()) {
-        const o = document.createElement('option');
-        o.value = s;
-        subTipoDatalist.appendChild(o);
-      }
+      const fillDatalist = (dl, values) => {
+        dl.innerHTML = '';
+        for (const v of Array.from(values).sort()) {
+          const o = document.createElement('option');
+          o.value = v;
+          dl.appendChild(o);
+        }
+      };
+      fillDatalist(planoDatalist, planos);
+      fillDatalist(subTipoDatalist, subTipos);
+      fillDatalist(tensionDatalist, tensiones);
+      fillDatalist(tipoMatDatalist, tiposMat);
     }
 
     const totalTagged = (api.getEffectiveTaggedElements?.() || []).length;
@@ -425,6 +543,9 @@ export function initTaggingAuxBar(ctx, dom, api) {
         ...assignment,
         plano: base?.plano || '',
         subTipo: base?.subTipo || '',
+        escAcc: base?.escAcc || deriveEscAccFromSubTipo(base?.subTipo || '', assignment.type || base?.type || ''),
+        tension: base?.tension || '',
+        tipoMaterial: base?.tipoMaterial || '',
         excelRowIndex: ctx.selectedExcelRowIndex,
       };
       snapshotEntries.push({
@@ -528,7 +649,9 @@ export function initTaggingAuxBar(ctx, dom, api) {
       const key = getAssignmentKey(item.modelId, item.localId);
       const prev = ctx.tagAssignments.has(key) ? { ...ctx.tagAssignments.get(key) } : null;
       const existingSaved = api.findLoadedModelEntry?.(item.modelId)?.existingProjectTags?.get(Number(item.localId));
-      const hasCustomProps = Boolean(prev?.plano || prev?.subTipo);
+      const hasCustomProps = Boolean(
+        prev?.plano || prev?.subTipo || prev?.escAcc || prev?.tension || prev?.tipoMaterial,
+      );
       const applied = existingSaved
         ? {
             modelId: item.modelId,
@@ -539,6 +662,9 @@ export function initTaggingAuxBar(ctx, dom, api) {
             modelName: item.modelName || existingSaved.modelName || '',
             plano: prev?.plano || '',
             subTipo: prev?.subTipo || '',
+            escAcc: prev?.escAcc || '',
+            tension: prev?.tension || '',
+            tipoMaterial: prev?.tipoMaterial || '',
             delete: true,
           }
         : hasCustomProps
@@ -626,6 +752,9 @@ export function initTaggingAuxBar(ctx, dom, api) {
       sequenceNumber: derivedSeq,
       plano: base?.plano || '',
       subTipo: base?.subTipo || '',
+      escAcc: base?.escAcc || deriveEscAccFromSubTipo(base?.subTipo || '', element.type || base?.type || ''),
+      tension: base?.tension || '',
+      tipoMaterial: base?.tipoMaterial || '',
       source: 'pending',
       delete: false,
       excelRowIndex: base?.excelRowIndex ?? ctx.selectedExcelRowIndex,
@@ -646,14 +775,20 @@ export function initTaggingAuxBar(ctx, dom, api) {
     return true;
   }
 
-  function setElementsProperties(elements, { plano, subTipo } = {}) {
+  function setElementsProperties(elements, { plano, subTipo, escAcc, tension, tipoMaterial } = {}) {
     if (!elements || elements.length === 0) return false;
     const hasPlano = plano !== undefined;
     const hasSubTipo = subTipo !== undefined;
-    if (!hasPlano && !hasSubTipo) return false;
+    const hasEscAcc = escAcc !== undefined;
+    const hasTension = tension !== undefined;
+    const hasTipoMaterial = tipoMaterial !== undefined;
+    if (!hasPlano && !hasSubTipo && !hasEscAcc && !hasTension && !hasTipoMaterial) return false;
 
     const cleanPlano = hasPlano ? String(plano ?? '').trim() : undefined;
     const cleanSubTipo = hasSubTipo ? String(subTipo ?? '').trim() : undefined;
+    const cleanEscAcc = hasEscAcc ? String(escAcc ?? '').trim() : undefined;
+    const cleanTension = hasTension ? String(tension ?? '').trim() : undefined;
+    const cleanTipoMaterial = hasTipoMaterial ? String(tipoMaterial ?? '').trim() : undefined;
     const snapshotEntries = [];
 
     for (const el of elements) {
@@ -661,6 +796,12 @@ export function initTaggingAuxBar(ctx, dom, api) {
       const key = getAssignmentKey(el.modelId, el.localId);
       const prev = ctx.tagAssignments.has(key) ? { ...ctx.tagAssignments.get(key) } : null;
       const base = api.getEffectiveElementRecord?.(el.modelId, el.localId) || prev;
+      const nextSubTipo = hasSubTipo ? cleanSubTipo : (base?.subTipo || '');
+      const nextEscAcc = hasEscAcc
+        ? cleanEscAcc
+        : hasSubTipo
+          ? deriveEscAccFromSubTipo(cleanSubTipo, el.type || base?.type || '')
+          : (base?.escAcc || deriveEscAccFromSubTipo(nextSubTipo, el.type || base?.type || ''));
       const applied = {
         ...(base || {}),
         modelId: el.modelId,
@@ -674,7 +815,10 @@ export function initTaggingAuxBar(ctx, dom, api) {
         systemTag: base?.systemTag || '',
         sequenceNumber: base?.sequenceNumber || '',
         plano: hasPlano ? cleanPlano : (base?.plano || ''),
-        subTipo: hasSubTipo ? cleanSubTipo : (base?.subTipo || ''),
+        subTipo: nextSubTipo,
+        escAcc: nextEscAcc,
+        tension: hasTension ? cleanTension : (base?.tension || ''),
+        tipoMaterial: hasTipoMaterial ? cleanTipoMaterial : (base?.tipoMaterial || ''),
         source: 'pending',
         delete: false,
       };
@@ -701,6 +845,9 @@ export function initTaggingAuxBar(ctx, dom, api) {
     const parts = [];
     if (hasPlano) parts.push(`PLANO="${cleanPlano || '(cleared)'}"`);
     if (hasSubTipo) parts.push(`SUB_TIPO="${cleanSubTipo || '(cleared)'}"`);
+    if (hasEscAcc) parts.push(`ESC/ACC="${cleanEscAcc || '(cleared)'}"`);
+    if (hasTension) parts.push(`TENSION="${cleanTension || '(cleared)'}"`);
+    if (hasTipoMaterial) parts.push(`MATERIAL="${cleanTipoMaterial || '(cleared)'}"`);
     statusText = `Assigned ${parts.join(', ')} to ${snapshotEntries.length} element${snapshotEntries.length === 1 ? '' : 's'} (Ctrl+Z to undo).`;
     commitProjection({ tone: 'success' });
     return true;
@@ -741,17 +888,29 @@ export function initTaggingAuxBar(ctx, dom, api) {
     for (const item of effective) {
       const dims = (await api.readElementDimensions?.(item)) || { Width: '', Length: '' };
       const tagUnico = item.elementTag || item.componentId || item.systemTag || '';
+      const escAcc = item.escAcc || deriveEscAccFromSubTipo(item.subTipo || '', item.type || '');
+      const tension = item.tension || '';
+      const tipoMaterial = item.tipoMaterial || '';
+      const descripcionMaterial = resolveMaterialDescription(item, customDictRules);
       mainRows.push({
         tagUnico,
         ancho: dims.Width ?? '',
         longitud: dims.Length ?? '',
         plano: item.plano || '',
         subTipo: item.subTipo || '',
+        escAcc,
+        tension,
+        tipoMaterial,
+        descripcionMaterial,
       });
       detailRows.push({
         'TAG UNICO': tagUnico,
         'PLANO': item.plano || '',
         'SUB_TIPO': item.subTipo || '',
+        'ESC/ACC': escAcc,
+        'TENSION': tension,
+        'TIPO DE MATERIAL': tipoMaterial,
+        'DESCRIPCION DE MATERIAL': descripcionMaterial,
         'IFC_Type': item.type || '',
         'Element_Name': item.name || '',
         'IFC_GlobalId': item.globalId || '',
@@ -763,7 +922,7 @@ export function initTaggingAuxBar(ctx, dom, api) {
     const baseName = String(ctx.loadedModels?.[0]?.name || 'Bandejas').replace(/\.(ifc|frag)$/i, '');
     const fileName = `${baseName}_Tags.xlsx`;
     exportTrayScheduleExcel(mainRows, detailRows, fileName);
-    statusText = `Exported ${mainRows.length} rows (TAG UNICO, ANCHO, LONGITUD, PLANO, SUB_TIPO) to ${fileName}.`;
+    statusText = `Exported ${mainRows.length} rows (9 columns incl. ESC/ACC, TENSION, TIPO & DESCRIPCION DE MATERIAL) to ${fileName}.`;
     syncUi();
     return true;
   }
@@ -839,7 +998,17 @@ export function initTaggingAuxBar(ctx, dom, api) {
   btnApplyBothProps.addEventListener('click', async () => {
     const selected = await api.getCurrentSelectionElements?.();
     if (!selected?.length) return;
-    setElementsProperties(selected, { plano: planoInput.value, subTipo: subTipoInput.value });
+    const patch = {};
+    if (planoInput.value.trim()) patch.plano = planoInput.value;
+    if (subTipoInput.value.trim()) patch.subTipo = subTipoInput.value;
+    if (escAccInput.value.trim()) patch.escAcc = escAccInput.value;
+    if (tensionInput.value.trim()) patch.tension = tensionInput.value;
+    if (tipoMaterialInput.value.trim()) patch.tipoMaterial = tipoMaterialInput.value;
+    if (Object.keys(patch).length === 0) {
+      patch.plano = planoInput.value;
+      patch.subTipo = subTipoInput.value;
+    }
+    setElementsProperties(selected, patch);
   });
   planoInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); btnApplyPlano.click(); }
@@ -847,6 +1016,11 @@ export function initTaggingAuxBar(ctx, dom, api) {
   subTipoInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); btnApplySubTipo.click(); }
   });
+  for (const inp of [escAccInput, tensionInput, tipoMaterialInput]) {
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); btnApplyBothProps.click(); }
+    });
+  }
   btnUndo.addEventListener('click', () => undoLast());
   btnExportExcel.addEventListener('click', () => { exportExcelSchedule(); });
   btnClose.addEventListener('click', () => {

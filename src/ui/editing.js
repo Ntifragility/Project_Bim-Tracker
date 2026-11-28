@@ -142,8 +142,11 @@ export function initEditing(ctx, dom, api) {
       return;
     }
 
-    const validation = api.runTagValidation?.() || { valid: true, counts: { errors: 0 } };
-    if (ctx.tagAssignments.size > 0 && !validation.valid) {
+    const taggedCount = (api.getEffectiveTaggedElements?.() || []).length;
+    const validation = taggedCount > 0
+      ? (api.runTagValidation?.() || { valid: true, counts: { errors: 0 } })
+      : { valid: true, counts: { errors: 0 } };
+    if (taggedCount > 0 && !validation.valid) {
       const msg = `Export blocked: resolve ${validation.counts.errors} tag validation error${validation.counts.errors === 1 ? '' : 's'} in the Tagging Workbench first.`;
       api.updateTagAssignmentUi?.(msg, 'warning');
       alert(msg);

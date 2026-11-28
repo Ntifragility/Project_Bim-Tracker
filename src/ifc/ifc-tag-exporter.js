@@ -221,9 +221,21 @@ export function extractTraySystemAssignmentsFromIfc(sourceBytes) {
     const elementTag = system?.values.get('elementtag')?.value || componentId;
     const planoEntry = system?.values.get('plano');
     const subTipoEntry = system?.values.get('subtipo') || system?.values.get('sub_tipo');
+    const escAccEntry =
+      system?.values.get('escacc') || system?.values.get('esc_acc') || system?.values.get('esc/acc');
+    const tensionEntry = system?.values.get('tension');
+    const tipoMaterialEntry =
+      system?.values.get('tipomaterial') ||
+      system?.values.get('tipo_material') ||
+      system?.values.get('tipo de material');
     const plano = planoEntry?.value || '';
     const subTipo = subTipoEntry?.value || '';
-    if (!systemTag && !componentId && !elementTag && !plano && !subTipo) continue;
+    const escAcc = escAccEntry?.value || '';
+    const tension = tensionEntry?.value || '';
+    const tipoMaterial = tipoMaterialEntry?.value || '';
+    if (!systemTag && !componentId && !elementTag && !plano && !subTipo && !escAcc && !tension && !tipoMaterial) {
+      continue;
+    }
     assignments.set(localId, {
       psetId: system?.psetId,
       systemTag,
@@ -231,6 +243,9 @@ export function extractTraySystemAssignmentsFromIfc(sourceBytes) {
       componentId,
       plano,
       subTipo,
+      escAcc,
+      tension,
+      tipoMaterial,
       elementKind: system?.values.get('elementkind')?.value || '',
       typeCode: system?.values.get('typecode')?.value || '',
       sequenceNumber: system?.values.get('sequencenumber')?.value || '',
@@ -241,6 +256,9 @@ export function extractTraySystemAssignmentsFromIfc(sourceBytes) {
       componentIdPropertyId: system?.values.get('componentid')?.propertyId,
       planoPropertyId: planoEntry?.propertyId,
       subTipoPropertyId: subTipoEntry?.propertyId,
+      escAccPropertyId: escAccEntry?.propertyId,
+      tensionPropertyId: tensionEntry?.propertyId,
+      tipoMaterialPropertyId: tipoMaterialEntry?.propertyId,
       elementKindPropertyId: system?.values.get('elementkind')?.propertyId,
       typeCodePropertyId: system?.values.get('typecode')?.propertyId,
       sequencePropertyId: system?.values.get('sequencenumber')?.propertyId,
@@ -375,6 +393,9 @@ export function addTraySystemAssignmentsToIfc(sourceBytes, assignments) {
     const elementTag = String(assignment.elementTag ?? componentId).trim();
     const plano = String(assignment.plano ?? '').trim();
     const subTipo = String(assignment.subTipo ?? '').trim();
+    const escAcc = String(assignment.escAcc ?? '').trim();
+    const tension = String(assignment.tension ?? '').trim();
+    const tipoMaterial = String(assignment.tipoMaterial ?? '').trim();
     const elementKind = String(assignment.elementKind ?? '').trim();
     const typeCode = String(assignment.typeCode ?? '').trim();
     const sequenceNumber = String(assignment.sequenceNumber ?? '').trim();
@@ -391,7 +412,10 @@ export function addTraySystemAssignmentsToIfc(sourceBytes, assignments) {
         !current?.componentIdPropertyId &&
         !current?.sequencePropertyId &&
         !current?.planoPropertyId &&
-        !current?.subTipoPropertyId
+        !current?.subTipoPropertyId &&
+        !current?.escAccPropertyId &&
+        !current?.tensionPropertyId &&
+        !current?.tipoMaterialPropertyId
       ) {
         skipped.push({ assignment, reason: 'tray-assignment-not-found-in-source-ifc' });
         continue;
@@ -404,16 +428,19 @@ export function addTraySystemAssignmentsToIfc(sourceBytes, assignments) {
       if (current.typeCodePropertyId) source = replacePropertyValue(source, current.typeCodePropertyId, '');
       if (current.planoPropertyId) source = replacePropertyValue(source, current.planoPropertyId, plano);
       if (current.subTipoPropertyId) source = replacePropertyValue(source, current.subTipoPropertyId, subTipo);
+      if (current.escAccPropertyId) source = replacePropertyValue(source, current.escAccPropertyId, escAcc);
+      if (current.tensionPropertyId) source = replacePropertyValue(source, current.tensionPropertyId, tension);
+      if (current.tipoMaterialPropertyId) source = replacePropertyValue(source, current.tipoMaterialPropertyId, tipoMaterial);
       const nativeTag = readNativeElementTag(source, localId);
       if (nativeTag && [current.elementTag, current.componentId].filter(Boolean).includes(nativeTag)) {
         source = replaceNativeElementTag(source, localId, '').source;
       }
-      applied.push({ localId, systemTag: '', componentId: '', sequenceNumber: '', plano, subTipo, action: 'deleted' });
+      applied.push({ localId, systemTag: '', componentId: '', sequenceNumber: '', plano, subTipo, escAcc, tension, tipoMaterial, action: 'deleted' });
       continue;
     }
 
     const hasCompleteTag = Boolean(systemTag && componentId && sequenceNumber);
-    const hasCustomProps = Boolean(plano || subTipo);
+    const hasCustomProps = Boolean(plano || subTipo || escAcc || tension || tipoMaterial);
     if (!hasCompleteTag && !hasCustomProps) {
       skipped.push({ assignment, reason: 'incomplete-tray-assignment' });
       continue;
@@ -448,6 +475,9 @@ export function addTraySystemAssignmentsToIfc(sourceBytes, assignments) {
       }
       upsertProp(current.planoPropertyId, 'Plano', plano, hasCustomProps);
       upsertProp(current.subTipoPropertyId, 'SubTipo', subTipo, hasCustomProps);
+      upsertProp(current.escAccPropertyId, 'EscAcc', escAcc, hasCustomProps);
+      upsertProp(current.tensionPropertyId, 'Tension', tension, hasCustomProps);
+      upsertProp(current.tipoMaterialPropertyId, 'TipoMaterial', tipoMaterial, hasCustomProps);
 
       if (appendedPropIds.length > 0 && current.psetId) {
         source = appendPropertyIdsToPropertySet(source, current.psetId, appendedPropIds);
@@ -467,6 +497,9 @@ export function addTraySystemAssignmentsToIfc(sourceBytes, assignments) {
         sequenceNumber,
         plano,
         subTipo,
+        escAcc,
+        tension,
+        tipoMaterial,
         nativeTagUpdated: nativeUpdated,
         action: 'updated',
       });
@@ -486,7 +519,13 @@ export function addTraySystemAssignmentsToIfc(sourceBytes, assignments) {
       );
       if (originalIfcTag) propertyValues.push(['OriginalIfcTag', originalIfcTag]);
     }
-    propertyValues.push(['Plano', plano], ['SubTipo', subTipo]);
+    propertyValues.push(
+      ['Plano', plano],
+      ['SubTipo', subTipo],
+      ['EscAcc', escAcc],
+      ['Tension', tension],
+      ['TipoMaterial', tipoMaterial],
+    );
 
     appendPropertySet(localId, 'CCP_TRAY_SYSTEM', propertyValues);
     let nativeUpdated = false;
@@ -503,6 +542,9 @@ export function addTraySystemAssignmentsToIfc(sourceBytes, assignments) {
       sequenceNumber,
       plano,
       subTipo,
+      escAcc,
+      tension,
+      tipoMaterial,
       nativeTagUpdated: nativeUpdated,
       action: 'created',
     });
