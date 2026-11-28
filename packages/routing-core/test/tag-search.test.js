@@ -13,9 +13,11 @@ import {
   extractTraySystemAssignmentsFromIfc,
 } from '../../../src/ifc/ifc-tag-exporter.js';
 import {
+  deriveEscAccFromUniqueTag,
   deriveEscAccFromSubTipo,
   parseMaterialDictionaryRows,
   resolveMaterialDescription,
+  roundUpMetrado1,
 } from '../../../src/tagging/material-dictionary.js';
 
 describe('Cable Tray Buscador de TAGs (Revizto / Navisworks search & filters)', () => {
@@ -171,14 +173,23 @@ describe('Cable Tray Buscador de TAGs (Revizto / Navisworks search & filters)', 
     assert.equal(parsed2.get(20).escAcc, 'ACC-CUSTOM');
   });
 
-  it('derives ESC/ACC in Spanish and English and resolves DESCRIPCION DE MATERIAL from built-in catalog + Excel override', () => {
-    assert.equal(deriveEscAccFromSubTipo('ESCALERILLA'), 'ESC');
-    assert.equal(deriveEscAccFromSubTipo('Cable Ladder'), 'ESC');
-    assert.equal(deriveEscAccFromSubTipo('CURVA 90'), 'ACC');
-    assert.equal(deriveEscAccFromSubTipo('Horizontal Bend 90'), 'ACC');
-    assert.equal(deriveEscAccFromSubTipo('Horizontal Tee'), 'ACC');
-    assert.equal(deriveEscAccFromSubTipo('CUSTOM-CODE', 'IFCCABLECARRIERFITTING'), 'ACC');
-    assert.equal(deriveEscAccFromSubTipo('CUSTOM-CODE', 'IFCCABLECARRIERSEGMENT'), 'ESC');
+  it('derives ESC/ACC from .01. (Bandeja) and .02. (Accesorio) inside Unique Tag, rounds METRADO up to 1 decimal, and resolves DESCRIPCION DE MATERIAL', () => {
+    assert.equal(deriveEscAccFromUniqueTag('CT01.01.01'), 'Bandeja');
+    assert.equal(deriveEscAccFromUniqueTag('PT1.01.15'), 'Bandeja');
+    assert.equal(deriveEscAccFromUniqueTag('CT01.02.01'), 'Accesorio');
+    assert.equal(deriveEscAccFromUniqueTag('PT1.02.09'), 'Accesorio');
+    assert.equal(deriveEscAccFromUniqueTag('CT01.03.01'), '');
+    assert.equal(deriveEscAccFromUniqueTag(''), '');
+    // Alias check
+    assert.equal(deriveEscAccFromSubTipo('CT01.01.05'), 'Bandeja');
+    assert.equal(deriveEscAccFromSubTipo('CT01.02.05'), 'Accesorio');
+
+    // REDONDEAR.MAS(DATA; 1) / ROUNDUP(DATA, 1)
+    assert.equal(roundUpMetrado1(3.0), 3.0);
+    assert.equal(roundUpMetrado1(3.01), 3.1);
+    assert.equal(roundUpMetrado1(1.42), 1.5);
+    assert.equal(roundUpMetrado1('2.345 m'), 2.4);
+    assert.equal(roundUpMetrado1(''), '');
 
     // Built-in catalog match (Spanish + English)
     assert.equal(

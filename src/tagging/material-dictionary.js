@@ -76,26 +76,43 @@ const ESC_TOKENS = [
 ];
 
 /**
- * Automatically detects 'ESC' (Escalerilla / Tray Segment) or 'ACC' (Accesorio / Fitting)
- * from SUB_TIPO in both Spanish and English. Returns '' when subTipo is empty.
- * Note: The returned value is an automatic default; user edits to ESC/ACC always take precedence.
+ * Automatically derives 'Bandeja' or 'Accesorio' from the Unique Tag
+ * (e.g. CT01.01.05 -> 'Bandeja', CT01.02.05 -> 'Accesorio'):
+ *   - If there is '.02.' inside the Unique Tag -> 'Accesorio'
+ *   - If there is '.01.' inside the Unique Tag -> 'Bandeja'
+ *   - Otherwise returns '' (user can still edit ESC/ACC manually).
  */
-export function deriveEscAccFromSubTipo(subTipo = '', ifcType = '') {
-  const norm = normalizeToken(subTipo);
-  if (!norm) return '';
+export function deriveEscAccFromUniqueTag(uniqueTag = '') {
+  const tag = String(uniqueTag ?? '').trim();
+  if (!tag) return '';
+  if (tag.includes('.02.')) return 'Accesorio';
+  if (tag.includes('.01.')) return 'Bandeja';
+  return '';
+}
 
-  // Check ACC tokens first so e.g. "CURVA BANDEJA" or "TRAY ELBOW" classifies as 'ACC'
-  for (const tok of ACC_TOKENS) {
-    if (norm.includes(tok)) return 'ACC';
-  }
-  if (/^TE(\b|\s|-|_)/.test(norm)) return 'ACC';
+/**
+ * Legacy alias kept for compatibility — derives ESC/ACC strictly from `.01.` / `.02.` in the tag/prefix.
+ */
+export function deriveEscAccFromSubTipo(uniqueTagOrSubTipo = '') {
+  return deriveEscAccFromUniqueTag(uniqueTagOrSubTipo);
+}
 
-  for (const tok of ESC_TOKENS) {
-    if (norm.includes(tok)) return 'ESC';
-  }
-
-  if (String(ifcType || '').toUpperCase().includes('FITTING')) return 'ACC';
-  return 'ESC';
+/**
+ * Rounds a positive length/metrado number UP to 1 decimal place
+ * (matching Excel REDONDEAR.MAS(DATA; 1) / ROUNDUP(DATA, 1)).
+ * Returns '' if the input is empty or not a finite number.
+ */
+export function roundUpMetrado1(value) {
+  if (value === null || value === undefined || value === '') return '';
+  const cleaned = typeof value === 'string' ? value.replace(/[^\d.-]/g, '') : value;
+  const num = Number(cleaned);
+  if (!Number.isFinite(num)) return '';
+  if (num === 0) return 0;
+  const sign = num < 0 ? -1 : 1;
+  const abs = Math.abs(num);
+  // Subtract 1e-9 epsilon before Math.ceil so exact tenths like 3.0 or 1.4 stay 3.0 and 1.4
+  const rounded = Math.ceil(abs * 10 - 1e-9) / 10;
+  return Number((sign * rounded).toFixed(1));
 }
 
 /**

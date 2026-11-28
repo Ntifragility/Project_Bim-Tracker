@@ -602,6 +602,7 @@ export function createLateralDock({ state, els, api }) {
       { name: 'Unique Tag', value: getCcp('ElementTag', 'ComponentId', 'Unique Tag'), readonly: true },
       { name: 'System Tag', value: getCcp('SystemTag', 'System Tag'), readonly: true },
       { name: 'PLANO', value: getCcp('Plano', 'PLANO'), readonly: true },
+      { name: 'REV', value: getCcp('Rev', 'REV'), readonly: true },
       { name: 'SUB_TIPO', value: getCcp('SubTipo', 'SUB_TIPO'), readonly: true },
       { name: 'ESC/ACC', value: getCcp('EscAcc', 'ESC/ACC'), readonly: true },
       { name: 'TENSION', value: getCcp('Tension', 'TENSION'), readonly: true },
