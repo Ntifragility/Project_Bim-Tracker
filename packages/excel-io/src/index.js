@@ -51,46 +51,51 @@ export function writeWorkbookBytes(sheetsMap) {
 
 /**
  * Builds the clean Cable Tray Excel (.xlsx) workbook bytes:
- *   Sheet 1 ("Bandejas"): TAG UNICO | ANCHO | LONGITUD | PLANO | SUB_TIPO | ESC/ACC | TENSION | TIPO DE MATERIAL | DESCRIPCION DE MATERIAL
- *   Sheet 2 ("Detalle"):  Optional BIM audit metadata
+ *   Sheet 1 ("Bandejas"):
+ *     PLANO | UNIQUE TAG | TENSION | ESC/ACC | SYSTEM TAG | ANCHO | SUB_TIPO | TIPO DE MATERIAL | DESCRIPCION DE MATERIAL | METRADO
+ *   Sheet 2 ("Detalle"):
+ *     Optional BIM audit metadata
  */
 export function buildTrayScheduleWorkbook(rows = [], detailRows = []) {
   const workbook = XLSX.utils.book_new();
   const mainRows = rows.length
     ? rows.map((r) => ({
-        "TAG UNICO": r.tagUnico ?? r["TAG UNICO"] ?? "",
-        "ANCHO": r.ancho ?? r["ANCHO"] ?? "",
-        "LONGITUD": r.longitud ?? r["LONGITUD"] ?? "",
         "PLANO": r.plano ?? r["PLANO"] ?? "",
-        "SUB_TIPO": r.subTipo ?? r["SUB_TIPO"] ?? "",
-        "ESC/ACC": r.escAcc ?? r["ESC/ACC"] ?? "",
+        "UNIQUE TAG": r.uniqueTag ?? r.tagUnico ?? r["UNIQUE TAG"] ?? r["TAG UNICO"] ?? "",
         "TENSION": r.tension ?? r["TENSION"] ?? "",
+        "ESC/ACC": r.escAcc ?? r["ESC/ACC"] ?? "",
+        "SYSTEM TAG": r.systemTag ?? r["SYSTEM TAG"] ?? "",
+        "ANCHO": r.ancho ?? r["ANCHO"] ?? "",
+        "SUB_TIPO": r.subTipo ?? r["SUB_TIPO"] ?? "",
         "TIPO DE MATERIAL": r.tipoMaterial ?? r["TIPO DE MATERIAL"] ?? "",
         "DESCRIPCION DE MATERIAL": r.descripcionMaterial ?? r["DESCRIPCION DE MATERIAL"] ?? "",
+        "METRADO": r.metrado ?? r.longitud ?? r["METRADO"] ?? r["LONGITUD"] ?? "",
       }))
     : [{
-        "TAG UNICO": "",
-        "ANCHO": "",
-        "LONGITUD": "",
         "PLANO": "",
-        "SUB_TIPO": "",
-        "ESC/ACC": "",
+        "UNIQUE TAG": "",
         "TENSION": "",
+        "ESC/ACC": "",
+        "SYSTEM TAG": "",
+        "ANCHO": "",
+        "SUB_TIPO": "",
         "TIPO DE MATERIAL": "",
         "DESCRIPCION DE MATERIAL": "",
+        "METRADO": "",
       }];
 
   const wsMain = XLSX.utils.json_to_sheet(mainRows);
   wsMain["!cols"] = [
-    { wch: 22 },
-    { wch: 12 },
-    { wch: 12 },
     { wch: 18 },
-    { wch: 20 },
-    { wch: 10 },
+    { wch: 22 },
     { wch: 16 },
+    { wch: 10 },
+    { wch: 18 },
+    { wch: 12 },
+    { wch: 20 },
     { wch: 22 },
     { wch: 36 },
+    { wch: 14 },
   ];
   XLSX.utils.book_append_sheet(workbook, wsMain, "Bandejas");
 

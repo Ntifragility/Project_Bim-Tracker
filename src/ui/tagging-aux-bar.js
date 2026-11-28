@@ -887,30 +887,39 @@ export function initTaggingAuxBar(ctx, dom, api) {
     const detailRows = [];
     for (const item of effective) {
       const dims = (await api.readElementDimensions?.(item)) || { Width: '', Length: '' };
-      const tagUnico = item.elementTag || item.componentId || item.systemTag || '';
+      const uniqueTag = item.elementTag || item.componentId || item.systemTag || '';
+      const systemTag =
+        item.systemTag ||
+        uniqueTag.replace(/[.\-_]?\d+$/, '').replace(/[.\-_]+$/, '') ||
+        '';
       const escAcc = item.escAcc || deriveEscAccFromSubTipo(item.subTipo || '', item.type || '');
       const tension = item.tension || '';
       const tipoMaterial = item.tipoMaterial || '';
       const descripcionMaterial = resolveMaterialDescription(item, customDictRules);
+      const metrado = dims.Length ?? '';
       mainRows.push({
-        tagUnico,
-        ancho: dims.Width ?? '',
-        longitud: dims.Length ?? '',
         plano: item.plano || '',
-        subTipo: item.subTipo || '',
-        escAcc,
+        uniqueTag,
         tension,
+        escAcc,
+        systemTag,
+        ancho: dims.Width ?? '',
+        subTipo: item.subTipo || '',
         tipoMaterial,
         descripcionMaterial,
+        metrado,
       });
       detailRows.push({
-        'TAG UNICO': tagUnico,
         'PLANO': item.plano || '',
-        'SUB_TIPO': item.subTipo || '',
-        'ESC/ACC': escAcc,
+        'UNIQUE TAG': uniqueTag,
         'TENSION': tension,
+        'ESC/ACC': escAcc,
+        'SYSTEM TAG': systemTag,
+        'ANCHO': dims.Width ?? '',
+        'SUB_TIPO': item.subTipo || '',
         'TIPO DE MATERIAL': tipoMaterial,
         'DESCRIPCION DE MATERIAL': descripcionMaterial,
+        'METRADO': metrado,
         'IFC_Type': item.type || '',
         'Element_Name': item.name || '',
         'IFC_GlobalId': item.globalId || '',
@@ -922,7 +931,7 @@ export function initTaggingAuxBar(ctx, dom, api) {
     const baseName = String(ctx.loadedModels?.[0]?.name || 'Bandejas').replace(/\.(ifc|frag)$/i, '');
     const fileName = `${baseName}_Tags.xlsx`;
     exportTrayScheduleExcel(mainRows, detailRows, fileName);
-    statusText = `Exported ${mainRows.length} rows (9 columns incl. ESC/ACC, TENSION, TIPO & DESCRIPCION DE MATERIAL) to ${fileName}.`;
+    statusText = `Exported ${mainRows.length} rows (PLANO, UNIQUE TAG, TENSION, ESC/ACC, SYSTEM TAG, ANCHO, SUB_TIPO, TIPO DE MATERIAL, DESCRIPCION DE MATERIAL, METRADO) to ${fileName}.`;
     syncUi();
     return true;
   }
