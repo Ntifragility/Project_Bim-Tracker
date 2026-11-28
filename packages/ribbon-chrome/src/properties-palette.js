@@ -617,6 +617,18 @@ export function createPropertiesPalette(container, options = {}) {
     },
 
     /**
+     * Commits any unapplied pending changes immediately (e.g. before IFC export).
+     */
+    flushPendingChanges() {
+      if (Object.keys(pendingChanges).length === 0) return false;
+      if (!applyBtn.disabled) {
+        applyBtn.click();
+        return true;
+      }
+      return false;
+    },
+
+    /**
      * Root element of the palette.
      */
     root,

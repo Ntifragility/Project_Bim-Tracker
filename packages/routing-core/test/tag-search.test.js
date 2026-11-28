@@ -101,10 +101,11 @@ describe('Cable Tray Buscador de TAGs (Revizto / Navisworks search & filters)', 
         componentId: 'PT1.01.01',
         sequenceNumber: '01',
         plano: 'E-301',
+        rev: '0',
         subTipo: 'ESCALERILLA',
-        escAcc: 'ESC',
-        tension: 'MT / 22.9kV',
-        tipoMaterial: 'F°G°',
+        escAcc: 'Bandeja',
+        tension: 'MT',
+        tipoMaterial: 'GALVANIZADO',
       },
       {
         localId: 20,
@@ -113,10 +114,11 @@ describe('Cable Tray Buscador de TAGs (Revizto / Navisworks search & filters)', 
         componentId: '',
         sequenceNumber: '',
         plano: 'E-302',
+        rev: 'A',
         subTipo: 'CURVA 90',
-        escAcc: 'ACC',
-        tension: 'BT / 480V',
-        tipoMaterial: 'INOX 316',
+        escAcc: 'Accesorio',
+        tension: 'BT',
+        tipoMaterial: 'FRP',
       },
     ]);
     assert.equal(exp1.applied.length, 2);
@@ -126,17 +128,19 @@ describe('Cable Tray Buscador de TAGs (Revizto / Navisworks search & filters)', 
     assert.equal(parsed1.size, 2);
     assert.equal(parsed1.get(10).elementTag, 'PT1.01.01');
     assert.equal(parsed1.get(10).plano, 'E-301');
+    assert.equal(parsed1.get(10).rev, '0');
     assert.equal(parsed1.get(10).subTipo, 'ESCALERILLA');
-    assert.equal(parsed1.get(10).escAcc, 'ESC');
-    assert.equal(parsed1.get(10).tension, 'MT / 22.9kV');
-    assert.equal(parsed1.get(10).tipoMaterial, 'F°G°');
+    assert.equal(parsed1.get(10).escAcc, 'Bandeja');
+    assert.equal(parsed1.get(10).tension, 'MT');
+    assert.equal(parsed1.get(10).tipoMaterial, 'GALVANIZADO');
 
     assert.equal(parsed1.get(20).elementTag, '');
     assert.equal(parsed1.get(20).plano, 'E-302');
+    assert.equal(parsed1.get(20).rev, 'A');
     assert.equal(parsed1.get(20).subTipo, 'CURVA 90');
-    assert.equal(parsed1.get(20).escAcc, 'ACC');
-    assert.equal(parsed1.get(20).tension, 'BT / 480V');
-    assert.equal(parsed1.get(20).tipoMaterial, 'INOX 316');
+    assert.equal(parsed1.get(20).escAcc, 'Accesorio');
+    assert.equal(parsed1.get(20).tension, 'BT');
+    assert.equal(parsed1.get(20).tipoMaterial, 'FRP');
 
     // 3. Second export on already-exported IFC: update #10 properties in-place and add Unique Tag to #20
     const exp2 = addTraySystemAssignmentsToIfc(exp1.bytes, [
@@ -147,30 +151,36 @@ describe('Cable Tray Buscador de TAGs (Revizto / Navisworks search & filters)', 
         componentId: 'PT1.01.01',
         sequenceNumber: '01',
         plano: 'E-301-REV2',
+        rev: '1',
         subTipo: 'ESCALERILLA',
-        escAcc: 'ESC',
-        tension: '10kV',
-        tipoMaterial: 'HDG',
+        escAcc: 'Bandeja',
+        tension: 'CTRL',
+        tipoMaterial: 'FRP',
       },
       {
         localId: 20,
-        systemTag: 'PT1.01',
-        elementTag: 'PT1.01.02',
-        componentId: 'PT1.01.02',
-        sequenceNumber: '02',
+        systemTag: 'PT1.02',
+        elementTag: 'PT1.02.01',
+        componentId: 'PT1.02.01',
+        sequenceNumber: '01',
         plano: 'E-302',
+        rev: 'B',
         subTipo: 'CURVA 90',
-        escAcc: 'ACC-CUSTOM',
-        tension: 'BT / 480V',
-        tipoMaterial: 'INOX 316',
+        escAcc: 'Accesorio',
+        tension: 'INST',
+        tipoMaterial: 'GALVANIZADO',
       },
     ]);
     const parsed2 = extractTraySystemAssignmentsFromIfc(exp2.bytes);
     assert.equal(parsed2.get(10).plano, 'E-301-REV2');
-    assert.equal(parsed2.get(10).tension, '10kV');
-    assert.equal(parsed2.get(10).tipoMaterial, 'HDG');
-    assert.equal(parsed2.get(20).elementTag, 'PT1.01.02');
-    assert.equal(parsed2.get(20).escAcc, 'ACC-CUSTOM');
+    assert.equal(parsed2.get(10).rev, '1');
+    assert.equal(parsed2.get(10).tension, 'CTRL');
+    assert.equal(parsed2.get(10).tipoMaterial, 'FRP');
+    assert.equal(parsed2.get(20).elementTag, 'PT1.02.01');
+    assert.equal(parsed2.get(20).rev, 'B');
+    assert.equal(parsed2.get(20).escAcc, 'Accesorio');
+    assert.equal(parsed2.get(20).tension, 'INST');
+    assert.equal(parsed2.get(20).tipoMaterial, 'GALVANIZADO');
   });
 
   it('derives ESC/ACC from .01. (Bandeja) and .02. (Accesorio) inside Unique Tag, rounds METRADO up to 1 decimal, and resolves DESCRIPCION DE MATERIAL', () => {

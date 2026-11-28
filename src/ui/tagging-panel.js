@@ -37,9 +37,24 @@ export function initTaggingPanel(ctx, dom, api) {
     validateTagIntegrity: jsValidateTagIntegrity,
   };
   const { allocateElementTags, getSystemTag, normalizeTagScheme, classifyTaggableElement, validateTagIntegrity } = tag;
+  function findPendingAssignment(modelId, localId) {
+    const numId = Number(localId);
+    if (!modelId || !Number.isFinite(numId)) return null;
+    const direct = ctx.tagAssignments.get(getAssignmentKey(modelId, numId));
+    if (direct) return direct;
+    const modelEntry = api.findLoadedModelEntry(modelId);
+    if (!modelEntry) return null;
+    for (const candidateId of [modelEntry.uuid, modelEntry.model?.uuid, modelEntry.model?.modelId]) {
+      if (!candidateId || candidateId === modelId) continue;
+      const found = ctx.tagAssignments.get(getAssignmentKey(candidateId, numId));
+      if (found) return found;
+    }
+    return null;
+  }
+
   function getAssignmentForElement(element = ctx.selectedIfcElement) {
     if (!element) return null;
-    return ctx.tagAssignments.get(getAssignmentKey(element.modelId, element.localId)) || null;
+    return findPendingAssignment(element.modelId, element.localId);
   }
 
   function getExistingProjectTag(element = ctx.selectedIfcElement) {
@@ -326,8 +341,7 @@ export function initTaggingPanel(ctx, dom, api) {
     if (!modelEntry) return null;
 
     const existing = modelEntry.existingProjectTags?.get(localId) || null;
-    const key = getAssignmentKey(modelId, localId);
-    const pending = ctx.tagAssignments.get(key) || null;
+    const pending = findPendingAssignment(modelId, localId);
 
     if (!existing && !pending) return null;
 
