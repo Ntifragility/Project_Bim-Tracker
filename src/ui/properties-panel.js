@@ -144,13 +144,8 @@ export function initPropertiesPanel(ctx, dom, api) {
       }
     }
 
-    const buildDropdownOptions = (baseList, currentVal) => {
-      const opts = ['', ...baseList];
-      if (currentVal && !opts.includes(currentVal)) opts.push(currentVal);
-      return opts;
-    };
-
     // Editable electrical & tagging group (pinned at the top by Properties Palette)
+    // All fields use type-in text input + Enter to Apply for fast, reliable keyboard entry.
     parameters['Electrical'] = [
       { name: 'Unique Tag', value: uniqueTag, type: 'text', readonly: false },
       { name: 'System Tag', value: systemTag, type: 'text', readonly: false },
@@ -158,18 +153,8 @@ export function initPropertiesPanel(ctx, dom, api) {
       { name: 'REV', value: rev, type: 'text', readonly: false },
       { name: 'SUB_TIPO', value: subTipo, type: 'text', readonly: false },
       { name: 'ESC/ACC', value: escAcc, type: 'text', readonly: false },
-      {
-        name: 'TENSION',
-        value: tension,
-        options: buildDropdownOptions(['MT', 'BT', 'CTRL', 'INST'], tension),
-        readonly: false,
-      },
-      {
-        name: 'TIPO DE MATERIAL',
-        value: tipoMaterial,
-        options: buildDropdownOptions(['FRP', 'GALVANIZADO'], tipoMaterial),
-        readonly: false,
-      },
+      { name: 'TENSION', value: tension, type: 'text', readonly: false },
+      { name: 'TIPO DE MATERIAL', value: tipoMaterial, type: 'text', readonly: false },
     ];
 
     const paletteData = {
@@ -722,11 +707,6 @@ export function initPropertiesPanel(ctx, dom, api) {
       const escAccText = escAccValues.size === 1 ? Array.from(escAccValues)[0] : '<Varies>';
       const tensionText = tensionValues.size === 1 ? Array.from(tensionValues)[0] : '<Varies>';
       const tipoMaterialText = tipoMaterialValues.size === 1 ? Array.from(tipoMaterialValues)[0] : '<Varies>';
-      const buildMultiDropdown = (baseList, currentVal) => {
-        const opts = ['', ...baseList];
-        if (currentVal && !opts.includes(currentVal)) opts.push(currentVal);
-        return opts;
-      };
 
       api.propertiesPalette.setElement({
         id: 'multi',
@@ -758,18 +738,8 @@ export function initPropertiesPanel(ctx, dom, api) {
             { name: 'REV', value: revText, type: 'text', readonly: false },
             { name: 'SUB_TIPO', value: subTipoText, type: 'text', readonly: false },
             { name: 'ESC/ACC', value: escAccText, type: 'text', readonly: false },
-            {
-              name: 'TENSION',
-              value: tensionText,
-              options: buildMultiDropdown(['MT', 'BT', 'CTRL', 'INST'], tensionText),
-              readonly: false,
-            },
-            {
-              name: 'TIPO DE MATERIAL',
-              value: tipoMaterialText,
-              options: buildMultiDropdown(['FRP', 'GALVANIZADO'], tipoMaterialText),
-              readonly: false,
-            },
+            { name: 'TENSION', value: tensionText, type: 'text', readonly: false },
+            { name: 'TIPO DE MATERIAL', value: tipoMaterialText, type: 'text', readonly: false },
           ],
         },
       });

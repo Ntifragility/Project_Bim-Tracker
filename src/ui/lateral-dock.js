@@ -282,7 +282,25 @@ export function initLateralDock(ctx, dom, api) {
       console.log('[Properties] Edit Type for:', element);
     },
     async onApply(pendingChanges, element) {
-      // Multi-element or single-element IFC custom properties (PLANO, REV, SUB_TIPO, ESC/ACC, TENSION, TIPO DE MATERIAL)
+      // 1. Handle Unique Tag / System Tag edits first so subsequent property patches attach cleanly
+      const hasTagEdit = Boolean(
+        ctx.selectedIfcElement && ('Unique Tag' in pendingChanges || 'System Tag' in pendingChanges),
+      );
+      if (hasTagEdit) {
+        const current = api.getEffectiveElementRecord?.(ctx.selectedIfcElement) || api.getAssignmentForElement?.(ctx.selectedIfcElement);
+        const nextUniqueTag = 'Unique Tag' in pendingChanges
+          ? String(pendingChanges['Unique Tag'] ?? '').trim()
+          : (current?.elementTag || current?.componentId || '');
+        const nextSystemTag = 'System Tag' in pendingChanges
+          ? String(pendingChanges['System Tag'] ?? '').trim()
+          : (current?.systemTag || '');
+        api.editElementTag?.(ctx.selectedIfcElement, {
+          elementTag: nextUniqueTag,
+          systemTag: nextSystemTag,
+        });
+      }
+
+      // 2. Multi-element or single-element IFC custom properties (PLANO, REV, SUB_TIPO, ESC/ACC, TENSION, TIPO DE MATERIAL)
       const propKeys = [
         ['PLANO', 'plano'],
         ['REV', 'rev'],
@@ -306,21 +324,7 @@ export function initLateralDock(ctx, dom, api) {
         }
       }
 
-      if (ctx.selectedIfcElement && ('Unique Tag' in pendingChanges || 'System Tag' in pendingChanges)) {
-        const current = api.getEffectiveElementRecord?.(ctx.selectedIfcElement) || api.getAssignmentForElement?.(ctx.selectedIfcElement);
-        const nextUniqueTag = 'Unique Tag' in pendingChanges
-          ? String(pendingChanges['Unique Tag'] ?? '').trim()
-          : (current?.elementTag || current?.componentId || '');
-        const nextSystemTag = 'System Tag' in pendingChanges
-          ? String(pendingChanges['System Tag'] ?? '').trim()
-          : (current?.systemTag || '');
-        api.editElementTag?.(ctx.selectedIfcElement, {
-          elementTag: nextUniqueTag,
-          systemTag: nextSystemTag,
-        });
-        return;
-      }
-      if (Object.keys(propsPatch).length > 0) return;
+      if (hasTagEdit || Object.keys(propsPatch).length > 0) return;
       if (typeof api.stagePropertyChange === 'function' && element?.id) {
         for (const [key, val] of Object.entries(pendingChanges)) {
           api.stagePropertyChange('BIM_TRACKER_EDIT', key, val);

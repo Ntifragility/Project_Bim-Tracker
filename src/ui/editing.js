@@ -142,6 +142,9 @@ export function initEditing(ctx, dom, api) {
       return;
     }
 
+    // Commit any typed but unapplied edits in the Left Properties Palette before exporting
+    api.propertiesPalette?.flushPendingChanges?.();
+
     const taggedCount = (api.getEffectiveTaggedElements?.() || []).length;
     const validation = taggedCount > 0
       ? (api.runTagValidation?.() || { valid: true, counts: { errors: 0 } })
